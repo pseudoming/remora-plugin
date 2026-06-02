@@ -1,0 +1,47 @@
+{
+  "remora": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "/usr/bin/python3 ./scripts/snapshot-git.py",
+        "timeout": 15
+      },
+      {
+        "type": "command",
+        "command": "/usr/bin/python3 ./scripts/intent-detector.py",
+        "timeout": 10
+      },
+      {
+        "type": "command",
+        "command": "echo '{\"injectSteps\": [{\"ephemeralMessage\": \"<system-reminder>STRICT TONE: Objective, professional & direct. Zero flattery or hyperbole. Keep emotion and meta-commentary to an absolute minimum (use only for severe issues). Acknowledge mistakes factually and concisely with varied phrasing—do not over-apologize or sound repetitive.</system-reminder>\"}]}'",
+        "timeout": 5
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "run_command|view_file|grep_search",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 ./scripts/safety-check.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "/usr/bin/python3 ./scripts/action-gate.py",
+        "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/sidecars/memory-compactor/compactor.py --event-driven",
+        "timeout": 15
+      }
+    ]
+  }
+}

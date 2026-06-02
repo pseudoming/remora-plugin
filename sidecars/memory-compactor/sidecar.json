@@ -1,0 +1,5 @@
+{
+  "description": "Incremental memory compactor for Remora (Runs every 10 mins).",
+  "builtin": "schedule",
+  "args": ["*/10 * * * *", "python3", "compactor.py"]
+}

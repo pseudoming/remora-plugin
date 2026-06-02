@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.db
+*.db-journal
+*.db-wal
+data/
+compactor_managed_conversations.json
+compactor_conversation_id.txt
+compactor.lock
+context_dump.json
+scratch/

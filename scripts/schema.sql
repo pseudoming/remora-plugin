@@ -1,0 +1,63 @@
+PRAGMA journal_mode=WAL;
+PRAGMA synchronous=NORMAL;
+
+CREATE TABLE IF NOT EXISTS project_topics (
+    uuid TEXT NOT NULL,         -- 关联的 Project UUID，用于物理隔离不同项目的记忆
+    topic_id TEXT NOT NULL,     -- 话题的唯一标识符（如 t_001）
+    status TEXT DEFAULT 'open', -- 话题状态：open（活跃）或 closed（已归档）
+    summary TEXT,               -- 话题的结构化摘要内容
+    constraints TEXT,           -- 该话题下仍在生效的技术约束或规则
+    compression_confidence REAL DEFAULT 1.0, -- [P2] 压缩置信度校验值 (校验存留决策比例)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 最后更新时间
+    PRIMARY KEY (uuid, topic_id)
+);
+
+CREATE TABLE IF NOT EXISTS topic_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, -- 自增主键，无特殊业务含义
+    project_uuid TEXT NOT NULL,           -- 关联的 Project UUID
+    topic_id TEXT NOT NULL,               -- 关联的话题 ID，指向 project_topics
+    conversation_id TEXT NOT NULL,        -- 对话会话 ID，追踪决策发生在哪次具体交互中
+    decision TEXT NOT NULL,               -- 做出的核心架构或实现决策
+    rationale TEXT NOT NULL,              -- 做出该决策的深层原因（为什么做，或者为什么不做）
+    evidence_msg_ids TEXT,                -- JSON 数组格式的 transcript.jsonl message_id（用于温存储防篡改溯源）
+    created_at_line INTEGER DEFAULT 0,    -- 产生该决策时会话的物理行号，用于实现 Undo 回滚时的精准撤销清理
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    FOREIGN KEY(project_uuid, topic_id) REFERENCES project_topics(uuid, topic_id)
+);
+
+-- [P0] 核心防守型温存储表与全文索引
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id TEXT NOT NULL,
+    line_number INTEGER NOT NULL,
+    timestamp TIMESTAMP,
+    role TEXT,
+    content TEXT,
+    topic_id TEXT,
+    UNIQUE(conversation_id, line_number)
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+    content, content=messages, content_rowid=id, tokenize='trigram'
+);
+
+-- [P0] FTS5 同步触发器
+CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+    INSERT INTO messages_fts(rowid, content) VALUES (new.id, new.content);
+END;
+
+CREATE TABLE IF NOT EXISTS watermarks (
+    project_uuid TEXT NOT NULL,           -- 关联的项目UUID
+    conversation_id TEXT NOT NULL,        -- 对应的对话会话ID
+    last_line_processed INTEGER DEFAULT 0,-- 最后处理的行号
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 最后更新时间
+    PRIMARY KEY (project_uuid, conversation_id)
+);
+
+-- [P2] 专门记录标准制品 MD5 哈希的缓存表，用于实现 Stop 钩子事件驱动下的毫秒级增量搜刮
+CREATE TABLE IF NOT EXISTS artifact_hashes (
+    file_path TEXT PRIMARY KEY,           -- 制品文件的绝对路径
+    hash TEXT NOT NULL,                   -- 文件的 MD5 哈希校验值
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP -- 最后更新同步时间
+);
