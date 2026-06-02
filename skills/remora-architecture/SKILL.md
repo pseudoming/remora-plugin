@@ -23,3 +23,9 @@ If you are unsure about past decisions, encounter an architectural keyword (e.g.
 You MUST proactively use the `run_command` tool to execute the official retrieval script:
 `bash ~/.gemini/config/plugins/remora-plugin/scripts/remora-recall.sh "<YOUR_KEYWORD>"`
 **CRITICAL**: You MUST NOT use `grep_search` on `transcript.jsonl` to blindly guess historical context. The `remora-recall.sh` script is the EXCLUSIVE authorized method to access the `remora_memory.db` SSOT.
+
+## 4. Subagent Delegation Rules (Differentiated)
+- **ANTI-CONTEXT-ROT**: For long-chain debugging, massive log analysis, or risky operations, you are STRICTLY PROHIBITED from executing commands directly. You MUST first use `view_file` to read the `remora-architecture` skill instructions, and then use `invoke_subagent` for isolated execution:
+  * **Read-Only Log Analysis / Evidence Retrieval / DB Query**: Use `invoke_subagent` with `TypeName: "Remora_ReadOnly_Extractor"` and `Prompt` explaining the facts to retrieve.
+  * **Sandbox Debugging / Build Verification / Code Modifying**: Use `invoke_subagent` with `TypeName: "Remora_Deep_Diver"` and `Prompt` specifying the diagnostic or writing tasks.
+- **SANDBOX BOUNDARY**: Under Deep_Diver, match your actions to the blast radius. Do not use destructive shortcuts (e.g. bypass hooks, delete locks). Under ReadOnly_Extractor, report outcomes without hedging and never modify any code.

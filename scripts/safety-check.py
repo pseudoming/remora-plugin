@@ -5,6 +5,7 @@ import re
 import shlex
 import base64
 import os
+import subprocess
 
 # ##########################################################
 # AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)
@@ -37,6 +38,13 @@ import os
 # 2. 穿透解码与递归审计：在内存中对该 Base64 串进行还原，并对解码后的文本进行递归安全审计。
 # 3. Base64 白名单留空（BASE64_WHITELIST = []）：若明文或原串处于白名单中，或明文无任何高危测试/构建动作，
 #    系统予以放行，保障开发流中正常 base64 文本编解码及跨平台工具运行通道的灵活性。
+
+# ==========================================================
+# 设计原理四：子代理类型判定与分流安全豁免
+# ==========================================================
+# 1. 元数据解析：通过从 `transcriptPath` 中切片提取出当前子会话的 ID，执行宿主官方 `agentapi get-conversation-metadata` 命令。
+# 2. 只读特工 `Remora_ReadOnly_Extractor` 限制：特许豁免 view_file 大体积日志读取限制；但对其命令行写、构建与测试指令做绝对强拦截保护。
+# 3. 沙盒特工 `Remora_Deep_Diver` 限制放行：特许豁免 view_file 日志体积熔断；且豁免其在分支沙盒内执行测试（test）或构建（build）命令的拦截。
 
 BASE64_WHITELIST = []
 
@@ -182,6 +190,30 @@ def inspect_command(cmd_str, depth=0):
         
     return _inspect_tokens(tokens, depth)
 
+def get_subagent_type(transcript_path):
+    """通过系统官方 agentapi 查询当前子代理的 typeName，实现物理只读/读写属性提取"""
+    if not transcript_path:
+        return None
+    match = re.search(r'/brain/([^/]+)/', transcript_path)
+    if not match:
+        return None
+    conv_id = match.group(1)
+    
+    try:
+        # 使用官方 agentapi get-conversation-metadata 获取会话元数据
+        cmd = ["/home/agent/.gemini/antigravity/bin/agentapi", "get-conversation-metadata", conv_id]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if res.returncode == 0:
+            data = json.loads(res.stdout)
+            metadata = data.get("response", {}).get("conversationMetadata", {}).get("metadata", {})
+            parent_id = metadata.get("parentConversationId")
+            if not parent_id:
+                return None
+            return metadata.get("subagentSpec", {}).get("typeName")
+    except Exception:
+        pass
+    return None
+
 def main():
     try:
         context = json.load(sys.stdin)
@@ -193,11 +225,25 @@ def main():
     tool_name = tool_call.get('name', '')
     args = tool_call.get('args', {})
     
+    transcript_path = context.get('transcriptPath', '')
+    subagent_type = get_subagent_type(transcript_path)
+    
+    is_sub = subagent_type is not None
+    is_readonly_sub = subagent_type == "Remora_ReadOnly_Extractor"
+    is_deep_diver_sub = subagent_type == "Remora_Deep_Diver"
+    
     # --------------------------------------------------------
     # Anti-Context-Rot: 统一的返回模板
-    # 中文注释：防上下文腐败拦截提示
+    # 中文翻译：[防上下文腐败拦截] 禁止在主干上下文中直接对大日志文件（.jsonl/.log）使用 cat/grep 或 view_file，以防止上下文爆炸。请使用子代理进行隔离执行：
+    # - 若为只读的日志搜索或数据库查询：使用 TypeName "Remora_ReadOnly_Extractor" 派发子代理
+    # - 若为沙盒下的调试、测试或代码修改：使用 TypeName "Remora_Deep_Diver" 派发子代理
     # --------------------------------------------------------
-    rot_reason = "REMORA DELEGATION BLOCKED: ANTI-CONTEXT-ROT. Target data is too large or risky for main context. You MUST delegate this task to Remora_Deep_Diver using invoke_subagent with Workspace: 'branch'."
+    rot_reason = (
+        "REMORA SAFETY INTERCEPT: Direct cat/grep or view_file on large logs (.jsonl/.log) in main context is prohibited to prevent context explosion.\n"
+        "Please invoke a subagent for isolation:\n"
+        "- For read-only log search or database queries: Typename 'Remora_ReadOnly_Extractor'\n"
+        "- For sandbox debugging, tests, or code modifications: Typename 'Remora_Deep_Diver'"
+    )
 
     # --------------------------------------------------------
     # 针对 view_file 的拦截
@@ -207,13 +253,15 @@ def main():
         if target_file:
             # 1. 敏感后缀拦截
             if target_file.endswith('.jsonl') or target_file.endswith('.log') or target_file.endswith('.sqlite'):
-                print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                return
+                if not is_sub:
+                    print(json.dumps({"decision": "deny", "reason": rot_reason}))
+                    return
             # 2. 体积熔断 (50KB)
             try:
                 if os.path.exists(target_file) and os.path.getsize(target_file) > 50 * 1024:
-                    print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                    return
+                    if not is_sub:
+                        print(json.dumps({"decision": "deny", "reason": rot_reason}))
+                        return
             except Exception:
                 pass
         
@@ -228,32 +276,58 @@ def main():
         
         # 1. 高吞吐量特征拦截 (Anti-Context-Rot)
         rot_pattern = r'\b(cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.sh\b'
-        if re.search(rot_pattern, cmd, re.IGNORECASE):
-            print(json.dumps({"decision": "deny", "reason": rot_reason}))
-            return
-            
-        # 2. 原有的安全性拦截
+        has_rot_feature = re.search(rot_pattern, cmd, re.IGNORECASE)
+        
+        # 2. 安全性拦截与审计分流
         decision, category = inspect_command(cmd)
         
-        if decision == "deny":
-            if category == "test":
-                print(json.dumps({
-                    "decision": "deny",
-                    "reason": "REMORA DELEGATION BLOCKED: Diagnostic and test commands must be delegated via invoke_subagent using (Workspace: 'branch')!"
-                }))
-            elif category == "build":
-                print(json.dumps({
-                    "decision": "deny",
-                    "reason": "REMORA DELEGATION BLOCKED: Build commands must be delegated via invoke_subagent using (Workspace: 'share') to ensure artifacts are synced!"
-                }))
+        if has_rot_feature:
+            # 子会话大日志查询特许放行
+            if is_sub:
+                # 若为只读特工，除日志外不可含有任何写或测试构建高危特征（必须为 allow）
+                if is_readonly_sub and decision != "allow":
+                    # 中文翻译：[安全防线拦截] 限制只读特工。Remora_ReadOnly_Extractor 仅被授权进行只读检索，严禁运行任何物理写操作、构建或测试命令！
+                    print(json.dumps({
+                        "decision": "deny",
+                        "reason": "REMORA SAFETY INTERCEPT: Remora_ReadOnly_Extractor is strictly read-only and cannot run write/test/build commands!"
+                    }))
+                    return
+                print(json.dumps({"decision": "allow"}))
+                return
             else:
-                print(json.dumps({
-                    "decision": "deny",
-                    "reason": "REMORA DELEGATION BLOCKED: Command verification failed due to syntax parser error. Because this command may contain potential syntax evasion risks, please carefully re-evaluate if you should delegate it to a subagent under (Workspace: 'branch')!"
-                }))
+                # 普通主干会话一律拦截大日志读取
+                print(json.dumps({"decision": "deny", "reason": rot_reason}))
+                return
         else:
-            print(json.dumps({"decision": "allow"}))
-        return
+            # 不含大日志特征的常规命令审计
+            if decision == "deny":
+                # 沙盒调试特工允许在分支内执行测试和构建
+                if is_deep_diver_sub and category in {"test", "build"}:
+                    print(json.dumps({"decision": "allow"}))
+                    return
+                
+                if category == "test":
+                    # 中文翻译：[安全防线拦截] 诊断和测试命令已被拦截！您必须通过 invoke_subagent 委派给 Remora_Deep_Diver 并在分支沙盒中执行 (Workspace: 'branch')。
+                    print(json.dumps({
+                        "decision": "deny",
+                        "reason": "REMORA DELEGATION BLOCKED: Diagnostic and test commands must be delegated via invoke_subagent using Remora_Deep_Diver (Workspace: 'branch')!"
+                    }))
+                elif category == "build":
+                    # 中文翻译：[安全防线拦截] 构建命令已被拦截！您必须通过 invoke_subagent 委派给 Remora_Deep_Diver 并共享构建产物 (Workspace: 'share')。
+                    print(json.dumps({
+                        "decision": "deny",
+                        "reason": "REMORA DELEGATION BLOCKED: Build commands must be delegated via invoke_subagent using Remora_Deep_Diver (Workspace: 'share')!"
+                    }))
+                else:
+                    # 中文翻译：[安全防线拦截] 命令行语法解析校验未通过。可能包含潜在命令绕过风险。请将其委派给子代理在隔离沙盒内执行！
+                    print(json.dumps({
+                        "decision": "deny",
+                        "reason": "REMORA DELEGATION BLOCKED: Command verification failed due to syntax parser error. Please delegate to a subagent under (Workspace: 'branch')!"
+                    }))
+                return
+            else:
+                print(json.dumps({"decision": "allow"}))
+            return
         
     # --------------------------------------------------------
     # 针对 grep_search 的拦截 (Anti-Context-Rot)
@@ -263,12 +337,14 @@ def main():
         if search_path:
             # 1. 敏感后缀拦截
             if search_path.endswith('.jsonl') or search_path.endswith('.log') or search_path.endswith('.sqlite'):
-                print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                return
+                if not is_sub:
+                    print(json.dumps({"decision": "deny", "reason": rot_reason}))
+                    return
             # 2. 敏感目录拦截 (如 Orchestrator 的日志目录)
             if '/.system_generated' in search_path or '/logs' in search_path:
-                print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                return
+                if not is_sub:
+                    print(json.dumps({"decision": "deny", "reason": rot_reason}))
+                    return
         
         print(json.dumps({"decision": "allow"}))
         return

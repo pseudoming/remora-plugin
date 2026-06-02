@@ -9,3 +9,4 @@ compactor_conversation_id.txt
 compactor.lock
 context_dump.json
 scratch/
+artifacts/
