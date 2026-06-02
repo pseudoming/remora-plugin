@@ -15,8 +15,10 @@ def read_last_user_ai_rounds(path_or_id, rounds=10):
         
     rounds_data = []
     try:
-        with open(transcript_path, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
+        import subprocess
+        limit = rounds * 50
+        output = subprocess.check_output(['tail', '-n', str(limit), transcript_path], stderr=subprocess.STDOUT)
+        lines = output.decode('utf-8').strip().split('\n')
             
         for line in reversed(lines):
             if not line.strip():

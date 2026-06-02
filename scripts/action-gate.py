@@ -206,6 +206,20 @@ def main():
         transcript_path = context.get('transcriptPath', '')
         cwd = context.get('cwd', os.getcwd())
         
+        # 提取会话 ID 并读取本地模式缓存
+        mode = "strict"
+        if transcript_path:
+            match = re.search(r'/brain/([^/]+)/', transcript_path)
+            if match:
+                conv_id = match.group(1)
+                cache_file = f"/tmp/remora_session_modes/{conv_id}.json"
+                if os.path.exists(cache_file):
+                    try:
+                        with open(cache_file, 'r', encoding='utf-8') as f:
+                            mode = json.load(f).get("mode", "strict")
+                    except:
+                        pass
+        
         # Dump context to scratch for analysis
         try:
             conv_dir = Path(transcript_path).parent.parent.parent
@@ -225,6 +239,11 @@ def main():
         
         # 若本回合无任何工具调用且无物理变更，或未发生任何文本生成，直接放行
         if not planner_text or (not has_any_tool_calls and not physical_files):
+            print(json.dumps({"injectSteps": [], "terminationBehavior": ""}))
+            return
+
+        # Relax 模式自适应直接放行，不执行虚报比对，提供最大发散性心流
+        if mode == "relax":
             print(json.dumps({"injectSteps": [], "terminationBehavior": ""}))
             return
 
@@ -258,6 +277,15 @@ def main():
                 # 如果 matches 是元组列表（例如带有多捕获组），则提取第一个非空项
                 if isinstance(path, tuple):
                     path = [x for x in path if x][0]
+                    
+                # 探讨语态前缀匹配过滤，消除讨论时的误判
+                match_index = planner_text.find(path)
+                if match_index != -1:
+                    context_prefix = planner_text[max(0, match_index - 30):match_index]
+                    future_pattern = r'(建议|可以|将|应该|考虑|不妨|不如|should|suggest|would|could|might|will|planning to|consider)'
+                    if re.search(future_pattern, context_prefix, re.IGNORECASE):
+                        continue
+                        
                 declared_files.add(os.path.basename(path))
                 
         # 计算宣称已改但实际未发工具调用的文件差集

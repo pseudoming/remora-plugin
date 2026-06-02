@@ -49,13 +49,24 @@ def main():
         except Exception:
             pass
     
-    # 动态读取 plugin.json 获取触发词
-    plugin_config_path = os.path.join(os.path.dirname(__file__), '..', 'plugin.json')
+    # 动态读取 keywords.json 获取触发词
+    keywords_config_path = os.path.join(os.path.dirname(__file__), 'keywords.json')
+    hard_kws = []
+    soft_kws = []
     try:
-        with open(plugin_config_path, 'r') as f:
-            keywords = json.load(f).get("keywords", [])
+        with open(keywords_config_path, 'r') as f:
+            config = json.load(f)
+            hard_kws = config.get("hard_keywords", [])
+            soft_kws = config.get("soft_keywords", [])
     except:
-        keywords = []
+        pass
+        
+    # 提取当前会话 ID
+    conv_id = "default"
+    if transcript_path:
+        match = re.search(r'/brain/([^/]+)/', transcript_path)
+        if match:
+            conv_id = match.group(1)
         
     inject_steps = []
     
@@ -85,14 +96,37 @@ def main():
     # 剥离前置注入的系统提醒，防止其携带的关键字（例如提醒中包含的路径/remora/）引发无限自反馈死循环
     clean_msg = re.sub(r'<system-reminder>.*?</system-reminder>', '', last_msg, flags=re.DOTALL)
 
-    if keywords:
-        intent_pattern = r'(' + '|'.join(keywords) + r')'
-        if re.search(intent_pattern, clean_msg, re.IGNORECASE):
-            script_path = os.path.join(os.path.dirname(__file__), "remora-recall.sh")
-            # 中文翻译：🚨 记忆防御触发：不要猜测。执行 `bash {script_path} "YOUR_KEYWORD"` 从温存储中检索事实。
-            inject_steps.append({
-                "ephemeralMessage": f"<system-reminder>\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING. Execute `bash {script_path} \"YOUR_KEYWORD\"` to retrieve facts from warm storage.\n</system-reminder>"
-            })
+    # 模式检测自适应：若包含探讨发散性关键词（草稿、想法、设计、讨论、讨论下、建议），设定为 relax，否则 strict
+    mode = "strict"
+    relax_pattern = r'(草稿|想法|设计|讨论|讨论下|建议|draft|brainstorm|design|suggest|discuss)'
+    if re.search(relax_pattern, clean_msg, re.IGNORECASE):
+        mode = "relax"
+    # 强拦截词强制覆写为 strict 确保高危防御不逃逸
+    if hard_kws and re.search(r'(' + '|'.join(hard_kws) + r')', clean_msg, re.IGNORECASE):
+        mode = "strict"
+        
+    # 本地缓存落盘写入分发
+    try:
+        os.makedirs("/tmp/remora_session_modes", exist_ok=True)
+        cache_file = f"/tmp/remora_session_modes/{conv_id}.json"
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump({"mode": mode}, f)
+    except:
+        pass
+
+    # 分级匹配触发
+    triggered = False
+    if hard_kws and re.search(r'(' + '|'.join(hard_kws) + r')', clean_msg, re.IGNORECASE):
+        triggered = True
+    elif mode == "strict" and soft_kws and re.search(r'(' + '|'.join(soft_kws) + r')', clean_msg, re.IGNORECASE):
+        triggered = True
+
+    if triggered:
+        script_path = os.path.join(os.path.dirname(__file__), "remora-recall.sh")
+        # 中文翻译：🚨 记忆防御触发：不要猜测。执行 `bash {script_path} "YOUR_KEYWORD"` 从温存储中检索事实。
+        inject_steps.append({
+            "ephemeralMessage": f"<system-reminder>\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING. Execute `bash {script_path} \"YOUR_KEYWORD\"` to retrieve facts from warm storage.\n</system-reminder>"
+        })
         
     print(json.dumps({"injectSteps": inject_steps}))
 

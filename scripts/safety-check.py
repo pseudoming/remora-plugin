@@ -226,6 +226,21 @@ def main():
     args = tool_call.get('args', {})
     
     transcript_path = context.get('transcriptPath', '')
+    
+    # 提取会话 ID 并读取临时模式缓存
+    mode = "strict"
+    if transcript_path:
+        match = re.search(r'/brain/([^/]+)/', transcript_path)
+        if match:
+            conv_id = match.group(1)
+            cache_file = f"/tmp/remora_session_modes/{conv_id}.json"
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        mode = json.load(f).get("mode", "strict")
+                except:
+                    pass
+
     subagent_type = get_subagent_type(transcript_path)
     
     is_sub = subagent_type is not None
@@ -256,9 +271,10 @@ def main():
                 if not is_sub:
                     print(json.dumps({"decision": "deny", "reason": rot_reason}))
                     return
-            # 2. 体积熔断 (50KB)
+            # 2. 体积熔断 (Relax 模式放宽至 200KB，Strict 模式 50KB)
+            size_limit = 200 * 1024 if mode == "relax" else 50 * 1024
             try:
-                if os.path.exists(target_file) and os.path.getsize(target_file) > 50 * 1024:
+                if os.path.exists(target_file) and os.path.getsize(target_file) > size_limit:
                     if not is_sub:
                         print(json.dumps({"decision": "deny", "reason": rot_reason}))
                         return

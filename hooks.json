@@ -13,8 +13,8 @@
       },
       {
         "type": "command",
-        "command": "echo '{\"injectSteps\": [{\"ephemeralMessage\": \"<system-reminder>STRICT TONE: Objective, professional & direct. Zero flattery or hyperbole. Keep emotion and meta-commentary to an absolute minimum (use only for severe issues). Acknowledge mistakes factually and concisely with varied phrasing—do not over-apologize or sound repetitive.</system-reminder>\"}]}'",
-        "timeout": 5
+        "command": "/usr/bin/python3 ./scripts/tone-injector.py",
+        "timeout": 10
       }
     ],
     "PreToolUse": [
