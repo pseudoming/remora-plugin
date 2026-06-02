@@ -11,9 +11,25 @@ Remora Memory Compactor V2.1
 """
 import json, time, subprocess, sqlite3, os, sys, random, signal, argparse, hashlib, re
 
-DATA_DIR = os.environ.get(
-    "ANTIGRAVITY_EXECUTABLE_DATA_DIR",
-    os.path.join(os.path.dirname(__file__), "data"))
+def _get_data_dir():
+    # 优先从环境变量读取
+    env_path = os.environ.get("ANTIGRAVITY_EXECUTABLE_DATA_DIR")
+    if env_path:
+        return env_path
+        
+    # 从自身出发向后回溯定位 .gemini 宿主持久化路径
+    current_dir = os.path.abspath(os.path.dirname(__file__))
+    parts = current_dir.split(os.sep)
+    if ".gemini" in parts:
+        idx = parts.index(".gemini")
+        gemini_root = os.sep.join(parts[:idx + 1])
+        # 目标持久化路径
+        return os.path.join(gemini_root, "sidecar_data/remora-plugin/memory-compactor/data")
+    else:
+        # 降级退化到同级 data 目录
+        return os.path.join(current_dir, "data")
+
+DATA_DIR = _get_data_dir()
 DB_PATH = os.path.join(DATA_DIR, "remora_memory.db")
 SCHEMA_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "scripts", "schema.sql")

@@ -58,7 +58,6 @@ def get_physical_modifications(cwd, transcript_path):
     try:
         conv_dir = Path(transcript_path).parent.parent.parent
         scratch_dir = conv_dir / 'scratch'
-        artifacts_dir = conv_dir / 'artifacts'
         snapshot_file = scratch_dir / 'remora_pre_snapshot.json'
         
         pre_snapshot = {}
@@ -67,13 +66,7 @@ def get_physical_modifications(cwd, transcript_path):
                 pre_snapshot = json.load(f)
                 
         post_snapshot = get_snapshot(cwd)
-        if artifacts_dir.exists():
-            try:
-                artifacts_snapshot = get_snapshot(str(artifacts_dir))
-                post_snapshot.update(artifacts_snapshot)
-            except Exception:
-                pass
-                
+        
         modified_files = set()
         for fpath, post_st in post_snapshot.items():
             if fpath not in pre_snapshot:
@@ -83,14 +76,20 @@ def get_physical_modifications(cwd, transcript_path):
                 if post_st['mtime'] != pre_st['mtime'] or post_st['size'] != pre_st['size']:
                     modified_files.add(os.path.basename(fpath))
                     
+        if snapshot_file.exists():
+            try:
+                os.remove(snapshot_file)
+            except Exception:
+                pass
+                
         return modified_files
     except Exception:
         return set()
 
-def get_latest_conversation_states(transcript_path):
+def get_latest_conversation_states(transcript_path, initial_num_steps=0):
     """
     流式读取 transcript.jsonl 末尾数据，
-    提取出最近一次大模型的 PLANNER_RESPONSE 陈述文本以及本次整个交互回合中的物理写入工具调用。
+    提取出最近一次大模型的 PLANNER_RESPONSE 陈述文本以及本次 Invocation 中的物理写入工具调用。
     """
     planner_text = None
     actual_modified_files = set()
@@ -104,41 +103,32 @@ def get_latest_conversation_states(transcript_path):
         output = subprocess.check_output(['tail', '-n', '1000', transcript_path], stderr=subprocess.STDOUT)
         lines = output.decode('utf-8').strip().split('\n')
         
-        # 1. 寻找最近一个用户输入的 step_index
-        user_input_index = None
-        for line in reversed(lines):
-            if not line.strip():
-                continue
-            try:
-                step = json.loads(line)
-                if step.get('type') == 'USER_INPUT' or step.get('source') in ['USER', 'USER_EXPLICIT']:
-                    user_input_index = step.get('step_index')
-                    break
-            except Exception:
-                continue
-        
-        # 2. 逆序向前分析最近一次交互回合的内容
+        # 逆序向前分析最近一次 Invocation 的内容
         for line in reversed(lines):
             if not line.strip():
                 continue
             try:
                 step = json.loads(line)
                 step_type = step.get('type')
+                source = step.get('source')
                 step_index = step.get('step_index')
                 
-                # 如果有用户输入的起点，只回溯到该用户输入步骤为止
-                if user_input_index is not None and step_index is not None and step_index < user_input_index:
+                # 【Bug C 修复核心】：强水位线截断。只要遇到在此轮交互启动之前的步骤，立即停止回溯。
+                if initial_num_steps > 0 and step_index is not None and step_index <= initial_num_steps:
+                    break
+                
+                # 遇到真实用户的输入，代表上一个完整的交互回合结束，停止回溯
+                if step_type == 'USER_INPUT' or source in ['USER', 'USER_EXPLICIT']:
                     break
                     
                 tool_calls = step.get('tool_calls', [])
                 if tool_calls:
                     has_any_tool_calls = True
                     
-                # 只有当 content 存在且不为空时才抓取作为 planner_text
+                # 【Bug B 修复核心】：严格锁定距离当前最近的第一次 PLANNER_RESPONSE
+                # 即便当前回合的大模型输出为空文本，也绝不向后透传抓取历史回合的文本，彻底阻断跨回合时序污染
                 if step_type == 'PLANNER_RESPONSE' and planner_text is None:
-                    content = step.get('content', '')
-                    if content:
-                        planner_text = content
+                    planner_text = step.get('content', '')
                     
                 # 从工具调用列表中，提取原生写入工具
                 if tool_calls:
@@ -189,7 +179,8 @@ def main():
         print(json.dumps({"injectSteps": [], "terminationBehavior": ""}))
         return
 
-    planner_text, actual_tool_files, has_any_tool_calls = get_latest_conversation_states(transcript_path)
+    initial_num_steps = context.get('initialNumSteps', 0)
+    planner_text, actual_tool_files, has_any_tool_calls = get_latest_conversation_states(transcript_path, initial_num_steps)
     physical_files = get_physical_modifications(cwd, transcript_path)
     
     # 事实基座 = (解析 transcript 得到的工具调用文件集) U (物理增量比对得出的文件集)
@@ -247,15 +238,7 @@ def main():
             "terminationBehavior": "force_continue"
         }))
     else:
-        # 无虚报，默认放行终止，并在放行时物理删除快照以闭环
-        try:
-            conv_dir = Path(transcript_path).parent.parent.parent
-            scratch_dir = conv_dir / 'scratch'
-            snapshot_file = scratch_dir / 'remora_pre_snapshot.json'
-            if snapshot_file.exists():
-                os.remove(snapshot_file)
-        except Exception:
-            pass
+        # 无虚报，默认放行终止
         print(json.dumps({"injectSteps": [], "terminationBehavior": ""}))
 
 if __name__ == "__main__":
