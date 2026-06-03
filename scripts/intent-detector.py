@@ -83,13 +83,22 @@ def main():
             import subprocess
             output = subprocess.check_output(['tail', '-n', '50', transcript_path], stderr=subprocess.STDOUT)
             lines = output.decode('utf-8').strip().split('\n')
+            
+            # 检测是否为新回合启动 (最后一条有效实体必须是 USER_INPUT)
+            is_new_turn = False
             for line in reversed(lines):
                 if not line.strip(): continue
                 try:
                     step = json.loads(line)
-                    if step.get('type') == 'USER_INPUT':
+                    # 剥除系统静默消息，定位真实交互 Step
+                    step_type = step.get('type')
+                    if step_type in ['EPHEMERAL_MESSAGE', 'SYSTEM_MESSAGE', 'ERROR_MESSAGE']:
+                        continue
+                    
+                    if step_type == 'USER_INPUT':
+                        is_new_turn = True
                         last_msg = step.get('content', '')
-                        break
+                    break
                 except Exception:
                     continue
         except Exception:
@@ -179,6 +188,37 @@ def main():
         inject_steps.append({
             "ephemeralMessage": f"<system-reminder>{confidence_warning}\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING. Execute `bash {script_path} \"YOUR_KEYWORD\"` to retrieve facts from warm storage.\n</system-reminder>"
         })
+
+    # ==========================================
+    # 设计原理五：View File 累加器与主干上下文防腐 (Anti-Context-Rot) 软阻断
+    # ==========================================
+    try:
+        import fcntl
+        os.makedirs("/tmp/remora_view_file_stats", exist_ok=True)
+        stats_file = f"/tmp/remora_view_file_stats/{conv_id}.json"
+        
+        # 新回合强制初始化与清零 (无需检查是否存在，保障状态干净)
+        if is_new_turn:
+            with open(stats_file, 'w') as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                json.dump({"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}, f)
+                fcntl.flock(f, fcntl.LOCK_UN)
+        
+        # 二级认知摩擦：检查是否软超标
+        if os.path.exists(stats_file):
+            with open(stats_file, 'r') as f:
+                stats = json.load(f)
+            
+            src_kb = stats.get("accumulated_source_bytes", 0) // 1024
+            data_kb = stats.get("accumulated_data_bytes", 0) // 1024
+            
+            if src_kb > 150 or data_kb > 50:
+                # 中文翻译：⚠️ [系统警告] 本回合累计读取已达软水位线。主干上下文窗口开始膨胀。若需执行大范围代码审阅，请委派 Remora_ReadOnly_Extractor 子代理提取结构化结论，以免冲淡自身核心注意力。
+                inject_steps.append({
+                    "ephemeralMessage": f"<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: {src_kb}KB, DATA: {data_kb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION.</system-reminder>"
+                })
+    except Exception as e:
+        pass
         
     print(json.dumps({"injectSteps": inject_steps}))
 

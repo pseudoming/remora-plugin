@@ -6,6 +6,7 @@ import shlex
 import base64
 import os
 import subprocess
+import fcntl
 
 # ##########################################################
 # AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)
@@ -45,6 +46,14 @@ import subprocess
 # 1. 元数据解析：通过从 `transcriptPath` 中切片提取出当前子会话的 ID，执行宿主官方 `agentapi get-conversation-metadata` 命令。
 # 2. 只读特工 `Remora_ReadOnly_Extractor` 限制：特许豁免 view_file 大体积日志读取限制；但对其命令行写、构建与测试指令做绝对强拦截保护。
 # 3. 沙盒特工 `Remora_Deep_Diver` 限制放行：特许豁免 view_file 日志体积熔断；且豁免其在分支沙盒内执行测试（test）或构建（build）命令的拦截。
+
+# ==========================================================
+# 设计原理五：View File 累加器与主干上下文防腐 (Anti-Context-Rot)
+# ==========================================================
+# 1. 回合级定宽累加器：在主干 (Main Context) 中追踪单一用户回合内对源码和日志的累积读取量，防止上下文因零散读取而慢速腐败。
+# 2. 三级硬阻断机制：当累加量突破绝对阈值 (Source>400KB 或 Data>150KB) 时，实施硬熔断阻断。
+# 3. O(1) 乘算估值策略：为防止 I/O 阻塞导致拦截器超时，采用行数 * 50 字节的快速常数估算，不进行磁盘全表扫描。
+# 4. 进程级资源锁：使用 fcntl.flock 控制读写竞态，确保安全应对大模型高并发的读文件调用。
 
 BASE64_WHITELIST = []
 
@@ -298,20 +307,71 @@ def main():
     if tool_name == "view_file":
         target_file = args.get('AbsolutePath', '')
         if target_file:
-            # 1. 敏感后缀拦截
+            # 1. 敏感后缀强力拦截 (大日志直接阻断)
             if target_file.endswith('.jsonl') or target_file.endswith('.log') or target_file.endswith('.sqlite'):
                 if not is_sub:
                     print(json.dumps({"decision": "deny", "reason": rot_reason}))
                     return
-            # 2. 体积熔断 (Relax 模式放宽至 200KB，Strict 模式 50KB)
-            size_limit = 200 * 1024 if mode == "relax" else 50 * 1024
-            try:
-                if os.path.exists(target_file) and os.path.getsize(target_file) > size_limit:
-                    if not is_sub:
-                        print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                        return
-            except Exception:
-                pass
+                    
+            # 2. 体积累加熔断机制 (针对单文件超大或碎片化堆叠)
+            if not is_sub and transcript_path:
+                match = re.search(r'/brain/([^/]+)/', transcript_path)
+                if match:
+                    # 单体文件突发超大拦截
+                    size_limit = 200 * 1024 if mode == "relax" else 50 * 1024
+                    try:
+                        if os.path.exists(target_file) and os.path.getsize(target_file) > size_limit:
+                            print(json.dumps({"decision": "deny", "reason": rot_reason}))
+                            return
+                    except Exception:
+                        pass
+
+                    conv_id = match.group(1)
+                    stats_file = f"/tmp/remora_view_file_stats/{conv_id}.json"
+                    
+                    is_data_log = target_file.endswith(('.jsonl', '.log', '.sqlite', '.csv'))
+                    inc_bytes = 0
+                    if os.path.exists(target_file):
+                        if 'StartLine' in args and 'EndLine' in args:
+                            inc_bytes = (int(args['EndLine']) - int(args['StartLine']) + 1) * 50
+                        else:
+                            inc_bytes = os.path.getsize(target_file)
+                    
+                    if inc_bytes > 0:
+                        try:
+                            # 创建目录（若无）并以可读写模式操作
+                            os.makedirs("/tmp/remora_view_file_stats", exist_ok=True)
+                            if not os.path.exists(stats_file):
+                                with open(stats_file, 'w') as f:
+                                    json.dump({"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}, f)
+                                    
+                            with open(stats_file, 'r+') as f:
+                                fcntl.flock(f, fcntl.LOCK_EX)
+                                stats = json.load(f)
+                                if is_data_log:
+                                    stats["accumulated_data_bytes"] += inc_bytes
+                                else:
+                                    stats["accumulated_source_bytes"] += inc_bytes
+                                
+                                # 三级硬性熔断
+                                if stats["accumulated_source_bytes"] > 400 * 1024 or stats["accumulated_data_bytes"] > 150 * 1024:
+                                    f.seek(0)
+                                    f.truncate()
+                                    json.dump(stats, f)
+                                    fcntl.flock(f, fcntl.LOCK_UN)
+                                    # 中文翻译：⛔ [安全拦截] 累积读取量触发严格阈值！主干上下文濒临腐败，当前操作已被强制阻断。请立即委派子代理！
+                                    print(json.dumps({
+                                        "decision": "deny", 
+                                        "reason": f"⛔ REMORA SAFETY INTERCEPT: CUMULATIVE READ LIMIT EXCEEDED (SOURCE: {stats['accumulated_source_bytes']//1024}KB, DATA: {stats['accumulated_data_bytes']//1024}KB). MAIN CONTEXT CORRUPTION IMMINENT. OPERATION BLOCKED. PLEASE DELEGATE TO A SUBAGENT!"
+                                    }))
+                                    return
+                                    
+                                f.seek(0)
+                                f.truncate()
+                                json.dump(stats, f)
+                                fcntl.flock(f, fcntl.LOCK_UN)
+                        except Exception as e:
+                            pass
         
         print(json.dumps({"decision": "allow"}))
         return
