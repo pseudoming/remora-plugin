@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import sys, json, re, os
+import sys, json, re, os, subprocess
 
 def _get_data_dir():
     env_path = os.environ.get("ANTIGRAVITY_EXECUTABLE_DATA_DIR")
@@ -61,7 +61,13 @@ def main():
     # 动态读取 transcript.jsonl 获取最后一条用户指令
     last_msg = ""
     transcript_path = context.get('transcriptPath')
+    heartbeat_lines = []
     if transcript_path and os.path.exists(transcript_path):
+        try:
+            output = subprocess.check_output(["tail", "-n", "300", transcript_path], stderr=subprocess.STDOUT)
+            heartbeat_lines = [line.strip() for line in output.decode('utf-8').strip().split('\n') if line.strip()]
+        except Exception:
+            pass
         # [废弃] 原始实现：使用 f.readlines() 加载整个文件。
         # [废弃原因]：随着长周期对话的进行，transcript.jsonl 达到数十 MB 时，readlines() 会将文件全量加载到内存中，
         #           每次对话前都会导致极高的内存突增与 1-3 秒的 CPU IO 阻塞，造成严重的交互延迟灾难。由于该脚本在
@@ -125,6 +131,106 @@ def main():
         
     inject_steps = []
     
+    # ==========================================
+    # 设计原理六：子代理创建的即时捕获与心跳断链续期状态机逻辑
+    # ==========================================
+    # 由于平台的 One-shot 计时器会在子代理发送任何中间进度同步消息时自动静默取消，
+    # 我们直接在 PreInvocation 阶段从 transcript.jsonl 中分析最新 UUID，并计算
+    # 子代理最近活动与最近一次 schedule 定时器的相对时序。若已被取消且模型未续期，
+    # 在上下文最前沿通过 injectSteps 注入强强制心跳指示。
+    subagent_uuid = None
+    seen_subagent = False
+    has_schedule_after = False
+    latest_subagent_activity_index = -1
+    latest_schedule_index = -1
+    subagent_finish_detected = False
+    
+    if transcript_path and os.path.exists(transcript_path):
+        try:
+            # Pass 1：提取最新的 subagent_uuid 以及 schedule 挂载状态
+            for idx, line in enumerate(reversed(heartbeat_lines)):
+                if not line.strip(): continue
+                step = json.loads(line)
+                step_type = step.get('type')
+                step_str = json.dumps(step)
+                
+                # 记录最新的 schedule 挂载，及 schedule 挂载判定（无论时序，只要同一轮且提及了 monitor 探活即可）
+                # 从主干的 schedule 参数里直接正则提取最新拉起的子代理 UUID，从根源杜绝文本投毒及类型缺失的问题
+                if step_type == 'PLANNER_RESPONSE' and step.get('tool_calls'):
+                    for tc in step.get('tool_calls', []):
+                        if tc.get('name') == 'schedule':
+                            args_str = json.dumps(tc.get('args', tc.get('arguments', {})))
+                            if latest_schedule_index == -1:
+                                latest_schedule_index = idx
+                                if "subagent-monitor.py" in args_str:
+                                    has_schedule_after = True
+                                else:
+                                    has_schedule_after = False
+                            
+                            if not subagent_uuid and "subagent-monitor.py" in args_str:
+                                cid_matches = re.findall(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', args_str, re.I)
+                                for uid in cid_matches:
+                                    if uid != conv_id and uid != "11111111-1111-1111-1111-111111111111":
+                                        subagent_uuid = uid
+                                        seen_subagent = True
+                                        break
+                            break
+                
+                # 判断子代理是否已被主动清理完成 (时序边界：模型发起清理，或物理回执明确包含 Successfully killed)
+                # 注意：必须严格限定为 GENERIC 回执或 manage_subagents 调用，杜绝大模型在 thinking 字段的文本讨论触发假阳性
+                if not seen_subagent:
+                    is_kill_command = False
+                    if step_type == 'PLANNER_RESPONSE' and step.get('tool_calls'):
+                        for tc in step.get('tool_calls', []):
+                            if tc.get('name') == 'manage_subagents':
+                                args = tc.get('args', tc.get('arguments', {}))
+                                if str(args.get('Action', '')).strip('"') in ['kill', 'kill_all']:
+                                    is_kill_command = True
+                                    break
+                    is_system_confirm = step_type == 'GENERIC' and step.get('content') and isinstance(step['content'], str) and ('Successfully killed' in step['content'] or 'Terminated subagent' in step['content'])
+                    if is_kill_command or is_system_confirm:
+                        subagent_finish_detected = True
+                        
+            # Pass 2：在 subagent_uuid 提取成功后，以该特定 ID 进行精准活跃检测，排除其它 UUID 及主干物理工具调用输出的噪声干扰
+            if subagent_uuid and not subagent_finish_detected:
+                for idx, line in enumerate(reversed(heartbeat_lines)):
+                    if not line.strip(): continue
+                    step = json.loads(line)
+                    step_type = step.get('type')
+                    step_str = json.dumps(step)
+                    
+                    # 彻底放宽拦截类型捕获各种格式的消息体，但严格排除系统自身的大型历史汇总记录（防止几百回合前的 UUID 印在当前最新行引发假活跃）
+                    if step_type not in ["CONVERSATION_HISTORY", "CHECKPOINT"]:
+                        # 精确匹配本子代理的活跃，且排除主会话自己物理命令/文件读写/子特工状态查询所产生的带有 UUID 的输出干扰
+                        if subagent_uuid in step_str and not any(cmd in step_str for cmd in ["run_command", "view_file", "grep_search", "manage_subagents"]):
+                            latest_subagent_activity_index = idx
+                            break
+                            
+            # 正常退出自动物理清除重试计数缓存 (澄清：由于大模型调用 subagent-monitor 时强制传入的 {conv_id} 就是主会话 ID，因此 monitor 内部写入的 parent_conv_id 与此处拦截脚本读取的 conv_id 在物理上是完全同一键值，清理路径严格对齐，无歧义)
+            if subagent_finish_detected:
+                try:
+                    retry_file = f"/tmp/remora_subagent_retries/{conv_id}.json"
+                    if os.path.exists(retry_file):
+                        os.remove(retry_file)
+                except:
+                    pass
+        except Exception:
+            pass
+
+    # 逆序索引越小时间越近。若子代理活动比最新的定时器更近，代表 timer 已经被该中间消息自动静默取消了
+    is_timer_canceled = (latest_subagent_activity_index != -1 and 
+                         (latest_schedule_index == -1 or latest_subagent_activity_index < latest_schedule_index))
+                         
+    if subagent_uuid and not subagent_finish_detected and (not has_schedule_after or is_timer_canceled):
+        inject_steps.append({
+            "ephemeralMessage": (
+                "<system-reminder>\n"
+                f"Subagent {subagent_uuid} is currently running WITHOUT a heartbeat timer. Call schedule NOW. "
+                f"schedule(DurationSeconds=\"30\", Prompt=\"30s timeout for subagent {subagent_uuid}. Run: python3 ~/.gemini/config/plugins/remora-plugin/scripts/subagent-monitor.py {subagent_uuid} {conv_id}\")\n"
+                "</system-reminder>"
+            )
+        })
+
     # 幽灵报喜（只在刚完成初始化的那一回合生效）
     if initialized:
         inject_steps.append({
@@ -213,9 +319,9 @@ def main():
             data_kb = stats.get("accumulated_data_bytes", 0) // 1024
             
             if src_kb > 150 or data_kb > 50:
-                # 中文翻译：⚠️ [系统警告] 本回合累计读取已达软水位线。主干上下文窗口开始膨胀。若需执行大范围代码审阅，请委派 Remora_ReadOnly_Extractor 子代理提取结构化结论，以免冲淡自身核心注意力。
+                # 中文翻译：⚠️ [系统警告] 本回合累计读取已达软水位线。主干上下文窗口开始膨胀。若需执行大范围代码审阅，请委派 Remora_ReadOnly_Extractor 子代理提取结构化结论，以免冲淡自身核心注意力。重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
                 inject_steps.append({
-                    "ephemeralMessage": f"<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: {src_kb}KB, DATA: {data_kb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION.</system-reminder>"
+                    "ephemeralMessage": f"<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: {src_kb}KB, DATA: {data_kb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION. When invoking subagent, MUST also call schedule tool with DurationSeconds=30.</system-reminder>"
                 })
     except Exception as e:
         pass

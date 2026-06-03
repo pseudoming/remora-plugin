@@ -359,10 +359,10 @@ def main():
                                     f.truncate()
                                     json.dump(stats, f)
                                     fcntl.flock(f, fcntl.LOCK_UN)
-                                    # 中文翻译：⛔ [安全拦截] 累积读取量触发严格阈值！主干上下文濒临腐败，当前操作已被强制阻断。请立即委派子代理！
+                                    # 中文翻译：⛔ [安全拦截] 累积读取量触发严格阈值！主干上下文濒临腐败，当前操作已被强制阻断。请立即委派子代理！重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
                                     print(json.dumps({
                                         "decision": "deny", 
-                                        "reason": f"⛔ REMORA SAFETY INTERCEPT: CUMULATIVE READ LIMIT EXCEEDED (SOURCE: {stats['accumulated_source_bytes']//1024}KB, DATA: {stats['accumulated_data_bytes']//1024}KB). MAIN CONTEXT CORRUPTION IMMINENT. OPERATION BLOCKED. PLEASE DELEGATE TO A SUBAGENT!"
+                                        "reason": f"⛔ REMORA SAFETY INTERCEPT: CUMULATIVE READ LIMIT EXCEEDED (SOURCE: {stats['accumulated_source_bytes']//1024}KB, DATA: {stats['accumulated_data_bytes']//1024}KB). MAIN CONTEXT CORRUPTION IMMINENT. OPERATION BLOCKED. PLEASE DELEGATE TO A SUBAGENT! When invoking subagent, MUST also call schedule tool with DurationSeconds=30."
                                     }))
                                     return
                                     
