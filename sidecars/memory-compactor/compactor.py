@@ -93,6 +93,21 @@ def init_db():
         except sqlite3.OperationalError:
             conn.execute("ALTER TABLE topic_decisions ADD COLUMN created_at_line INTEGER DEFAULT 0")
 
+        # Schema 动态迁移升级防线二：如果 user_confirmed 字段不存在，自动 Alter Table 动态加入该列
+        try:
+            conn.execute("SELECT user_confirmed FROM topic_decisions LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE topic_decisions ADD COLUMN user_confirmed INTEGER DEFAULT 0")
+
+def format_timestamp(ts_str):
+    """
+    统一时间戳为 SQLite 标准 'YYYY-MM-DD HH:MM:SS' 字符串，以消除类型与格式失配 bug
+    """
+    if not ts_str:
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
+    ts_str = ts_str.replace('T', ' ').replace('Z', '')
+    return ts_str[:19]
+
 
 def prune_expired_watermarks():
     # ##########################################################
@@ -188,8 +203,7 @@ def get_active_conversations():
 
 
 def extract_key_content(transcript_path, start_line):
-    """按行解析 JSONL，只提取 USER_INPUT 和 PLANNER_RESPONSE 的核心内容
-    避免含大量冗余的 tool call 数据，防止 JSON 截断"""
+    """按行解析 JSONL，只提取 USER_INPUT 和 PLANNER_RESPONSE 的核心内容并附带物理行号"""
     key_content = []
     current_line = 0
     total_length = 0
@@ -205,9 +219,9 @@ def extract_key_content(transcript_path, start_line):
                 content = obj.get('content', '')
                 if not content:
                     continue
-                # 只提取用户输入和 AI 最终产出，跳过 tool calls、系统消息
+                # 注入 [line_xxx] 前缀以向 LLM 物理透传行号，保障证据精准回链
                 if step_type in ('USER_INPUT', 'PLANNER_RESPONSE'):
-                    snippet = content[:500]  # 每条最多 500 字
+                    snippet = f"[line_{current_line}] {content[:500]}"
                     key_content.append(snippet)
                     total_length += len(snippet)
                     if total_length >= MAX_PROMPT_LENGTH:
@@ -261,7 +275,7 @@ def read_incremental_logs(conn, session):
                     conn.execute(
                         "INSERT OR IGNORE INTO messages (conversation_id, line_number, timestamp, role, content) VALUES (?, ?, ?, ?, ?)",
                         (session['conversation_id'], current_line,
-                         log_obj.get('timestamp', ''), log_obj.get('source', ''),
+                         format_timestamp(log_obj.get('timestamp', '')), log_obj.get('source', ''),
                          log_obj.get('content', '')))
                 except Exception:
                     pass
@@ -295,6 +309,14 @@ def read_incremental_logs(conn, session):
         conn.execute(
             "DELETE FROM topic_decisions WHERE conversation_id=? AND created_at_line > ?",
             (session['conversation_id'], target_rollback_line))
+        # 撤销事件一致性大扫除：若发生 Undo 回滚，一并清空事件队列中该项目未消费的 pending 事件，防范跨 Undo 误打标
+        conn.execute(
+            "DELETE FROM remora_event_queue WHERE project_uuid=? AND status='pending'",
+            (session['project_uuid'],))
+        # 物理水位线同步回滚更新：确保即使程序在后续阶段崩溃，自愈后的水位线也能在数据库中持久化
+        conn.execute(
+            "UPDATE watermarks SET last_line_processed=? WHERE project_uuid=? AND conversation_id=?",
+            (target_rollback_line, session['project_uuid'], session['conversation_id']))
             
         # 中文翻译：[Remora] 检测到会话 Undo 回滚，温存储已自愈水位线至行号: {target_rollback_line}
         print(f"[Remora] 检测到会话 Undo 回滚，温存储已自愈水位线至行号: {target_rollback_line}")
@@ -428,10 +450,11 @@ def process_logs():
             # 4. 采用更鲁棒的正则截取 JSON 结构，免受前后纯文本时间戳的解析干扰。
             current_time_str = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())
 
-            # 中文翻译：[系统约束] 这是一个无状态的提取任务。下面提供的对话日志与此会话中先前处理的任何日志完全无关。你必须完全忽略此对话历史中的所有先前主题、决定和上下文。仅根据下面提供的新日志提取 ADR。你必须在 JSON markdown 块的前一行输出该确切的时间戳（不要把它放进 markdown 代码块内）：[Sync Finished: {current_time_str}]。你是一个专业的架构决策记录（ADR）提取器。分析以下对话片段并提取所有核心话题...
+            # 中文翻译：[系统约束] 这是一个无状态的提取任务。在每行日志的开头有类似于 [line_123] 的前缀，它指代了该行的物理行号。你必须在 JSON 的 evidence_msg_ids 中返回支撑该决策的具体行号范围的整数数组（例如 [123, 124]），严禁返回空数组 []。如果在 MODEL 回复中包含了明确的自我纠偏、赞同并采纳用户提议（如“纠正错误/偏差”、“赞同该提议”、“已采纳该设计”），你必须在 decision 结构体中输出 "user_confirmed": true 字段。你必须在 JSON markdown 块的前一行输出该确切的时间戳：[Sync Finished: {current_time_str}]。
             prompt = f"""[SYSTEM CONSTRAINT]
 This is a stateless extraction task. The conversation logs provided below are completely independent of any previous messages in this session.
 You MUST ignore all previous contexts, topics, and decisions in this conversation history. Extract ADRs ONLY based on the new logs provided below.
+Each line of the log is prefixed with its physical line number, e.g. [line_123]. You MUST reference these numbers.
 
 You MUST output this exact timestamp on the first line before your JSON markdown block (do NOT put it inside the markdown code block):
 [Sync Finished: {current_time_str}]
@@ -439,7 +462,9 @@ You MUST output this exact timestamp on the first line before your JSON markdown
 You are an expert Architecture Decision Record (ADR) extractor.
 Analyze the following conversation snippets and extract all key topics.
 You MUST output ONLY a valid JSON object with this structure:
-{{"topics": [{{"topic_id": "t_001", "summary": "...", "decisions": [{{"decision": "...", "rationale": "...", "evidence_msg_ids": []}}]}}]}}
+{{"topics": [{{"topic_id": "t_001", "summary": "...", "decisions": [{{"decision": "...", "rationale": "...", "evidence_msg_ids": [123, 125], "user_confirmed": false}}]}}]}}
+Note: evidence_msg_ids MUST NOT be empty. Fill it with the actual line numbers from [line_XXXX] prefixes that justify the decision.
+Note: If the MODEL output shows clear self-correction, agreement, or adoption of user's proposal, set "user_confirmed": true.
 If no significant topics, output: {{"topics": []}}
 
 [CONVERSATION]
@@ -474,14 +499,16 @@ If no significant topics, output: {{"topics": []}}
                          t.get('summary', ''), t.get('summary', '')))
 
                     for d in t.get("decisions", []):
+                        user_confirmed_val = 1 if d.get("user_confirmed", False) else 0
                         conn.execute(
                             """INSERT INTO topic_decisions
-                               (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, created_at_line)
-                               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                               (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, created_at_line)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                             (session['project_uuid'], t.get('topic_id', ''),
                              session['conversation_id'], d.get('decision', ''),
                              d.get('rationale', ''),
                              json.dumps(d.get('evidence_msg_ids', [])),
+                             user_confirmed_val,
                              current_line))
             except json.JSONDecodeError:
                 pass
@@ -574,9 +601,139 @@ def scan_and_ingest_artifacts(context):
                    VALUES (?, ?, 'closed', ?, ?)""",
                 (project_uuid, "artifact_topic", f"Consolidated architecture decisions from {filename}", f"Artifact: {filename}"))
                 
+            # [P0] 极速无感写入事件队列，解决 Hook 挂接大模型延迟问题
+            if filename == "implementation_plan.md":
+                conn.commit()
+                continue # Plan 审批由 check_plan_approval() 独立管线处理
+            event_type = f"{filename.split('.')[0]}_sync" # walkthrough_sync 或 task_sync
+            conn.execute(
+                "INSERT INTO remora_event_queue (project_uuid, event_type, payload) VALUES (?, ?, ?)",
+                (project_uuid, event_type, content))
+                
             conn.commit()
             # 中文翻译：[Remora] 成功同步制品记忆: {filename}
             print(f"[Remora] 成功同步制品记忆: {filename}")
+
+def check_plan_approval(conn, project_uuid):
+    """
+    [P0] Plan 审批判定窗口扫描 (手术刀精准化改造)
+    不再直接执行 blanket UPDATE 造成旧决策污染性锁定。
+    改为：识别到审批信号后，极速向 remora_event_queue INSERT 对应 plan_approval_sync 事件，
+    将其并入事件消费管线，通过 LLM 进行高精度的「审批消息 + Plan 原文 -> 待确认 Decisions」映射。
+    """
+    # 1. 查找 implementation_plan.md 最后哈希变更时间
+    cursor = conn.execute(
+        "SELECT last_updated FROM artifact_hashes WHERE file_path LIKE '%implementation_plan.md' LIMIT 1"
+    )
+    row = cursor.fetchone()
+    if not row:
+        return
+    t_plan_change = row[0]
+
+    # 2. 拉取此时间点之后的全部用户输入消息
+    cursor = conn.execute(
+        "SELECT content FROM messages WHERE timestamp > ? AND role IN ('USER', 'USER_INPUT', 'USER_EXPLICIT')", (t_plan_change,)
+    )
+    user_messages = [r[0] for r in cursor.fetchall()]
+
+    # 3. 加权关键词扫描
+    approval_keywords = ["同意", "执行吧", "批准", "启动吧", "开始执行", "可以执行", "没问题", "approve", "confirm"]
+    has_approval = False
+    for msg in user_messages:
+        if any(kw in msg for kw in approval_keywords):
+            if not re.search(r'(不|拒绝|拒绝执行)\s*(' + '|'.join(approval_keywords) + ')', msg):
+                has_approval = True
+                break
+
+    # 4. 生成 plan_approval_sync 事件，交付事件消费管线统一精准匹配
+    if has_approval:
+        # 获取 Plan 的最新原文
+        cursor = conn.execute(
+            "SELECT content FROM messages WHERE conversation_id = ? AND role = 'implementation_plan.md' LIMIT 1",
+            (f"artifact_sync_{project_uuid}",)
+        )
+        plan_content_row = cursor.fetchone()
+        plan_content = plan_content_row[0] if plan_content_row else ""
+        
+        payload_data = {
+            "user_approval_context": "\n".join(user_messages),
+            "plan_content": plan_content
+        }
+        
+        # 极速写入事件队列，解决霰弹枪误打标
+        conn.execute(
+            "INSERT INTO remora_event_queue (project_uuid, event_type, payload) VALUES (?, ?, ?)",
+            (project_uuid, "plan_approval_sync", json.dumps(payload_data))
+        )
+        conn.commit()
+        print(f"[Remora] 探测到项目 {project_uuid} 用户审批信号，已向事件队列抛入 plan_approval_sync。")
+
+def consume_event_queue(conn, start_time):
+    """
+    [P0] 核心打标消费管线 (带超限熔断保护)
+    """
+    cursor = conn.execute(
+        "SELECT id, project_uuid, event_type, payload FROM remora_event_queue WHERE status = 'pending' ORDER BY id ASC"
+    )
+    events = cursor.fetchall()
+    if not events:
+        return
+
+    for event_id, project_uuid, event_type, payload in events:
+        # 提取待确认的老决策集 (引入 LIMIT 30 限制，防爆仓与超时熔断)
+        cursor = conn.execute(
+            "SELECT id, decision, rationale FROM topic_decisions WHERE project_uuid = ? AND user_confirmed = 0 ORDER BY id DESC LIMIT 30",
+            (project_uuid,)
+        )
+        pending_decisions = [{"id": r[0], "decision": r[1], "rationale": r[2]} for r in cursor.fetchall()]
+        
+        if not pending_decisions:
+            conn.execute("UPDATE remora_event_queue SET status = 'processed' WHERE id = ?", (event_id,))
+            conn.commit()
+            continue
+
+        # AI 精准映射匹配
+        prompt = f"""[SYSTEM CONSTRAINT]
+You are a precise Architecture Decision Validator.
+We have a list of pending decisions that need user confirmation.
+Your task is to analyze the synchronization payload ({event_type}) provided below and determine which pending decisions have been successfully implemented or explicitly approved.
+
+Pending Decisions to Validate:
+{json.dumps(pending_decisions, ensure_ascii=False, indent=2)}
+
+Sync Event Payload:
+{payload}
+
+You MUST output ONLY a valid JSON object listing the IDs of decisions that are confirmed:
+{{"confirmed_ids": [12, 15]}}
+If none match, return: {{"confirmed_ids": []}}
+"""
+        # [P1] 熔断保护升级：在发起耗时 LLM 调用前检查时间预算，预留 30s 缓冲防止击穿 300s
+        if time.time() - start_time > 270:
+            print("[Remora] 临界超时熔断，剩余事件留待下轮处理。", file=sys.stderr)
+            break
+
+        try:
+            llm_output = get_or_create_conversation(prompt)
+            json_match = re.search(r'({.*})', llm_output, re.DOTALL)
+            if json_match:
+                result_data = json.loads(json_match.group(1).strip())
+                confirmed_ids = result_data.get("confirmed_ids", [])
+                for d_id in confirmed_ids:
+                    conn.execute(
+                        "UPDATE topic_decisions SET user_confirmed = 1 WHERE id = ? AND project_uuid = ?",
+                        (d_id, project_uuid)
+                    )
+                print(f"[Remora] 事件 {event_id} ({event_type}) 消费成功，已将决策集 {confirmed_ids} 打标锁定。")
+        except AgentApiError:
+            raise
+        except Exception as e:
+            print(f"[Remora] 消费事件 {event_id} 发生异常: {str(e)}", file=sys.stderr)
+            conn.commit()
+            continue
+            
+        conn.execute("UPDATE remora_event_queue SET status = 'processed' WHERE id = ?", (event_id,))
+        conn.commit()
 
 def main():
     # 中文翻译：Remora 内存压缩器 V2.2
@@ -597,11 +754,19 @@ def main():
         except Exception:
             pass
     else:
-        # 默认或 --cron 阶段一 the 后台增量对话扫描，长耗时，必须文件锁保护
+        # 默认或 --cron 阶段的后台增量对话扫描，长耗时，必须文件锁保护
         acquire_lock()
+        cycle_start = time.time()
         try:
             prune_expired_watermarks()
             process_logs()
+            
+            # [P0] 串行保序：前置 decisions 提取 commit 之后，立即执行 Plan 审批拦截与事件队列 AI 精确匹配
+            with sqlite3.connect(DB_PATH) as conn:
+                active_projects = [row[0] for row in conn.execute("SELECT DISTINCT uuid FROM project_topics").fetchall()]
+                for p_uuid in active_projects:
+                    check_plan_approval(conn, p_uuid)
+                consume_event_queue(conn, cycle_start)
         except AgentApiError as e:
             # 中文翻译：进程锁或者 agentapi 调用失败，放弃执行。
             print(str(e), file=sys.stderr)

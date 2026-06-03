@@ -10,6 +10,16 @@ def main():
     # 0. 环境自愈
     initialized = remora_init.init_environment()
     
+    # 物理缓存 LS API 凭据以解决子代理在 Hook 沙盒中缺乏鉴权环境变量的问题
+    ls_addr = os.environ.get("ANTIGRAVITY_LS_ADDRESS")
+    csrf_token = os.environ.get("ANTIGRAVITY_CSRF_TOKEN")
+    if ls_addr and csrf_token:
+        try:
+            with open("/tmp/remora_agent_env.json", "w", encoding="utf-8") as ef:
+                json.dump({"ANTIGRAVITY_LS_ADDRESS": ls_addr, "ANTIGRAVITY_CSRF_TOKEN": csrf_token}, ef)
+        except:
+            pass
+            
     context = json.load(sys.stdin)
     
     # 动态读取 transcript.jsonl 获取最后一条用户指令

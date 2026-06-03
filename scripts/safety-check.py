@@ -200,9 +200,19 @@ def get_subagent_type(transcript_path):
     conv_id = match.group(1)
     
     try:
+        # 物理注入缓存的 LS 凭据，防止 Sandbox Hook 执行时由于缺少环境变量导致鉴权失败返回 1
+        env = dict(os.environ)
+        if os.path.exists("/tmp/remora_agent_env.json"):
+            try:
+                with open("/tmp/remora_agent_env.json", "r", encoding="utf-8") as ef:
+                    cached_env = json.load(ef)
+                    env.update(cached_env)
+            except:
+                pass
+                
         # 使用官方 agentapi get-conversation-metadata 获取会话元数据
         cmd = ["/home/agent/.gemini/antigravity/bin/agentapi", "get-conversation-metadata", conv_id]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
         if res.returncode == 0:
             data = json.loads(res.stdout)
             metadata = data.get("response", {}).get("conversationMetadata", {}).get("metadata", {})
@@ -210,8 +220,12 @@ def get_subagent_type(transcript_path):
             if not parent_id:
                 return None
             return metadata.get("subagentSpec", {}).get("typeName")
-    except Exception:
-        pass
+        else:
+            with open("/tmp/remora_hook_debug.txt", "a", encoding="utf-8") as df:
+                df.write(f"[remora] agentapi returncode={res.returncode}, stderr={res.stderr}\n")
+    except Exception as e:
+        with open("/tmp/remora_hook_debug.txt", "a", encoding="utf-8") as df:
+            df.write(f"[remora] agentapi exception: {str(e)}\n")
     return None
 
 def main():

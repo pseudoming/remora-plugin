@@ -21,10 +21,22 @@ CREATE TABLE IF NOT EXISTS topic_decisions (
     decision TEXT NOT NULL,               -- 做出的核心架构或实现决策
     rationale TEXT NOT NULL,              -- 做出该决策的深层原因（为什么做，或者为什么不做）
     evidence_msg_ids TEXT,                -- JSON 数组格式的 transcript.jsonl message_id（用于温存储防篡改溯源）
+    user_confirmed INTEGER DEFAULT 0,     -- 用户是否已物理确认（1 为确认，100% 压缩强保留）
     created_at_line INTEGER DEFAULT 0,    -- 产生该决策时会话的物理行号，用于实现 Undo 回滚时的精准撤销清理
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     FOREIGN KEY(project_uuid, topic_id) REFERENCES project_topics(uuid, topic_id)
 );
+
+-- [P0] 物理事件同步队列表，包含多项目隔离的 project_uuid
+CREATE TABLE IF NOT EXISTS remora_event_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_uuid TEXT NOT NULL,           -- 多项目租户物理隔离标识
+    event_type TEXT NOT NULL,             -- 事件类型：walkthrough_sync, task_sync, plan_approval_sync 等
+    payload TEXT,                         -- JSON 格式或文本载荷，如制品变更原文
+    status TEXT DEFAULT 'pending',        -- 状态：pending（待处理）, processed（已消费）
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
 -- [P0] 核心防守型温存储表与全文索引
 CREATE TABLE IF NOT EXISTS messages (
