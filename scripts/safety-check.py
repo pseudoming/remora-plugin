@@ -73,6 +73,18 @@ def get_subagent_type(transcript_path):
     except Exception as e:
         with open("/tmp/remora_hook_debug.txt", "a", encoding="utf-8") as df:
             df.write(f"[remora] agentapi exception: {str(e)}\n")
+
+    # ==========================================
+    # 兜底死锁防护：如果进程查询失败/超时，但可确定该日志属于子会话，则特许升级为 is_sub = True
+    # ==========================================
+    try:
+        if os.path.exists("/tmp/remora_main_conv_id.txt"):
+            with open("/tmp/remora_main_conv_id.txt", "r") as f:
+                main_id = f.read().strip()
+                if main_id and conv_id != main_id:
+                    return "Remora_Subagent_Fallback"
+    except:
+        pass
     return None
 
 @hook_entrypoint(fallback_result={"decision": "allow"})
@@ -118,6 +130,16 @@ def main(context):
         for sub in subagents:
             t_name = sub.get('TypeName', '')
             ws = sub.get('Workspace', 'inherit')
+            prompt_str = sub.get('Prompt', '')
+
+            # 增加 1500 字符强限拦截（底线防崩拦截座）
+            if len(prompt_str) > 1500:
+                # 中文翻译：[子任务负载拦截] 指派给子代理的 Prompt 长度为 {len} 字符，已突破 1500 字符硬限。请做任务拆细与精炼描述！
+                return {
+                    "decision": "deny",
+                    "reason": f"REMORA PAYLOAD ENFORCEMENT: Subagent Prompt length ({len(prompt_str)} chars) exceeds 1500 limit. Please partition the task and simplify the description."
+                }
+
             if t_name == "Remora_Deep_Diver" and ws not in ['branch', 'share']:
                 # 中文翻译：[沙盒强制隔离] 'Remora_Deep_Diver' 必须通过 Workspace='branch' 或 'share' 在隔离环境中调用。禁止在主工作区直接执行以防污染！
                 return {
@@ -134,7 +156,9 @@ def main(context):
         if target_file:
             # 1. 敏感后缀强力拦截 (大日志直接阻断)
             if target_file.endswith('.jsonl') or target_file.endswith('.log') or target_file.endswith('.sqlite'):
-                if not is_sub:
+                if is_readonly_sub:
+                    pass  # 只读特工大日志读取显式放行
+                elif not is_sub:
                     return {"decision": "deny", "reason": rot_reason}
                     
             # 2. 体积累加熔断机制 (针对单文件超大或碎片化堆叠)

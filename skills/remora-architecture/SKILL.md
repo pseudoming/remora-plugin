@@ -29,11 +29,15 @@ You MUST proactively use the `run_command` tool to execute the official retrieva
   * **Read-Only Log Analysis / Evidence Retrieval / DB Query**: Use `invoke_subagent` with `TypeName: "Remora_ReadOnly_Extractor"` and `Prompt` explaining the facts to retrieve.
   * **Sandbox Debugging / Build Verification / Code Modifying**: Use `invoke_subagent` with `TypeName: "Remora_Deep_Diver"` and `Prompt` specifying the diagnostic or writing tasks.
 - **HEARTBEAT & ZOMBIE DETECTION (心跳与卡死探活防线)**:
-  * Whenever you invoke a subagent, you MUST simultaneously call the `schedule` tool to set a 30-second one-shot timer (the exact `Prompt` command will be injected to you via a system reminder, use it exactly as provided).
+  * Whenever you invoke a subagent, you MUST simultaneously call the `schedule` tool to set a 60-second one-shot timer (the exact `Prompt` command will be injected to you via a system reminder, use it exactly as provided).
   * If the subagent finishes earlier, the timer is automatically canceled.
   * If the timer fires and wakes you up, you MUST run the exact monitor command injected in the system reminder to assess the state.
-  * If the monitor output JSON contains status "not_found" or "empty", assume initialization and wait by resetting a 30s schedule.
-  * If status is "active", report progress and set another 30s schedule.
+  * If the monitor output JSON contains status "not_found" or "empty", assume initialization and wait by resetting a 60s schedule.
+  * If status is "active", you MUST NOT print any verbose or repetitive "liveness reports" (e.g., "Active check passed", "Still alive") to the user.
+    Instead:
+    1. Only output a brief description of the action the subagent is performing (e.g., "Subagent is running <last_tool>").
+    2. Silently call the `schedule` tool to set a new 60-second timer.
+    3. Immediately exit the current turn without printing extra greeting or status reports.
   * If zombie, check the `action_suggestion` in the monitor output:
     - If 'kill_and_retry': You MUST immediately call `manage_subagents(Action='kill', ConversationIds=['<subagent_id>'])` to terminate it, and then call `invoke_subagent` to spawn a new one to retry the task.
     - If 'escalate_to_human': You MUST immediately call `manage_subagents(Action='kill', ConversationIds=['<subagent_id>'])` to terminate it, stop automatic retries, report the double failure to the user, and request human intervention.

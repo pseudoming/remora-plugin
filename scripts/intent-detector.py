@@ -104,6 +104,12 @@ def main(context):
         match = re.search(r'/brain/([^/]+)/', transcript_path)
         if match:
             conv_id = match.group(1)
+            # 写入主干会话 ID 以便 safety-check.py 兜底识别子代理，防止因 agentapi 超时引发死锁
+            try:
+                with open("/tmp/remora_main_conv_id.txt", "w") as mf:
+                    mf.write(conv_id)
+            except:
+                pass
         
     inject_steps = []
     
@@ -202,7 +208,7 @@ def main(context):
             "ephemeralMessage": (
                 "<system-reminder>\n"
                 f"Subagent {subagent_uuid} is currently running WITHOUT a heartbeat timer. Call schedule NOW. "
-                f"schedule(DurationSeconds=\"30\", Prompt=\"30s timeout for subagent {subagent_uuid}. Run: python3 ~/.gemini/config/plugins/remora-plugin/scripts/subagent-monitor.py {subagent_uuid} {conv_id}\")\n"
+                f"schedule(DurationSeconds=\"60\", Prompt=\"60s timeout for subagent {subagent_uuid}. Run: python3 ~/.gemini/config/plugins/remora-plugin/scripts/subagent-monitor.py {subagent_uuid} {conv_id}\")\n"
                 "</system-reminder>"
             )
         })
