@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-import sys
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+
 import json
 import re
-import os
 import subprocess
 from pathlib import Path
+
+from lib.context import hook_entrypoint
+from lib.filesystem import get_snapshot, get_active_files
+from lib.session import read_mode
 
 # ##########################################################
 # AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)
@@ -39,54 +44,6 @@ from pathlib import Path
 # 设计原理四：零误伤降级保护 (Zero-Fault Fallback)
 # ==========================================================
 # 用全局 `try-except Exception` 包裹 main()。若发生任何解析崩溃，默认无条件放行（返回空 injectSteps），确保正常交互绝对可用。
-
-def get_active_files(cwd):
-    try:
-        subprocess.check_call(['git', 'rev-parse', '--is-inside-work-tree'], cwd=cwd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        is_git = True
-    except Exception:
-        is_git = False
-        
-    active_files = set()
-    
-    if is_git:
-        try:
-            output = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard'], cwd=cwd, text=True, stderr=subprocess.DEVNULL)
-            for line in output.split('\n'):
-                line = line.strip()
-                if line:
-                    active_files.add(os.path.abspath(os.path.join(cwd, line)))
-        except Exception:
-            is_git = False
-            
-    if not is_git:
-        blacklist_dirs = {'node_modules', '.venv', 'venv', '.gemini', '__pycache__', 'build', 'dist', 'target', 'vendor', 'pkg', '.gradle', '.git'}
-        file_count = 0
-        for root, dirs, files in os.walk(cwd):
-            dirs[:] = [d for d in dirs if d not in blacklist_dirs]
-            for f in files:
-                active_files.add(os.path.abspath(os.path.join(root, f)))
-                file_count += 1
-                if file_count > 2000:
-                    break
-            if file_count > 2000:
-                break
-                
-    return active_files
-
-def get_snapshot(cwd):
-    files = get_active_files(cwd)
-    snapshot = {}
-    for f in files:
-        try:
-            st = os.stat(f)
-            snapshot[f] = {
-                "mtime": st.st_mtime,
-                "size": st.st_size
-            }
-        except Exception:
-            pass
-    return snapshot
 
 def get_physical_modifications(cwd, transcript_path):
     try:
@@ -200,124 +157,98 @@ def get_latest_conversation_states(transcript_path, initial_num_steps=0):
         
     return planner_text or "", actual_modified_files, has_any_tool_calls
 
-def main():
+@hook_entrypoint(fallback_result={"injectSteps": [], "terminationBehavior": ""})
+def main(context):
+    transcript_path = context.get('transcriptPath', '')
+    cwd = context.get('cwd', os.getcwd())
+    
+    # Dump context to scratch for analysis
     try:
-        context = json.load(sys.stdin)
-        transcript_path = context.get('transcriptPath', '')
-        cwd = context.get('cwd', os.getcwd())
-        
-        # 提取会话 ID 并读取本地模式缓存
-        mode = "strict"
-        if transcript_path:
-            match = re.search(r'/brain/([^/]+)/', transcript_path)
-            if match:
-                conv_id = match.group(1)
-                cache_file = f"/tmp/remora_session_modes/{conv_id}.json"
-                if os.path.exists(cache_file):
-                    try:
-                        with open(cache_file, 'r', encoding='utf-8') as f:
-                            mode = json.load(f).get("mode", "strict")
-                    except:
-                        pass
-        
-        # Dump context to scratch for analysis
-        try:
-            conv_dir = Path(transcript_path).parent.parent.parent
-            scratch_dir = conv_dir / 'scratch'
-            scratch_dir.mkdir(parents=True, exist_ok=True)
-            with open(scratch_dir / 'context_dump.json', 'w', encoding='utf-8') as f:
-                json.dump(context, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+        conv_dir = Path(transcript_path).parent.parent.parent
+        scratch_dir = conv_dir / 'scratch'
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        with open(scratch_dir / 'context_dump.json', 'w', encoding='utf-8') as f:
+            json.dump(context, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
 
-        initial_num_steps = context.get('initialNumSteps', 0)
-        planner_text, actual_tool_files, has_any_tool_calls = get_latest_conversation_states(transcript_path, initial_num_steps)
-        physical_files = get_physical_modifications(cwd, transcript_path)
-        
-        # 事实基座 = (解析 transcript 得到的工具调用文件集) U (物理增量比对得出的文件集)
-        actual_files = actual_tool_files.union(physical_files)
-        
-        # 若本回合无任何工具调用且无物理变更，或未发生任何文本生成，直接放行
-        if not planner_text or (not has_any_tool_calls and not physical_files):
-            print(json.dumps({"injectSteps": [], "terminationBehavior": ""}))
-            return
+    initial_num_steps = context.get('initialNumSteps', 0)
+    planner_text, actual_tool_files, has_any_tool_calls = get_latest_conversation_states(transcript_path, initial_num_steps)
+    physical_files = get_physical_modifications(cwd, transcript_path)
+    
+    # 事实基座 = (解析 transcript 得到的工具调用文件集) U (物理增量比对得出的文件集)
+    actual_files = actual_tool_files.union(physical_files)
+    
+    # 若本回合无任何工具调用且无物理变更，或未发生任何文本生成，直接放行
+    if not planner_text or (not has_any_tool_calls and not physical_files):
+        return {"injectSteps": [], "terminationBehavior": ""}
 
-        # Relax 模式自适应直接放行，不执行虚报比对，提供最大发散性心流
-        if mode == "relax":
-            print(json.dumps({"injectSteps": [], "terminationBehavior": ""}))
-            return
+    conv_id = "default"
+    if transcript_path:
+        match = re.search(r'/brain/([^/]+)/', transcript_path)
+        if match:
+            conv_id = match.group(1)
+    
+    mode = read_mode(conv_id, "strict")
 
-        action_patterns = [
-            # 1. 匹配 Markdown 链接中被声明修改的文件名
-            r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*\[([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)\]\(file:///[^\)]+\)''',
-            
-            # 2. 匹配已在...中 [修改/更新/...] 的模式
-            r'''(?:已|成功)在\s*\[([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)\]\(file:///[^\)]+\)\s*中\s*(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?''',
-            
-            # 3. 匹配中文已在 <file> 中 [修改/更新/...] 的模式
-            r'''(?:已|成功)在\s*[`'"?]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"?]?\s*中\s*(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?''',
-            
-            # 4. 匹配中文动词 + 有引号的文件名 (要求完成时态)
-            r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*[`'"?](([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+))[`'"?]?''',
-            
-            # 5. 匹配中文动词 + 无引号的文件名 (要求完成时态)
-            r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*\b([a-zA-Z0-9_\-\.\/]+\.(?:py|md|json|sql|js|ts|sh|xml|txt|jsonl|log))\b''',
-            
-            # 6. 匹配英文动词 + 有引号的文件名
-            r'''(?:updated|modified|written|created|overwritten|adjusted|rewritten)\s*(?:file)?\s*[`'"?]([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"?]?''',
-            
-            # 7. 匹配英文动词 + 无引号的文件名
-            r'''(?:updated|modified|written|created|overwritten|adjusted|rewritten)\s*(?:file)?\s*\b([a-zA-Z0-9_\-\.\/]+\.(?:py|md|json|sql|js|ts|sh|xml|txt|jsonl|log))\b'''
-        ]
-        
-        declared_files = set()
-        for pattern in action_patterns:
-            matches = re.findall(pattern, planner_text, re.IGNORECASE)
-            for path in matches:
-                # 如果 matches 是元组列表（例如带有多捕获组），则提取第一个非空项
-                if isinstance(path, tuple):
-                    path = [x for x in path if x][0]
-                    
-                # 探讨语态前缀匹配过滤，消除讨论时的误判
-                match_index = planner_text.find(path)
-                if match_index != -1:
-                    context_prefix = planner_text[max(0, match_index - 30):match_index]
-                    future_pattern = r'(建议|可以|将|应该|考虑|不妨|不如|should|suggest|would|could|might|will|planning to|consider)'
-                    if re.search(future_pattern, context_prefix, re.IGNORECASE):
-                        continue
-                        
-                declared_files.add(os.path.basename(path))
-                
-        # 计算宣称已改但实际未发工具调用的文件差集
-        phantom_modifications = declared_files - actual_files
-        
-        if phantom_modifications:
-            # --------------------------------------------------------
-            # 🚨 警告拦截提示：大模型陈述了修改但并没有发起对应的工具调用 (Phantom Modification)
-            # 中文翻译：[安全断言拦截] 你在陈述中声称已经更新/创建了以下文件，但在本次执行中并未发送任何相匹配的写入工具调用。请必须首先发送 write_to_file / replace_file_content 工具调用，方可向用户汇报修改！
-            # --------------------------------------------------------
-            warning_msg = (
-                f"<system-reminder>\n"
-                f"🚨 DETECTION BLOCK: You claimed to have updated/created {list(phantom_modifications)} "
-                f"in your text, but did not call any write tool for them in this turn. "
-                f"You MUST execute the write tool call first before making such claims!\n"
-                f"</system-reminder>"
-            )
-            # 强制模型继续执行，重新规划并发起工具调用
-            print(json.dumps({
-                "injectSteps": [{"ephemeralMessage": warning_msg}],
-                "terminationBehavior": "force_continue"
-            }))
-        else:
-            # 无虚报，默认放行终止
-            print(json.dumps({"injectSteps": [], "terminationBehavior": ""}))
+    # Relax 模式自适应直接放行，不执行虚报比对，提供最大发散性心流
+    if mode == "relax":
+        return {"injectSteps": [], "terminationBehavior": ""}
 
-    except Exception as e:
-        # ==========================================================
-        # 核心防误伤降级机制：
-        # 如果拦截器内部发生任何意外错误，无条件放行，确保主干不卡死
-        # ==========================================================
-        print(json.dumps({"injectSteps": [], "terminationBehavior": ""}))
+    action_patterns = [
+        # 1. 匹配 Markdown 链接中被声明修改的文件名
+        r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*\[([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)\]\(file:///[^\)]+\)''',
+        
+        # 2. 匹配已在...中 [修改/更新/...] 的模式
+        r'''(?:已|成功)在\s*\[([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)\]\(file:///[^\)]+\)\s*中\s*(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?''',
+        
+        # 3. 匹配中文已在 <file> 中 [修改/更新/...] 的模式
+        r'''(?:已|成功)在\s*[`'"?]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"?]?\s*中\s*(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?''',
+        
+        # 4. 匹配中文动词 + 有引号的文件名 (要求完成时态)
+        r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*[`'"?](([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+))[`'"?]?''',
+        
+        # 5. 匹配中文动词 + 无引号的文件名 (要求完成时态)
+        r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*\b([a-zA-Z0-9_\-\.\/]+\.(?:py|md|json|sql|js|ts|sh|xml|txt|jsonl|log))\b''',
+        
+        # 6. 匹配英文动词 + 有引号的文件名
+        r'''(?:updated|modified|written|created|overwritten|adjusted|rewritten)\s*(?:file)?\s*[`'"?]([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"?]?''',
+        
+        # 7. 匹配英文动词 + 无引号的文件名
+        r'''(?:updated|modified|written|created|overwritten|adjusted|rewritten)\s*(?:file)?\s*\b([a-zA-Z0-9_\-\.\/]+\.(?:py|md|json|sql|js|ts|sh|xml|txt|jsonl|log))\b'''
+    ]
+    
+    declared_files = set()
+    for pattern in action_patterns:
+        matches = re.findall(pattern, planner_text, re.IGNORECASE)
+        for path in matches:
+            # 如果 matches 是元组列表（例如带有多捕获组），则提取第一个非空项
+            if isinstance(path, tuple):
+                path = [x for x in path if x][0]
+            declared_files.add(os.path.basename(path))
+            
+    # 计算宣称已改但实际未发工具调用的文件差集
+    phantom_modifications = declared_files - actual_files
+    
+    if phantom_modifications:
+        # --------------------------------------------------------
+        # 🚨 警告拦截提示：大模型陈述了修改但并没有发起对应的工具调用 (Phantom Modification)
+        # 中文翻译：[安全断言拦截] 你在陈述中声称已经更新/创建了以下文件，但在本次执行中并未发送任何相匹配的写入工具调用。请必须首先发送 write_to_file / replace_file_content 工具调用，方可向用户汇报修改！
+        # --------------------------------------------------------
+        warning_msg = (
+            f"🚨 DETECTION BLOCK: You claimed to have updated/created {list(phantom_modifications)} "
+            f"in your text, but did not call any write tool for them in this turn. "
+            f"You MUST execute the write tool call first before making such claims!\n"
+            f"</system-reminder>"
+        )
+        # 强制模型继续执行，重新规划并发起工具调用
+        return {
+            "injectSteps": [{"ephemeralMessage": warning_msg}],
+            "terminationBehavior": "force_continue"
+        }
+    else:
+        # 无虚报，默认放行终止
+        return {"injectSteps": [], "terminationBehavior": ""}
 
 if __name__ == "__main__":
     main()

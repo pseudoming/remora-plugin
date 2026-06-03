@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-import sys, json, re, os
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+from lib.context import hook_entrypoint
+from lib.session import read_mode
+
+import json, re
 
 # ##########################################################
 # AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)
@@ -19,13 +24,8 @@ import sys, json, re, os
 #    - 在 strict 模式下：向模型注入极其严格的客观专业（strict tone）提示词，限制废话和情绪表达；
 #    - 在 relax 模式下：不进行 any 语气约束注入，保障大模型在起草设计与发散脑暴时的创造力。
 
-def main():
-    try:
-        context = json.load(sys.stdin)
-    except:
-        print(json.dumps({"injectSteps": []}))
-        return
-
+@hook_entrypoint(fallback_result={"injectSteps": []})
+def main(context):
     transcript_path = context.get('transcriptPath', '')
     conv_id = "default"
     if transcript_path:
@@ -33,14 +33,7 @@ def main():
         if match:
             conv_id = match.group(1)
             
-    mode = "strict"
-    cache_file = f"/tmp/remora_session_modes/{conv_id}.json"
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                mode = json.load(f).get("mode", "strict")
-        except:
-            pass
+    mode = read_mode(conv_id, "strict")
             
     inject_steps = []
     if mode == "strict":
@@ -54,7 +47,7 @@ def main():
         )
         inject_steps.append({"ephemeralMessage": strict_tone_msg})
         
-    print(json.dumps({"injectSteps": inject_steps}))
+    return {"injectSteps": inject_steps}
 
 if __name__ == "__main__":
     main()

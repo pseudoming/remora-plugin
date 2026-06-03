@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-import sys
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+from lib.context import hook_entrypoint
+from lib.session import read_mode
+from lib.stats import accumulate
+
 import json
 import re
 import shlex
 import base64
-import os
 import subprocess
 import fcntl
 
@@ -237,13 +241,8 @@ def get_subagent_type(transcript_path):
             df.write(f"[remora] agentapi exception: {str(e)}\n")
     return None
 
-def main():
-    try:
-        context = json.load(sys.stdin)
-    except json.JSONDecodeError:
-        print(json.dumps({"decision": "allow"}))
-        return
-        
+@hook_entrypoint(fallback_result={"decision": "allow"})
+def main(context):
     tool_call = context.get('toolCall', {})
     tool_name = tool_call.get('name', '')
     args = tool_call.get('args', {})
@@ -256,13 +255,7 @@ def main():
         match = re.search(r'/brain/([^/]+)/', transcript_path)
         if match:
             conv_id = match.group(1)
-            cache_file = f"/tmp/remora_session_modes/{conv_id}.json"
-            if os.path.exists(cache_file):
-                try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
-                        mode = json.load(f).get("mode", "strict")
-                except:
-                    pass
+            mode = read_mode(conv_id, "strict")
 
     subagent_type = get_subagent_type(transcript_path)
     
@@ -293,13 +286,11 @@ def main():
             ws = sub.get('Workspace', 'inherit')
             if t_name == "Remora_Deep_Diver" and ws not in ['branch', 'share']:
                 # 中文翻译：[沙盒强制隔离] 'Remora_Deep_Diver' 必须通过 Workspace='branch' 或 'share' 在隔离环境中调用。禁止在主工作区直接执行以防污染！
-                print(json.dumps({
+                return {
                     "decision": "deny",
                     "reason": "REMORA SANDBOX ENFORCEMENT: 'Remora_Deep_Diver' MUST be invoked with Workspace='branch' or 'share'. Direct execution in the main tree is prohibited!"
-                }))
-                return
-        print(json.dumps({"decision": "allow"}))
-        return
+                }
+        return {"decision": "allow"}
 
     # --------------------------------------------------------
     # 针对 view_file 的拦截
@@ -310,8 +301,7 @@ def main():
             # 1. 敏感后缀强力拦截 (大日志直接阻断)
             if target_file.endswith('.jsonl') or target_file.endswith('.log') or target_file.endswith('.sqlite'):
                 if not is_sub:
-                    print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                    return
+                    return {"decision": "deny", "reason": rot_reason}
                     
             # 2. 体积累加熔断机制 (针对单文件超大或碎片化堆叠)
             if not is_sub and transcript_path:
@@ -321,13 +311,11 @@ def main():
                     size_limit = 200 * 1024 if mode == "relax" else 50 * 1024
                     try:
                         if os.path.exists(target_file) and os.path.getsize(target_file) > size_limit:
-                            print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                            return
+                            return {"decision": "deny", "reason": rot_reason}
                     except Exception:
                         pass
 
                     conv_id = match.group(1)
-                    stats_file = f"/tmp/remora_view_file_stats/{conv_id}.json"
                     
                     is_data_log = target_file.endswith(('.jsonl', '.log', '.sqlite', '.csv'))
                     inc_bytes = 0
@@ -339,42 +327,22 @@ def main():
                     
                     if inc_bytes > 0:
                         try:
-                            # 创建目录（若无）并以可读写模式操作
-                            os.makedirs("/tmp/remora_view_file_stats", exist_ok=True)
-                            if not os.path.exists(stats_file):
-                                with open(stats_file, 'w') as f:
-                                    json.dump({"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}, f)
-                                    
-                            with open(stats_file, 'r+') as f:
-                                fcntl.flock(f, fcntl.LOCK_EX)
-                                stats = json.load(f)
-                                if is_data_log:
-                                    stats["accumulated_data_bytes"] += inc_bytes
-                                else:
-                                    stats["accumulated_source_bytes"] += inc_bytes
+                            if is_data_log:
+                                stats = accumulate(conv_id, data_add=inc_bytes)
+                            else:
+                                stats = accumulate(conv_id, source_add=inc_bytes)
                                 
-                                # 三级硬性熔断
-                                if stats["accumulated_source_bytes"] > 400 * 1024 or stats["accumulated_data_bytes"] > 150 * 1024:
-                                    f.seek(0)
-                                    f.truncate()
-                                    json.dump(stats, f)
-                                    fcntl.flock(f, fcntl.LOCK_UN)
-                                    # 中文翻译：⛔ [安全拦截] 累积读取量触发严格阈值！主干上下文濒临腐败，当前操作已被强制阻断。请立即委派子代理！重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
-                                    print(json.dumps({
-                                        "decision": "deny", 
-                                        "reason": f"⛔ REMORA SAFETY INTERCEPT: CUMULATIVE READ LIMIT EXCEEDED (SOURCE: {stats['accumulated_source_bytes']//1024}KB, DATA: {stats['accumulated_data_bytes']//1024}KB). MAIN CONTEXT CORRUPTION IMMINENT. OPERATION BLOCKED. PLEASE DELEGATE TO A SUBAGENT! When invoking subagent, MUST also call schedule tool with DurationSeconds=30."
-                                    }))
-                                    return
-                                    
-                                f.seek(0)
-                                f.truncate()
-                                json.dump(stats, f)
-                                fcntl.flock(f, fcntl.LOCK_UN)
+                            # 三级硬性熔断
+                            if stats["accumulated_source_bytes"] > 400 * 1024 or stats["accumulated_data_bytes"] > 150 * 1024:
+                                # 中文翻译：⛔ [安全拦截] 累积读取量触发严格阈值！主干上下文濒临腐败，当前操作已被强制阻断。请立即委派子代理！重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
+                                return {
+                                    "decision": "deny", 
+                                    "reason": f"⛔ REMORA SAFETY INTERCEPT: CUMULATIVE READ LIMIT EXCEEDED (SOURCE: {stats['accumulated_source_bytes']//1024}KB, DATA: {stats['accumulated_data_bytes']//1024}KB). MAIN CONTEXT CORRUPTION IMMINENT. OPERATION BLOCKED. PLEASE DELEGATE TO A SUBAGENT! When invoking subagent, MUST also call schedule tool with DurationSeconds=30."
+                                }
                         except Exception as e:
                             pass
         
-        print(json.dumps({"decision": "allow"}))
-        return
+        return {"decision": "allow"}
 
     # --------------------------------------------------------
     # 针对 run_command 的拦截
@@ -383,7 +351,7 @@ def main():
         cmd = args.get('CommandLine', '')
         
         # 1. 高吞吐量特征拦截 (Anti-Context-Rot)
-        rot_pattern = r'\b(cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.sh\b'
+        rot_pattern = r'\b(cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.py\b'
         has_rot_feature = re.search(rot_pattern, cmd, re.IGNORECASE)
         
         # 2. 安全性拦截与审计分流
@@ -395,47 +363,41 @@ def main():
                 # 若为只读特工，除日志外不可含有任何写或测试构建高危特征（必须为 allow）
                 if is_readonly_sub and decision != "allow":
                     # 中文翻译：[安全防线拦截] 限制只读特工。Remora_ReadOnly_Extractor 仅被授权进行只读检索，严禁运行任何物理写操作、构建或测试命令！
-                    print(json.dumps({
+                    return {
                         "decision": "deny",
                         "reason": "REMORA SAFETY INTERCEPT: Remora_ReadOnly_Extractor is strictly read-only and cannot run write/test/build commands!"
-                    }))
-                    return
-                print(json.dumps({"decision": "allow"}))
-                return
+                    }
+                return {"decision": "allow"}
             else:
                 # 普通主干会话一律拦截大日志读取
-                print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                return
+                return {"decision": "deny", "reason": rot_reason}
         else:
             # 不含大日志特征的常规命令审计
             if decision == "deny":
                 # 沙盒调试特工允许在分支内执行测试和构建
                 if is_deep_diver_sub and category in {"test", "build"}:
-                    print(json.dumps({"decision": "allow"}))
-                    return
+                    return {"decision": "allow"}
                 
                 if category == "test":
                     # 中文翻译：[安全防线拦截] 诊断和测试命令已被拦截！您必须通过 invoke_subagent 委派给 Remora_Deep_Diver 并在分支沙盒中执行 (Workspace: 'branch')。
-                    print(json.dumps({
+                    return {
                         "decision": "deny",
                         "reason": "REMORA DELEGATION BLOCKED: Diagnostic and test commands must be delegated via invoke_subagent using Remora_Deep_Diver (Workspace: 'branch')!"
-                    }))
+                    }
                 elif category == "build":
                     # 中文翻译：[安全防线拦截] 构建命令已被拦截！您必须通过 invoke_subagent 委派给 Remora_Deep_Diver 并共享构建产物 (Workspace: 'share')。
-                    print(json.dumps({
+                    return {
                         "decision": "deny",
                         "reason": "REMORA DELEGATION BLOCKED: Build commands must be delegated via invoke_subagent using Remora_Deep_Diver (Workspace: 'share')!"
-                    }))
+                    }
                 else:
                     # 中文翻译：[安全防线拦截] 命令行语法解析校验未通过。可能包含潜在命令绕过风险。请将其委派给子代理在隔离沙盒内执行！
-                    print(json.dumps({
+                    return {
                         "decision": "deny",
                         "reason": "REMORA DELEGATION BLOCKED: Command verification failed due to syntax parser error. Please delegate to a subagent under (Workspace: 'branch')!"
-                    }))
-                return
+                    }
             else:
-                print(json.dumps({"decision": "allow"}))
-            return
+                return {"decision": "allow"}
         
     # --------------------------------------------------------
     # 针对 grep_search 的拦截 (Anti-Context-Rot)
@@ -446,18 +408,15 @@ def main():
             # 1. 敏感后缀拦截
             if search_path.endswith('.jsonl') or search_path.endswith('.log') or search_path.endswith('.sqlite'):
                 if not is_sub:
-                    print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                    return
+                    return {"decision": "deny", "reason": rot_reason}
             # 2. 敏感目录拦截 (如 Orchestrator 的日志目录)
             if '/.system_generated' in search_path or '/logs' in search_path:
                 if not is_sub:
-                    print(json.dumps({"decision": "deny", "reason": rot_reason}))
-                    return
+                    return {"decision": "deny", "reason": rot_reason}
         
-        print(json.dumps({"decision": "allow"}))
-        return
+        return {"decision": "allow"}
 
-    print(json.dumps({"decision": "allow"}))
+    return {"decision": "allow"}
 
 if __name__ == "__main__":
     main()

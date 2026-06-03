@@ -21,8 +21,8 @@ You MUST NOT manually write decisions to files like `decisions.md` for historica
 ## 3. Active Recall via Warm Storage
 If you are unsure about past decisions, encounter an architectural keyword (e.g., 'compactor', 'database', 'agentapi'), or if a user challenges your memory, NEVER GUESS.
 You MUST proactively use the `run_command` tool to execute the official retrieval script:
-`bash ~/.gemini/config/plugins/remora-plugin/scripts/remora-recall.sh "<YOUR_KEYWORD>"`
-**CRITICAL**: You MUST NOT use `grep_search` on `transcript.jsonl` to blindly guess historical context. The `remora-recall.sh` script is the EXCLUSIVE authorized method to access the `remora_memory.db` SSOT.
+`python3 ~/.gemini/config/plugins/remora-plugin/scripts/remora-recall.py "<YOUR_KEYWORD>"`
+**CRITICAL**: You MUST NOT use `grep_search` on `transcript.jsonl` to blindly guess historical context. The `remora-recall.py` script is the EXCLUSIVE authorized method to access the `remora_memory.db` SSOT.
 
 ## 4. Subagent Delegation Rules (Differentiated)
 - **ANTI-CONTEXT-ROT**: For long-chain debugging, massive log analysis, or risky operations, you are STRICTLY PROHIBITED from executing commands directly. You MUST first use `view_file` to read the `remora-architecture` skill instructions, and then use `invoke_subagent` for isolated execution:

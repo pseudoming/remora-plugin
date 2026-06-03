@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
-import sys, json, re, os, subprocess
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+from lib.context import hook_entrypoint
+from lib.paths import get_db_path
+from lib.session import write_mode
+from lib.stats import cleanup, get_stats
 
-def _get_data_dir():
-    env_path = os.environ.get("ANTIGRAVITY_EXECUTABLE_DATA_DIR")
-    if env_path:
-        return env_path
-    current_dir = os.path.abspath(os.path.dirname(__file__))
-    parts = current_dir.split(os.sep)
-    if ".gemini" in parts:
-        idx = parts.index(".gemini")
-        gemini_root = os.sep.join(parts[:idx + 1])
-        return os.path.join(gemini_root, "sidecar_data/remora-plugin/memory-compactor/data")
-    else:
-        return os.path.join(current_dir, "..", "sidecars", "memory-compactor", "data")
+import json, re, subprocess
 
-DATA_DIR = _get_data_dir()
-DB_PATH = os.path.join(DATA_DIR, "remora_memory.db")
+DB_PATH = get_db_path()
 
 def _get_project_uuid_and_confidence(conv_id):
     project_uuid = None
@@ -42,7 +35,8 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(__file__))
     import remora_init
 
-def main():
+@hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Intent Detector 发生异常。拦截防线已降级，但不影响正常对话。</system-reminder>"}]})
+def main(context):
     # 0. 环境自愈
     initialized = remora_init.init_environment()
     
@@ -56,8 +50,6 @@ def main():
         except:
             pass
             
-    context = json.load(sys.stdin)
-    
     # 动态读取 transcript.jsonl 获取最后一条用户指令
     last_msg = ""
     transcript_path = context.get('transcriptPath')
@@ -68,25 +60,9 @@ def main():
             heartbeat_lines = [line.strip() for line in output.decode('utf-8').strip().split('\n') if line.strip()]
         except Exception:
             pass
-        # [废弃] 原始实现：使用 f.readlines() 加载整个文件。
-        # [废弃原因]：随着长周期对话的进行，transcript.jsonl 达到数十 MB 时，readlines() 会将文件全量加载到内存中，
-        #           每次对话前都会导致极高的内存突增与 1-3 秒的 CPU IO 阻塞，造成严重的交互延迟灾难。由于该脚本在
-        #           PreInvocation 钩子中执行，此延迟是不可接受的。
-        # with open(transcript_path, 'r', encoding='utf-8') as f:
-        #     lines = f.readlines()
-        #     for line in reversed(lines):
-        #         try:
-        #             step = json.loads(line)
-        #             if step.get('type') == 'USER_INPUT':
-        #                 last_msg = step.get('content', '')
-        #                 break
-        #         except:
-        #             pass
-        
         # [重构] 新实现：直接调用系统原生的 tail 截取末尾数据。
-        # 优势：耗时稳定控制在个位数毫秒级，不随文件体量增大而发生 I/O 与内存劣化，且不依赖对底层 payload 结构的猜测。
+        # 优势：耗时稳定控制在个位数毫秒级，不随 file 体量增大而发生 I/O 与内存劣化，且不依赖对底层 payload 结构的猜测。
         try:
-            import subprocess
             output = subprocess.check_output(['tail', '-n', '50', transcript_path], stderr=subprocess.STDOUT)
             lines = output.decode('utf-8').strip().split('\n')
             
@@ -134,7 +110,7 @@ def main():
     # ==========================================
     # 设计原理六：子代理创建的即时捕获与心跳断链续期状态机逻辑
     # ==========================================
-    # 由于平台的 One-shot 计时器会在子代理发送任何中间进度同步消息时自动静默取消，
+    # 由于平台的 One-shot 计时器会在子代理发送 any 中间进度同步消息时自动静默取消，
     # 我们直接在 PreInvocation 阶段从 transcript.jsonl 中分析最新 UUID，并计算
     # 子代理最近活动与最近一次 schedule 定时器的相对时序。若已被取消且模型未续期，
     # 在上下文最前沿通过 injectSteps 注入强强制心跳指示。
@@ -177,7 +153,7 @@ def main():
                             break
                 
                 # 判断子代理是否已被主动清理完成 (时序边界：模型发起清理，或物理回执明确包含 Successfully killed)
-                # 注意：必须严格限定为 GENERIC 回执或 manage_subagents 调用，杜绝大模型在 thinking 字段的文本讨论触发假阳性
+                # 注意：必须严格限定为 GENERIC 回执或 manage_subagents 调用，杜绝大模型在 thinking 字段 of 文本讨论触发假阳性
                 if not seen_subagent:
                     is_kill_command = False
                     if step_type == 'PLANNER_RESPONSE' and step.get('tool_calls'):
@@ -191,7 +167,7 @@ def main():
                     if is_kill_command or is_system_confirm:
                         subagent_finish_detected = True
                         
-            # Pass 2：在 subagent_uuid 提取成功后，以该特定 ID 进行精准活跃检测，排除其它 UUID 及主干物理工具调用输出的噪声干扰
+            # Pass 2：在 subagent_uuid 提取成功后，以该特定 ID 进行精准活跃检测，排除其它 UUID 及主干物理工具调用输出 of 噪声干扰
             if subagent_uuid and not subagent_finish_detected:
                 for idx, line in enumerate(reversed(heartbeat_lines)):
                     if not line.strip(): continue
@@ -206,7 +182,7 @@ def main():
                             latest_subagent_activity_index = idx
                             break
                             
-            # 正常退出自动物理清除重试计数缓存 (澄清：由于大模型调用 subagent-monitor 时强制传入的 {conv_id} 就是主会话 ID，因此 monitor 内部写入的 parent_conv_id 与此处拦截脚本读取的 conv_id 在物理上是完全同一键值，清理路径严格对齐，无歧义)
+            # 正常退出自动物理清除重试计数缓存 (澄清：由于大模型调用 subagent-monitor 时强制传入 of {conv_id} 就是主会话 ID，因此 monitor 内部写入的 parent_conv_id 与此处拦截脚本读取 of conv_id 在物理上是完全同一键值，清理路径严格对齐，无歧义)
             if subagent_finish_detected:
                 try:
                     retry_file = f"/tmp/remora_subagent_retries/{conv_id}.json"
@@ -242,13 +218,13 @@ def main():
     # ⚠️ 警告：任何 AI Agent 欲修改本文件的核心逻辑，必须遵守：
     #   1. 必须同步在此注释块中更新/添加对应的设计原理解析。
     #   2. 所有英文提示词所在的代码行之上，必须同时保留/更新其精准的中文翻译注释。
-    #   禁止在不更新设计注释与提示词翻译的情况下直接覆写逻辑！
+    #   禁止在不更新设计注释与提示词翻译的情况下直接覆写 logic！
     # ##########################################################
 
     # ==========================================
     # 设计原理四：系统提示清洗，阻断意图自反馈死循环
     # ==========================================
-    # 即使系统在上一回合注入了包含 remora 关键词的提醒，大模型的 transcript 依然会包含这些系统提醒。
+    # 即使系统在上一回合注入了包含 remora 关键词的提醒，大模型的 transcript 依然会包含 these 系统提醒。
     # 如果不加清洗地进行正则检测，会导致每回合均误命中而持续注入，从而陷入无限自触发状态。
     # 我们采用 re.sub(r'<system-reminder>.*?</system-reminder>', '', last_msg, flags=re.DOTALL)
     # 正则剥离所有系统提示内容，只保留用户的原生真实意图。
@@ -268,10 +244,7 @@ def main():
         
     # 本地缓存落盘写入分发
     try:
-        os.makedirs("/tmp/remora_session_modes", exist_ok=True)
-        cache_file = f"/tmp/remora_session_modes/{conv_id}.json"
-        with open(cache_file, 'w', encoding='utf-8') as f:
-            json.dump({"mode": mode}, f)
+        write_mode(conv_id, mode)
     except:
         pass
 
@@ -289,52 +262,33 @@ def main():
             # 中文翻译：[置信度警告] 最近一次记忆压缩置信度较低，部分决策可能已被丢弃，请小心使用 recall 检索核对！
             confidence_warning = f"\n⚠️ [RECALL CONFIDENCE WARNING] 最近一次记忆压缩置信度较低 ({confidence:.2f})，部分决策可能已被丢弃，请使用 recall 检索温存储核对！"
 
-        script_path = os.path.join(os.path.dirname(__file__), "remora-recall.sh")
-        # 中文翻译：🚨 记忆防御触发：不要猜测。执行 `bash {script_path} "YOUR_KEYWORD"` 从温存储中检索事实。
+        script_path = os.path.join(os.path.dirname(__file__), "remora-recall.py")
+        # 中文翻译：🚨 记忆防御触发：不要猜测。执行 `python3 {script_path} "YOUR_KEYWORD"` 从温存储中检索事实。
         inject_steps.append({
-            "ephemeralMessage": f"<system-reminder>{confidence_warning}\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING. Execute `bash {script_path} \"YOUR_KEYWORD\"` to retrieve facts from warm storage.\n</system-reminder>"
+            "ephemeralMessage": f"<system-reminder>{confidence_warning}\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING. Execute `python3 {script_path} \"YOUR_KEYWORD\"` to retrieve facts from warm storage.\n</system-reminder>"
         })
 
     # ==========================================
     # 设计原理五：View File 累加器与主干上下文防腐 (Anti-Context-Rot) 软阻断
     # ==========================================
     try:
-        import fcntl
-        os.makedirs("/tmp/remora_view_file_stats", exist_ok=True)
-        stats_file = f"/tmp/remora_view_file_stats/{conv_id}.json"
-        
         # 新回合强制初始化与清零 (无需检查是否存在，保障状态干净)
         if is_new_turn:
-            with open(stats_file, 'w') as f:
-                fcntl.flock(f, fcntl.LOCK_EX)
-                json.dump({"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}, f)
-                fcntl.flock(f, fcntl.LOCK_UN)
+            cleanup(conv_id)
         
         # 二级认知摩擦：检查是否软超标
-        if os.path.exists(stats_file):
-            with open(stats_file, 'r') as f:
-                stats = json.load(f)
-            
-            src_kb = stats.get("accumulated_source_bytes", 0) // 1024
-            data_kb = stats.get("accumulated_data_bytes", 0) // 1024
-            
-            if src_kb > 150 or data_kb > 50:
-                # 中文翻译：⚠️ [系统警告] 本回合累计读取已达软水位线。主干上下文窗口开始膨胀。若需执行大范围代码审阅，请委派 Remora_ReadOnly_Extractor 子代理提取结构化结论，以免冲淡自身核心注意力。重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
-                inject_steps.append({
-                    "ephemeralMessage": f"<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: {src_kb}KB, DATA: {data_kb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION. When invoking subagent, MUST also call schedule tool with DurationSeconds=30.</system-reminder>"
-                })
+        stats = get_stats(conv_id)
+        src_kb = stats.get("accumulated_source_bytes", 0) // 1024
+        data_kb = stats.get("accumulated_data_bytes", 0) // 1024
+        if src_kb > 150 or data_kb > 50:
+            # 中文翻译：⚠️ [系统警告] 本回合累计读取已达软水位线。主干上下文窗口开始膨胀。若需执行大范围代码审阅，请委派 Remora_ReadOnly_Extractor 子代理提取结构化结论，以免冲淡自身核心注意力。重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
+            inject_steps.append({
+                "ephemeralMessage": f"<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: {src_kb}KB, DATA: {data_kb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION. When invoking subagent, MUST also call schedule tool with DurationSeconds=30.</system-reminder>"
+            })
     except Exception as e:
         pass
         
-    print(json.dumps({"injectSteps": inject_steps}))
+    return {"injectSteps": inject_steps}
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        # 终极防线：无论出什么异常，绝对不阻塞 Antigravity 的对话通道
-        print(json.dumps({
-            "injectSteps": [{
-                "ephemeralMessage": f"<system-reminder>⚠️ Remora Intent Detector 发生异常: {str(e)}。拦截防线已降级，但不影响正常对话。</system-reminder>"
-            }]
-        }))
+    main()

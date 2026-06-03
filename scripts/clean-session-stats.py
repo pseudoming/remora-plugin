@@ -3,6 +3,9 @@ import sys
 import json
 import os
 
+sys.path.insert(0, os.path.dirname(__file__))
+from lib.stats import cleanup
+
 if __name__ == "__main__":
     raw_input = sys.stdin.read()
     if not raw_input.strip():
@@ -15,11 +18,6 @@ if __name__ == "__main__":
             # 获取当前结束的会话 ID
             conv_id = data.get('conversationId')
             if conv_id:
-                stats_file = f"/tmp/remora_view_file_stats/{conv_id}.json"
-                if os.path.exists(stats_file):
-                    try:
-                        os.remove(stats_file)
-                    except Exception:
-                        pass
+                cleanup(conv_id)
     except Exception as e:
         pass
