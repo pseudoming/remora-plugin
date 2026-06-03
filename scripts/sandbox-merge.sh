@@ -34,6 +34,12 @@ if [ -z "$BRANCH_NAME" ]; then
 fi
 echo "[Remora] Target branch to merge: $BRANCH_NAME"
 
+# 在 merge 之前，提取物理变更文件列表输出给调用者
+echo "[Remora] Detecting physical changed files in sandbox..."
+git -C /home/agent/wsl_code/remora diff --name-only main...$BRANCH_NAME | while read -r file; do
+    echo "[PHYSICAL_CHANGES] $file"
+done
+
 # 在主干上执行合并
 cd /home/agent/wsl_code/remora
 git merge "$BRANCH_NAME" -m "Merge sandbox changes from subagent $SUBAGENT_CONV_ID"

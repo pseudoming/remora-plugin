@@ -99,6 +99,16 @@ def init_db():
         except sqlite3.OperationalError:
             conn.execute("ALTER TABLE topic_decisions ADD COLUMN user_confirmed INTEGER DEFAULT 0")
 
+        # Schema 动态迁移升级防线三：扩展 project_topics 列以支持 Phase 17 机制
+        for col, col_def in [("source", "TEXT DEFAULT 'auto'"), 
+                             ("last_accessed_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                             ("associated_files", "TEXT DEFAULT '[]'"),
+                             ("referenced_files", "TEXT DEFAULT '[]'")]:
+            try:
+                conn.execute(f"SELECT {col} FROM project_topics LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute(f"ALTER TABLE project_topics ADD COLUMN {col} {col_def}")
+
 def format_timestamp(ts_str):
     """
     统一时间戳为 SQLite 标准 'YYYY-MM-DD HH:MM:SS' 字符串，以消除类型与格式失配 bug
@@ -330,7 +340,7 @@ def read_incremental_logs(conn, session):
     # 提取核心内容（只取 USER_INPUT + MODEL 产出）
     key_content, _ = extract_key_content(session['transcript_path'], last_line)
 
-    return key_content, current_line
+    return key_content, current_line, last_line
 
 
 def get_or_create_conversation(prompt):
@@ -399,6 +409,151 @@ def get_or_create_conversation(prompt):
         raise AgentApiError(f"Fail-Fast: new-conversation failed. Abandoning execution. Error: {e}")
 
 
+def extract_factual_baseline(transcript_path, start_line):
+    """
+    用纯代码规则从增量对话中提取最小事实基准集 (Non-LLM Baseline)
+    提取物理写文件工具调用（write_to_file, replace_file_content, multi_replace_file_content 等）中的目标文件名
+    以及用户确认打标的动作 /confirm <id>
+    """
+    baseline_files = set()
+    baseline_actions = set()
+    current_line = 0
+    if not os.path.exists(transcript_path):
+        return [], []
+        
+    with open(transcript_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            current_line += 1
+            if current_line <= start_line:
+                continue
+            try:
+                obj = json.loads(line)
+                # 1. 物理写工具特征提取
+                for tool in obj.get('tool_calls', []):
+                    tool_name = tool.get('name', '')
+                    args = tool.get('arguments', {})
+                    if tool_name in ('write_to_file', 'replace_file_content', 'multi_replace_file_content'):
+                        target_file = args.get('TargetFile') or args.get('AbsolutePath')
+                        if target_file:
+                            baseline_files.add(os.path.basename(target_file))
+                # 2. 用户确认打标动作提取
+                content = obj.get('content', '')
+                if content:
+                    confirm_matches = re.findall(r'/confirm\s+(\d+)', content)
+                    for m in confirm_matches:
+                        baseline_actions.add(f"confirm:{m}")
+            except Exception:
+                continue
+    return list(baseline_files), list(baseline_actions)
+
+def calculate_factual_confidence(conn, baseline_files, baseline_actions, output_topics):
+    """
+    在 Python 侧计算 Decisions 对 Baseline 的覆盖率作为客观置信度
+    """
+    if not baseline_files and not baseline_actions:
+        return 1.0
+    covered_files = 0
+    covered_actions = 0
+    decisions_text = ""
+    for t in output_topics:
+        for d in t.get("decisions", []):
+            decisions_text += " " + d.get("decision", "").lower() + " " + d.get("rationale", "").lower()
+            
+    # 模糊包含匹配文件名
+    for f in baseline_files:
+        if f.lower() in decisions_text:
+            covered_files += 1
+            
+    # 反查库内 user_confirmed 状态校验打标动作
+    for action in baseline_actions:
+        if action.startswith("confirm:"):
+            dec_id = action.split(":")[1]
+            try:
+                cursor = conn.execute("SELECT user_confirmed FROM topic_decisions WHERE id=?", (dec_id,))
+                row = cursor.fetchone()
+                if row and row[0] == 1:
+                    covered_actions += 1
+            except Exception:
+                pass
+                
+    total_items = len(baseline_files) + len(baseline_actions)
+    covered_items = covered_files + covered_actions
+    return min(1.0, covered_items / total_items) if total_items > 0 else 1.0
+
+def validate_id_inheritance(conn, project_uuid, new_topics):
+    """
+    校验所有标记了 user_confirmed=1 的历史决策 ID，是否完全被合并后的新决策继承 (Method A)
+    防止由于大模型误删、合并时流失已确认的核心决策。
+    """
+    cursor = conn.execute(
+        "SELECT id FROM topic_decisions WHERE project_uuid = ? AND user_confirmed = 1",
+        (project_uuid,)
+    )
+    confirmed_ids = {row[0] for row in cursor.fetchall()}
+    if not confirmed_ids:
+        return True
+    inherited_ids = set()
+    for t in new_topics:
+        for d in t.get("decisions", []):
+            for val in d.get("inherited_from", []):
+                try:
+                    inherited_ids.add(int(val))
+                except (ValueError, TypeError):
+                    pass
+    missing_ids = confirmed_ids - inherited_ids
+    if missing_ids:
+        raise Exception(f"REMORA HARD ANCHOR VIOLATION: user_confirmed=1 IDs lost: {list(missing_ids)}.")
+    return True
+
+def extract_subagent_report(transcript_path):
+    """
+    扫描子代理会话日志，抓取结构化的 remora_subagent_report JSON 块
+    """
+    changed_files, referenced_files = [], []
+    if not os.path.exists(transcript_path):
+        return changed_files, referenced_files
+    try:
+        with open(transcript_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                obj = json.loads(line)
+                content = obj.get('content', '')
+                if content and "remora_subagent_report" in content:
+                    match = re.search(r'\{.*?"remora_subagent_report".*\}', content, re.DOTALL)
+                    if match:
+                        data = json.loads(match.group(0))
+                        report = data.get("remora_subagent_report", {})
+                        changed_files = report.get("changed_files", [])
+                        referenced_files = report.get("referenced_files", [])
+                        break
+    except Exception:
+        pass
+    return changed_files, referenced_files
+
+def run_garbage_collection(conn):
+    """
+    GC 垃圾回收机制：静默剪枝冷 auto 话题 (限定状态为 closed)
+    静默清理 source='auto' 且 status='closed' 且 last_accessed_at 早于 72 小时前，
+    且该话题下没有任何 user_confirmed = 1 的决策的话题。
+    """
+    try:
+        cursor = conn.execute(
+            """SELECT uuid, topic_id FROM project_topics
+               WHERE source = 'auto' AND status = 'closed'
+                 AND last_accessed_at < datetime('now', '-72 hours')
+                 AND (uuid, topic_id) NOT IN (
+                     SELECT DISTINCT project_uuid, topic_id FROM topic_decisions WHERE user_confirmed = 1
+                 )"""
+        )
+        to_delete = cursor.fetchall()
+        for uuid, topic_id in to_delete:
+            conn.execute("DELETE FROM topic_decisions WHERE project_uuid=? AND topic_id=?", (uuid, topic_id))
+            conn.execute("DELETE FROM project_topics WHERE uuid=? AND topic_id=?", (uuid, topic_id))
+            print(f"[Remora GC] Pruned cold auto topic: {topic_id} in project {uuid}")
+        conn.commit()
+    except Exception as e:
+        print(f"Error running garbage collection: {str(e)}", file=sys.stderr)
+
+
 def process_logs():
     start_time = time.time()
 
@@ -421,7 +576,35 @@ def process_logs():
                 print("Max execution time reached, stopping.", file=sys.stderr)
                 break
 
-            key_content, current_line = read_incremental_logs(conn, session)
+            key_content, current_line, watermark_line = read_incremental_logs(conn, session)
+
+            is_sub = is_subagent_session(session['transcript_path'])
+            if is_sub:
+                # 子代理会话直接解析回写
+                changed, referenced = extract_subagent_report(session['transcript_path'])
+                if changed or referenced:
+                    active_topic = _get_active_topic(conn, session['project_uuid'])
+                    if active_topic:
+                        cursor = conn.execute("SELECT associated_files, referenced_files FROM project_topics WHERE uuid=? AND topic_id=?", (session['project_uuid'], active_topic))
+                        row = cursor.fetchone()
+                        existing_assoc = json.loads(row[0]) if row and row[0] else []
+                        existing_ref = json.loads(row[1]) if row and row[1] else []
+                        assoc_dict = {item['file']: item for item in existing_assoc if 'file' in item}
+                        ref_dict = {item['file']: item for item in existing_ref if 'file' in item}
+                        for f in changed:
+                            fb = os.path.basename(f)
+                            assoc_dict[fb] = {"file": fb, "source": "agent"}
+                        for f in referenced:
+                            fb = os.path.basename(f)
+                            ref_dict[fb] = {"file": fb, "source": "agent"}
+                        conn.execute("UPDATE project_topics SET associated_files=?, referenced_files=?, last_accessed_at=CURRENT_TIMESTAMP WHERE uuid=? AND topic_id=?",
+                                     (json.dumps(list(assoc_dict.values())), json.dumps(list(ref_dict.values())), session['project_uuid'], active_topic))
+                conn.execute(
+                    "UPDATE watermarks SET last_line_processed=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
+                    (current_line, session['project_uuid'], session['conversation_id']))
+                conn.commit()
+                continue
+
             if not key_content.strip():
                 conn.execute(
                     "UPDATE watermarks SET last_line_processed=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
@@ -472,6 +655,9 @@ def process_logs():
                 topic_constraint_desc = f"\n[MANUAL TOPIC CONSTRAINT]\nThe current session is inside an active manual topic \"{active_topic_id}\".\nYou MUST group all extracted decisions under this specific topic_id: \"{active_topic_id}\".\nDo NOT generate a new topic_id or topic summary. Just reuse \"{active_topic_id}\" as the topic_id in your output."
                 topic_constraint_prompt = f"\nNote: You MUST reuse \"{active_topic_id}\" as the topic_id in your output, do NOT create any other topic_id."
 
+            # 获取精确水位 Non-LLM baseline 事实清单
+            baseline_files, baseline_actions = extract_factual_baseline(session['transcript_path'], watermark_line)
+
             # 中文翻译：[系统约束] 这是一个无状态的提取任务。在每行日志的开头有类似于 [line_123] 的前缀，它指代了该行的物理行号。你必须在 JSON 的 evidence_msg_ids 中返回支撑该决策的具体行号范围的整数数组（例如 [123, 124]），严禁返回空数组 []。如果在 MODEL 回复中包含了明确的自我纠偏、赞同并采纳用户提议（如“纠正错误/偏差”、“赞同该提议”、“已采纳该设计”），你必须在 decision 结构体中输出 "user_confirmed": true 字段。你必须在 JSON markdown 块的前一行输出该确切的时间戳：[Sync Finished: {current_time_str}]。{topic_constraint_desc}
             prompt = f"""[SYSTEM CONSTRAINT]
 This is a stateless extraction task. The conversation logs provided below are completely independent of any previous messages in this session.
@@ -487,21 +673,20 @@ Analyze the following conversation snippets and extract all key topics.
 
 You MUST output ONLY a valid JSON object matching this schema:
 {{
-  "all_decisions_discussed": ["decision draft 1", "decision draft 2"],
   "topics": [
     {{
       "topic_id": "t_001",
       "summary": "...",
       "decisions": [
-        {{"decision": "...", "rationale": "...", "evidence_msg_ids": [123, 125], "user_confirmed": false}}
+        {{"decision": "...", "rationale": "...", "evidence_msg_ids": [123, 125], "user_confirmed": false, "inherited_from": []}}
       ]
     }}
   ]
 }}
-Note: "all_decisions_discussed" is a flat string list of ALL architectural/implementation decisions (including minor, rejected, or trivial ones) discussed in the log. You MUST list ALL discussed decisions honestly and comprehensively without summarizing or skipping, as this is used for strict Checksum validation.{topic_constraint_prompt}
+Note: If this call compresses or merges old decisions with known IDs (e.g. 12, 15), you MUST list those original IDs in the "inherited_from" array. Otherwise, set "inherited_from": [].{topic_constraint_prompt}
 Note: evidence_msg_ids MUST NOT be empty. Fill it with the actual line numbers from [line_XXXX] prefixes.
 Note: If the MODEL output shows clear self-correction, agreement, or adoption of user's proposal, set "user_confirmed": true.
-If no significant topics, output: {{"all_decisions_discussed": [], "topics": []}}
+If no significant topics, output: {{"topics": []}}
 
 [CONVERSATION]
 """ + key_content
@@ -526,21 +711,17 @@ If no significant topics, output: {{"all_decisions_discussed": [], "topics": []}
 
             try:
                 data = json.loads(json_str)
-                all_discussed = data.get("all_decisions_discussed", [])
-                total_discussed = len(all_discussed)
-                total_compressed = 0
-                for t in data.get("topics", []):
-                    total_compressed += len(t.get("decisions", []))
 
-                # 计算客观压缩 Checksum 置信度 (Pass Rate)
-                confidence = 1.0
-                if total_discussed > 0:
-                    confidence = min(1.0, total_compressed / total_discussed)
+                # 基于 Non-LLM 物理事实进行独立 Checksum 置信度比对
+                confidence = calculate_factual_confidence(conn, baseline_files, baseline_actions, data.get("topics", []))
+
+                # 校验 ID 继承保护
+                validate_id_inheritance(conn, session['project_uuid'], data.get("topics", []))
 
                 for t in data.get("topics", []):
                     conn.execute(
-                        """INSERT INTO project_topics (uuid, topic_id, summary, compression_confidence)
-                           VALUES (?, ?, ?, ?)
+                        """INSERT INTO project_topics (uuid, topic_id, summary, compression_confidence, source)
+                           VALUES (?, ?, ?, ?, 'auto')
                            ON CONFLICT(uuid, topic_id) DO UPDATE SET summary=?, compression_confidence=?""",
                         (session['project_uuid'], t.get('topic_id', ''),
                          t.get('summary', ''), confidence, t.get('summary', ''), confidence))
@@ -828,6 +1009,7 @@ def main():
                 for p_uuid in active_projects:
                     check_plan_approval(conn, p_uuid)
                 consume_event_queue(conn, cycle_start)
+                run_garbage_collection(conn)
         except AgentApiError as e:
             # 中文翻译：进程锁或者 agentapi 调用失败，放弃执行。
             print(str(e), file=sys.stderr)

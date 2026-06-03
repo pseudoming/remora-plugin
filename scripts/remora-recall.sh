@@ -56,6 +56,32 @@ SQL_SAFE_KEYWORD=$(echo "$KEYWORD" | sed "s/'/''/g")
 SQL_SAFE_PROJECT_UUID=$(echo "$PROJECT_UUID" | sed "s/'/''/g")
 SQL_SAFE_CONV_ID=$(echo "$CONV_ID" | sed "s/'/''/g")
 
+# 更新被检索命中前置列表的话题的 last_accessed_at 活跃时间戳，防范 GC 误删 (限制为展现的前 10 及前 5 条)
+sqlite3 "$DB_PATH" "
+UPDATE project_topics 
+SET last_accessed_at = CURRENT_TIMESTAMP 
+WHERE uuid = '${SQL_SAFE_PROJECT_UUID}'
+AND topic_id IN (
+    SELECT DISTINCT m.topic_id
+    FROM messages m
+    JOIN messages_fts fts ON m.id = fts.rowid
+    WHERE m.conversation_id IN (
+        SELECT conversation_id FROM watermarks WHERE project_uuid = '${SQL_SAFE_PROJECT_UUID}'
+        UNION
+        SELECT '${SQL_SAFE_CONV_ID}' WHERE '${SQL_SAFE_CONV_ID}' != ''
+    )
+    AND fts.content MATCH '\"${SQL_SAFE_KEYWORD}\"'
+    ORDER BY m.id ASC
+    LIMIT 10
+    UNION
+    SELECT topic_id
+    FROM topic_decisions
+    WHERE (project_uuid = '${SQL_SAFE_PROJECT_UUID}' OR conversation_id = '${SQL_SAFE_CONV_ID}')
+    AND (decision LIKE '%${SQL_SAFE_KEYWORD}%' OR rationale LIKE '%${SQL_SAFE_KEYWORD}%')
+    LIMIT 5
+);
+" > /dev/null 2>&1
+
 # ==========================================
 # 设计原理二：混合双通道召回与时序物理升序
 # ==========================================
