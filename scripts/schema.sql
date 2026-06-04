@@ -27,7 +27,10 @@ CREATE TABLE IF NOT EXISTS topic_decisions (
     evidence_msg_ids TEXT,                -- JSON 数组格式的 transcript.jsonl message_id（用于温存储防篡改溯源）
     user_confirmed INTEGER DEFAULT 0,     -- 用户是否已物理确认（1 为确认，100% 压缩强保留）
     created_at_line INTEGER DEFAULT 0,    -- 产生该决策时会话的物理行号，用于实现 Undo 回滚时的精准撤销清理
+    decision_type TEXT DEFAULT 'approved',-- 决策类型（核准等）
+    associated_files TEXT DEFAULT '[]',   -- JSON字符串，物理修改关联的文件列表
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 最后更新时间
     FOREIGN KEY(project_uuid, topic_id) REFERENCES project_topics(uuid, topic_id)
 );
 
@@ -76,4 +79,12 @@ CREATE TABLE IF NOT EXISTS artifact_hashes (
     file_path TEXT PRIMARY KEY,           -- 制品文件的绝对路径
     hash TEXT NOT NULL,                   -- 文件的 MD5 哈希校验值
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP -- 最后更新同步时间
+);
+
+-- [P25] IPC 状态同步表
+CREATE TABLE IF NOT EXISTS session_state (
+    session_id TEXT PRIMARY KEY,
+    mode TEXT DEFAULT 'relax',
+    is_cold_start INTEGER DEFAULT 1,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

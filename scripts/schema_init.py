@@ -37,3 +37,22 @@ def init_db():
                 conn.execute(f"SELECT {col} FROM project_topics LIMIT 1")
             except sqlite3.OperationalError:
                 conn.execute(f"ALTER TABLE project_topics ADD COLUMN {col} {col_def}")
+
+        # Schema 动态迁移升级防线四：新增 session_state 跨进程状态同步表
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS session_state (
+                session_id TEXT PRIMARY KEY,
+                mode TEXT DEFAULT 'relax',
+                is_cold_start INTEGER DEFAULT 1,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Schema 动态迁移升级防线五：扩展 topic_decisions 列以支持语义类型与实体映射
+        for col, col_def in [("decision_type", "TEXT DEFAULT 'approved'"),
+                             ("associated_files", "TEXT DEFAULT '[]'"),
+                             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")]:
+            try:
+                conn.execute(f"SELECT {col} FROM topic_decisions LIMIT 1")
+            except sqlite3.OperationalError:
+                conn.execute(f"ALTER TABLE topic_decisions ADD COLUMN {col} {col_def}")

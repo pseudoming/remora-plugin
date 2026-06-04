@@ -3,31 +3,12 @@ import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 from lib.context import hook_entrypoint
 from lib.paths import get_db_path
-from lib.session import write_mode
 from lib.stats import cleanup, get_stats
 
 import json, re, subprocess
 
 DB_PATH = get_db_path()
 
-def _get_project_uuid_and_confidence(conv_id):
-    project_uuid = None
-    confidence = 1.0
-    try:
-        if os.path.exists(DB_PATH):
-            import sqlite3
-            with sqlite3.connect(DB_PATH) as conn:
-                # 从水位线表获取项目映射
-                r = conn.execute("SELECT project_uuid FROM watermarks WHERE conversation_id = ? LIMIT 1", (conv_id,)).fetchone()
-                if r:
-                    project_uuid = r[0]
-                    # 查询最近更新话题的置信度 (ORDER BY updated_at DESC)
-                    r_c = conn.execute("SELECT compression_confidence FROM project_topics WHERE uuid = ? ORDER BY updated_at DESC LIMIT 1", (project_uuid,)).fetchone()
-                    if r_c and r_c[0] is not None:
-                        confidence = r_c[0]
-    except:
-        pass
-    return project_uuid, confidence
 
 try:
     import remora_init
@@ -35,7 +16,7 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(__file__))
     import remora_init
 
-@hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Intent Detector 发生异常。拦截防线已降级，但不影响正常对话。</system-reminder>"}]})
+@hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Session Guardian 发生异常。状态同步防线已降级，但不影响正常对话。</system-reminder>"}]})
 def main(context):
     # 0. 环境自愈
     initialized = remora_init.init_environment()
@@ -248,31 +229,20 @@ def main(context):
     if hard_kws and re.search(r'(' + '|'.join(hard_kws) + r')', clean_msg, re.IGNORECASE):
         mode = "strict"
         
-    # 本地缓存落盘写入分发
+    # 跨进程状态机同步 (写入 SQLite session_state 同步表，支持多拦截器 IPC)
+    # 首次插入 is_cold_start = 1，更新时保持原有 is_cold_start，将其消费职责留给 Phase 26
     try:
-        write_mode(conv_id, mode)
-    except:
+        import sqlite3
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.execute("""
+                INSERT INTO session_state (session_id, mode, is_cold_start, updated_at)
+                VALUES (?, ?, 1, CURRENT_TIMESTAMP)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    mode = excluded.mode,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (conv_id, mode))
+    except Exception as e:
         pass
-
-    # 分级匹配触发
-    triggered = False
-    if hard_kws and re.search(r'(' + '|'.join(hard_kws) + r')', clean_msg, re.IGNORECASE):
-        triggered = True
-    elif mode == "strict" and soft_kws and re.search(r'(' + '|'.join(soft_kws) + r')', clean_msg, re.IGNORECASE):
-        triggered = True
-
-    if triggered:
-        project_uuid, confidence = _get_project_uuid_and_confidence(conv_id)
-        confidence_warning = ""
-        if confidence < 0.7:
-            # 中文翻译：[置信度警告] 最近一次记忆压缩置信度较低，部分决策可能已被丢弃，请小心使用 recall 检索核对！
-            confidence_warning = f"\n⚠️ [RECALL CONFIDENCE WARNING] 最近一次记忆压缩置信度较低 ({confidence:.2f})，部分决策可能已被丢弃，请使用 recall 检索温存储核对！"
-
-        script_path = os.path.join(os.path.dirname(__file__), "remora-recall.py")
-        # 中文翻译：🚨 记忆防御触发：不要猜测。执行 `python3 {script_path} "YOUR_KEYWORD"` 从温存储中检索事实。
-        inject_steps.append({
-            "ephemeralMessage": f"<system-reminder>{confidence_warning}\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING. Execute `python3 {script_path} \"YOUR_KEYWORD\"` to retrieve facts from warm storage.\n</system-reminder>"
-        })
 
     # ==========================================
     # 设计原理五：View File 累加器与主干上下文防腐 (Anti-Context-Rot) 软阻断

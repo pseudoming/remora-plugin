@@ -8,7 +8,7 @@
       },
       {
         "type": "command",
-        "command": "/usr/bin/python3 ./scripts/intent-detector.py",
+        "command": "/usr/bin/python3 ./scripts/session-guardian.py",
         "timeout": 10
       },
       {
@@ -19,7 +19,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "run_command|view_file|grep_search",
+        "matcher": "run_command|view_file|grep_search|write_to_file|multi_replace_file_content",
         "hooks": [
           {
             "type": "command",

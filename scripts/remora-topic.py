@@ -14,6 +14,29 @@ from lib.paths import get_db_path
 
 DB_PATH = get_db_path()
 
+def _force_cold_start(conn):
+    # 强置 is_cold_start 信号位以实现冷启动与 Topic 切换同步
+    main_conv_id = None
+    if os.path.exists("/tmp/remora_main_conv_id.txt"):
+        try:
+            with open("/tmp/remora_main_conv_id.txt", "r") as mf:
+                main_conv_id = mf.read().strip()
+        except:
+            pass
+    if main_conv_id:
+        conn.execute(
+            "INSERT INTO session_state (session_id, is_cold_start, updated_at) VALUES (?, 1, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(session_id) DO UPDATE SET is_cold_start=1, updated_at=CURRENT_TIMESTAMP",
+            (main_conv_id,)
+        )
+    else:
+        # 仅对最近活跃的单一 session 进行置位，防止污染全表历史 session
+        conn.execute("""
+            UPDATE session_state 
+            SET is_cold_start = 1, updated_at = CURRENT_TIMESTAMP
+            WHERE session_id = (SELECT session_id FROM session_state ORDER BY updated_at DESC LIMIT 1)
+        """)
+
 def main():
     parser = argparse.ArgumentParser(description="Remora Topic and Decision Controller")
     parser.add_argument("action", choices=["new", "switch", "close", "confirm"], help="Action to perform")
@@ -49,6 +72,7 @@ def main():
                 "ON CONFLICT(uuid, topic_id) DO UPDATE SET status='open', source='manual', last_accessed_at=CURRENT_TIMESTAMP",
                 (project_uuid, args.name)
             )
+            _force_cold_start(conn)
             conn.commit()
             print(f"Created active topic {args.name} in project {project_uuid}.")
 
@@ -63,6 +87,7 @@ def main():
                 "ON CONFLICT(uuid, topic_id) DO UPDATE SET status='open', last_accessed_at=CURRENT_TIMESTAMP",
                 (project_uuid, args.name)
             )
+            _force_cold_start(conn)
             conn.commit()
             print(f"Switched active topic to {args.name} in project {project_uuid}.")
 
