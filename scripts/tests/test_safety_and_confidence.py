@@ -270,5 +270,23 @@ class TestScanSessions(unittest.TestCase):
         finally:
             shutil.rmtree(temp_dir)
 
+    def test_get_project_id_from_env(self):
+        import scan_sessions
+        from unittest.mock import patch
+        
+        # Test case 1: when ANTIGRAVITY_PROJECT_ID is present in environment
+        with patch.dict(os.environ, {"ANTIGRAVITY_PROJECT_ID": "my-custom-project-id"}):
+            project_id = scan_sessions.get_project_id("any-conv-id")
+            self.assertEqual(project_id, "my-custom-project-id")
+            
+        # Test case 2: when ANTIGRAVITY_PROJECT_ID is NOT present
+        # It should fall back to agentapi or default_mock_id (since we are mocking agentapi not to exist)
+        with patch.dict(os.environ, {}, clear=False):
+            if "ANTIGRAVITY_PROJECT_ID" in os.environ:
+                del os.environ["ANTIGRAVITY_PROJECT_ID"]
+            with patch("shutil.which", return_value=None):
+                project_id = scan_sessions.get_project_id("any-conv-id")
+                self.assertEqual(project_id, "11111111-1111-1111-1111-111111111111")
+
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,11 @@ def save_excluded_ids(ids):
 
 def get_project_id(conv_id):
     """通过 agentapi 获取这个会话的真实 projectId"""
+    # 优先从环境变量获取项目 ID，以便在 mock 环境或测试套件中正确映射
+    env_project_id = os.environ.get("ANTIGRAVITY_PROJECT_ID")
+    if env_project_id:
+        return env_project_id
+
     import shutil
     default_mock_id = "11111111-1111-1111-1111-111111111111"
     
