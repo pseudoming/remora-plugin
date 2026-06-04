@@ -15,3 +15,4 @@ sidecars/memory-compactor/sidecar.json
 skills/remora-architecture/SKILL.md
 agents/*.json
 !agents/*.template.json
+.agents/
