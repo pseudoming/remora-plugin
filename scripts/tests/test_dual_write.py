@@ -10,7 +10,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 import lib.dao as dao
 
 TEST_DB_PATH = "/tmp/test_remora_dual_write.db"
-TEST_JSONL = "/tmp/test_transcript.jsonl"
 
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
@@ -21,8 +20,7 @@ def setup_db(monkeypatch):
 
     if os.path.exists(TEST_DB_PATH):
         os.remove(TEST_DB_PATH)
-    if os.path.exists(TEST_JSONL):
-        os.remove(TEST_JSONL)
+        pass
         
     from contextlib import closing
     with closing(sqlite3.connect(TEST_DB_PATH)) as conn:
@@ -84,22 +82,21 @@ def setup_db(monkeypatch):
     
     if os.path.exists(TEST_DB_PATH):
         os.remove(TEST_DB_PATH)
-    if os.path.exists(TEST_JSONL):
-        os.remove(TEST_JSONL)
+        pass
 
 
-def test_compactor_dual_write():
-    # Write some logs
-    with open(TEST_JSONL, "w", encoding="utf-8") as f:
-        f.write(json.dumps({"type": "USER_INPUT", "source": "user", "content": "Hello", "timestamp": "2026-06-04T12:00:00Z"}) + "\n")
-        f.write(json.dumps({"type": "PLANNER_RESPONSE", "source": "agent", "content": "Hi", "timestamp": "2026-06-04T12:00:01Z"}) + "\n")
+def test_compactor_dual_write(monkeypatch):
+    import lib.conversation
+    def mock_stream(self, start_idx=0):
+        yield {"step_index": 1, "type": "USER_INPUT", "source": "user", "content": "Hello", "timestamp": "2026-06-04T12:00:00Z"}
+        yield {"step_index": 2, "type": "PLANNER_RESPONSE", "source": "agent", "content": "Hi", "timestamp": "2026-06-04T12:00:01Z"}
+    monkeypatch.setattr(lib.conversation.ConversationDataAccessLayer, "stream_steps_forward", mock_stream)
     
     # Run read_transcript
     import read_transcript
     session = {
         'project_uuid': 'p1',
-        'conversation_id': 'c1',
-        'transcript_path': TEST_JSONL
+        'conversation_id': 'c1'
     }
     
     with sqlite3.connect(TEST_DB_PATH) as conn:

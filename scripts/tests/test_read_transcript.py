@@ -52,14 +52,15 @@ def setup_db():
     if os.path.exists(TEST_DB_PATH):
         os.remove(TEST_DB_PATH)
 
-def test_cursor_resume(tmp_path):
-    transcript_path = os.path.join(tmp_path, "transcript.jsonl")
-    
-    # Construct 10 logs
-    with open(transcript_path, "w", encoding="utf-8") as f:
+def test_cursor_resume(tmp_path, monkeypatch):
+    import sys
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'scripts')))
+    import lib.conversation
+    def mock_stream(self, start_idx=0):
         for i in range(1, 11):
-            f.write(json.dumps({"type": "USER_INPUT", "content": f"msg {i}", "source": "USER", "timestamp": "2026-06-04T00:00:00Z"}) + "\n")
-            
+            yield {"step_index": i, "type": "USER_INPUT", "content": f"msg {i}", "source": "USER", "timestamp": "2026-06-04T00:00:00Z"}
+    monkeypatch.setattr(lib.conversation.ConversationDataAccessLayer, "stream_steps_forward", mock_stream)
+    
     # Mock initial DB state (processed up to 5)
     from contextlib import closing
     with closing(sqlite3.connect(TEST_DB_PATH)) as conn:
@@ -70,8 +71,7 @@ def test_cursor_resume(tmp_path):
                 
     session = {
         'project_uuid': 'proj1',
-        'conversation_id': 'conv1',
-        'transcript_path': str(transcript_path)
+        'conversation_id': 'conv1'
     }
     
     with closing(sqlite3.connect(TEST_DB_PATH)) as conn:

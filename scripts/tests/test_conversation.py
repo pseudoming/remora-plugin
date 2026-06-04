@@ -24,10 +24,11 @@ def run_tests():
     print(f"Watermark Result: {watermark}")
     assert isinstance(watermark, int), "Watermark must be an integer."
     
-    print("\n[Test 2] stream_transcript_reverse()")
+    print("\n[Test 2] stream_steps_reverse()")
     lines_count = 0
     first_few = []
-    for line in cdal.stream_transcript_reverse():
+    for step in cdal.stream_steps_reverse():
+        line = str(step)
         lines_count += 1
         if lines_count <= 3:
             first_few.append(line.strip()[:100] + "...")
@@ -44,9 +45,9 @@ def run_tests():
     planner_msg = cdal.get_latest_planner_response()
     print(f"Latest Planner Msg Preview: {planner_msg[:100] + '...' if planner_msg else 'None'}")
     
-    print("\n[Test 5] stream_history()")
+    print("\n[Test 5] stream_steps_forward()")
     history_count = 0
-    for step in cdal.stream_history(start_idx=0):
+    for step in cdal.stream_steps_forward(start_idx=0):
         history_count += 1
     print(f"Successfully streamed {history_count} total steps chronologically.")
     

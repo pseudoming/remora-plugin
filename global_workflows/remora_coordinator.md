@@ -24,6 +24,6 @@ description: 当面临长链路调试、深水区排查或大型重构时，主 
 
 ## 4. 温存储主动召回 (Active Recall)
 **禁止凭空猜测**：当用户的指令挑战了过往的历史记忆，或主干上下文已被高度压缩时，绝不可凭空臆断或猜测。
-**触发动作**：严禁在主干会话中使用 grep_search 或 view_file 检索 transcript.jsonl 大日志以防上下文爆炸。必须调用温存储官方接口：
+**触发动作**：严禁在主干会话中使用 grep_search 或 view_file 检索文本形态的大日志以防上下文爆炸。必须调用温存储官方接口：
 `{PYTHON} {PLUGIN_ROOT}/scripts/remora-recall.py "<YOUR_KEYWORD>"`
 从 SQLite FTS5 检索库中安全、精准地召回历史事实。

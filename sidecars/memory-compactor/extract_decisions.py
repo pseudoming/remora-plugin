@@ -33,13 +33,16 @@ def get_or_create_conversation(prompt):
         with open(CONV_MARKER_FILE, 'r') as f:
             conv_id = f.read().strip()
             if conv_id:
-                transcript_path = os.path.join(
-                    BRAIN_DIR, conv_id, ".system_generated", "logs", "transcript.jsonl")
+                from lib.conversation import ConversationDataAccessLayer
+                cdal = ConversationDataAccessLayer(conv_id)
                 should_rollover = False
-                if os.path.exists(transcript_path):
+                if os.path.exists(cdal.db_path):
                     try:
-                        with open(transcript_path, 'rb') as tf:
-                            line_count = sum(1 for _ in tf)
+                        import sqlite3
+                        with sqlite3.connect(cdal.db_path) as c:
+                            cur = c.cursor()
+                            cur.execute("SELECT count(*) FROM steps")
+                            line_count = cur.fetchone()[0]
                         if line_count > 150:
                             should_rollover = True
                             print(f"[Remora] 会话 {conv_id} 步数已达 {line_count}，启动自动换代。")
@@ -85,38 +88,48 @@ def get_or_create_conversation(prompt):
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         raise AgentApiError(f"Fail-Fast: new-conversation failed. Abandoning execution. Error: {e}")
 
-def extract_factual_baseline(transcript_path, start_line):
+def extract_factual_baseline(conv_id, start_line):
     """
     用纯代码规则从增量对话中提取最小事实基准集 (Non-LLM Baseline)
     提取物理写文件工具调用中的目标文件名以及用户确认打标的动作 /confirm <id>
     """
     baseline_files = set()
     baseline_actions = set()
-    current_line = 0
-    if not os.path.exists(transcript_path):
+    
+    from lib.conversation import ConversationDataAccessLayer
+    cdal = ConversationDataAccessLayer(conv_id)
+    if cdal.get_max_step_index() == 0:
         return [], []
         
-    with open(transcript_path, 'r', encoding='utf-8') as f:
-        for line in f:
-            current_line += 1
-            if current_line <= start_line:
+    try:
+        # stream_steps_forward will yield all steps. We only process step_index > start_line
+        for step in cdal.stream_steps_forward():
+            step_index = step.get('step_index')
+            if step_index is None or step_index <= start_line:
                 continue
-            try:
-                obj = json.loads(line)
-                for tool in obj.get('tool_calls', []):
-                    tool_name = tool.get('name', '')
-                    args = tool.get('arguments', {})
-                    if tool_name in ('write_to_file', 'replace_file_content', 'multi_replace_file_content'):
+                
+            for tool in step.get('tool_calls', []):
+                tool_name = tool.get('name', '')
+                args = tool.get('args', tool.get('arguments', {}))
+                if tool_name in ('write_to_file', 'replace_file_content', 'multi_replace_file_content'):
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except:
+                            pass
+                    if isinstance(args, dict):
                         target_file = args.get('TargetFile') or args.get('AbsolutePath')
                         if target_file:
                             baseline_files.add(os.path.basename(target_file))
-                content = obj.get('content', '')
-                if content:
-                    confirm_matches = re.findall(r'/confirm\s+(\d+)', content)
-                    for m in confirm_matches:
-                        baseline_actions.add(f"confirm:{m}")
-            except Exception:
-                continue
+                            
+            content = step.get('content', '')
+            if content:
+                confirm_matches = re.findall(r'/confirm\s+(\d+)', content)
+                for m in confirm_matches:
+                    baseline_actions.add(f"confirm:{m}")
+    except Exception:
+        pass
+        
     return list(baseline_files), list(baseline_actions)
 
 def calculate_factual_confidence(conn, baseline_files, baseline_actions, output_topics):
@@ -196,11 +209,11 @@ def process_sessions(start_time):
                 print("Max execution time reached, stopping.", file=sys.stderr)
                 break
 
-            key_content, current_line, watermark_line = read_incremental_logs(conn, session)
+            key_content, current_msg_id, last_msg_id = read_incremental_logs(conn, session)
 
-            is_sub = is_subagent_session(session['transcript_path'])
+            is_sub = is_subagent_session(session['conversation_id'])
             if is_sub:
-                changed, referenced = extract_subagent_report(session['transcript_path'])
+                changed, referenced = extract_subagent_report(session['conversation_id'])
                 if changed or referenced:
                     active_topic = _get_active_topic(conn, session['project_uuid'])
                     if active_topic:
@@ -218,22 +231,22 @@ def process_sessions(start_time):
                             ref_dict[fb] = {"file": fb, "source": "agent"}
                         conn.execute("UPDATE project_topics SET associated_files=?, referenced_files=?, last_accessed_at=CURRENT_TIMESTAMP WHERE uuid=? AND topic_id=?",
                                      (json.dumps(list(assoc_dict.values())), json.dumps(list(ref_dict.values())), session['project_uuid'], active_topic))
-                cursor = conn.execute("SELECT id FROM messages WHERE conversation_id=? AND line_number=?", (session['conversation_id'], current_line))
+                cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (current_msg_id,))
                 row = cursor.fetchone()
-                last_msg_id = row[0] if row else 0
+                current_line = row[0] if row else 0
                 conn.execute(
                     "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_line, last_msg_id, session['project_uuid'], session['conversation_id']))
+                    (current_line, current_msg_id, session['project_uuid'], session['conversation_id']))
                 conn.commit()
                 continue
 
             if not key_content.strip():
-                cursor = conn.execute("SELECT id FROM messages WHERE conversation_id=? AND line_number=?", (session['conversation_id'], current_line))
+                cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (current_msg_id,))
                 row = cursor.fetchone()
-                last_msg_id = row[0] if row else 0
+                current_line = row[0] if row else 0
                 conn.execute(
                     "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_line, last_msg_id, session['project_uuid'], session['conversation_id']))
+                    (current_line, current_msg_id, session['project_uuid'], session['conversation_id']))
                 conn.commit()
                 continue
 
@@ -247,12 +260,12 @@ def process_sessions(start_time):
                 topic_constraint_desc = f"\n[MANUAL TOPIC CONSTRAINT]\nThe current session is inside an active manual topic \"{active_topic_id}\".\nYou MUST group all extracted decisions under this specific topic_id: \"{active_topic_id}\".\nDo NOT generate a new topic_id or topic summary. Just reuse \"{active_topic_id}\" as the topic_id in your output."
                 topic_constraint_prompt = f"\nNote: You MUST reuse \"{active_topic_id}\" as the topic_id in your output, do NOT create any other topic_id."
 
-            baseline_files, baseline_actions = extract_factual_baseline(session['transcript_path'], watermark_line)
+            baseline_files, baseline_actions = extract_factual_baseline(session['conversation_id'], last_msg_id)
 
             prompt = f"""[SYSTEM CONSTRAINT]
 This is a stateless extraction task. The conversation logs provided below are completely independent of any previous messages in this session.
 You MUST ignore all previous contexts, topics, and decisions in this conversation history. Extract ADRs ONLY based on the new logs provided below.
-Each line of the log is prefixed with its physical line number, e.g. [line_123]. You MUST reference these numbers.
+Each line of the log is prefixed with its database ID, e.g. [msg_123]. You MUST reference these numbers.
 {topic_constraint_desc}
 
 You MUST output this exact timestamp on the first line before your JSON markdown block (do NOT put it inside the markdown code block):
@@ -274,7 +287,7 @@ You MUST output ONLY a valid JSON object matching this schema:
   ]
 }}
 Note: If this call compresses or merges old decisions with known IDs (e.g. 12, 15), you MUST list those original IDs in the "inherited_from" array. Otherwise, set "inherited_from": [].{topic_constraint_prompt}
-Note: evidence_msg_ids MUST NOT be empty. Fill it with the actual line numbers from [line_XXXX] prefixes.
+Note: evidence_msg_ids MUST NOT be empty. Fill it with the actual IDs from [msg_XXXX] prefixes.
 Note: If the MODEL output shows clear self-correction, agreement, or adoption of user's proposal, set "user_confirmed": true.
 If no significant topics, output: {{"topics": []}}
 
@@ -283,12 +296,12 @@ If no significant topics, output: {{"topics": []}}
 
             llm_output = get_or_create_conversation(prompt)
             if not llm_output:
-                cursor = conn.execute("SELECT id FROM messages WHERE conversation_id=? AND line_number=?", (session['conversation_id'], current_line))
+                cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (current_msg_id,))
                 row = cursor.fetchone()
-                last_msg_id = row[0] if row else 0
+                current_line = row[0] if row else 0
                 conn.execute(
                     "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_line, last_msg_id, session['project_uuid'], session['conversation_id']))
+                    (current_line, current_msg_id, session['project_uuid'], session['conversation_id']))
                 conn.commit()
                 continue
 
@@ -318,16 +331,25 @@ If no significant topics, output: {{"topics": []}}
 
                     for d in t.get("decisions", []):
                         user_confirmed_val = 1 if d.get("user_confirmed", False) else 0
-                        evidence_msg_db_ids = []
-                        for line_num in d.get('evidence_msg_ids', []):
-                            cursor = conn.execute("SELECT id FROM messages WHERE conversation_id=? AND line_number=?", (session['conversation_id'], line_num))
-                            row = cursor.fetchone()
-                            if row:
-                                evidence_msg_db_ids.append(row[0])
+                        
+                        # LLM now natively returns messages.id
+                        evidence_msg_db_ids = d.get('evidence_msg_ids', [])
+                        
+                        # Fallback for old columns
+                        evidence_msg_ids = []
+                        for msg_id in evidence_msg_db_ids:
+                            try:
+                                cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (int(msg_id),))
+                                row = cursor.fetchone()
+                                if row:
+                                    evidence_msg_ids.append(row[0])
+                            except (ValueError, TypeError):
+                                pass
 
-                        cursor = conn.execute("SELECT id FROM messages WHERE conversation_id=? AND line_number=?", (session['conversation_id'], current_line))
+                        created_at_msg_id = current_msg_id
+                        cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (created_at_msg_id,))
                         row = cursor.fetchone()
-                        created_at_msg_id = row[0] if row else 0
+                        created_at_line = row[0] if row else 0
 
                         conn.execute(
                             """INSERT INTO topic_decisions
@@ -336,18 +358,18 @@ If no significant topics, output: {{"topics": []}}
                             (session['project_uuid'], t.get('topic_id', ''),
                              session['conversation_id'], d.get('decision', ''),
                              d.get('rationale', ''),
-                             json.dumps(d.get('evidence_msg_ids', [])),
+                             json.dumps(evidence_msg_ids),
                              json.dumps(evidence_msg_db_ids),
                              user_confirmed_val,
-                             current_line,
+                             created_at_line,
                              created_at_msg_id))
             except json.JSONDecodeError:
                 pass
 
-            cursor = conn.execute("SELECT id FROM messages WHERE conversation_id=? AND line_number=?", (session['conversation_id'], current_line))
+            cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (current_msg_id,))
             row = cursor.fetchone()
-            last_msg_id = row[0] if row else 0
+            current_line = row[0] if row else 0
             conn.execute(
                 "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                (current_line, last_msg_id, session['project_uuid'], session['conversation_id']))
+                (current_line, current_msg_id, session['project_uuid'], session['conversation_id']))
             conn.commit()

@@ -29,7 +29,7 @@ from lib.session import read_mode
 # ==========================================================
 # 设计原理二：时序净化与强水位线截断
 # ==========================================================
-# 1. 强水位线截断：在回溯解析 `transcript.jsonl` 时，以 `initialNumSteps` 为强水位线。
+# 1. 强水位线截断：在通过 CDAL 提取原生步骤时，以 `initialNumSteps` 为强水位线。
 #    凡是 step_index 小于等于该水位线的步骤，说明是本轮交互启动之前发生的历史步骤，必须停止回溯，防历史交互干扰。
 # 2. 回合截断：逆序回溯时，一旦遇到用户的 `USER_INPUT` 输入，表示上一个交互回合结束，停止回溯。
 # 3. 锁定最近 PLANNER_RESPONSE：只抓取本回合内最近一次的模型输出，杜绝跨回合时序污染。
@@ -90,68 +90,57 @@ def normalize_filepath(arguments_dict):
             return os.path.basename(val)
     return ""
 
-def get_latest_conversation_states(transcript_path, initial_num_steps=0):
+from lib.conversation import ConversationDataAccessLayer
+
+def get_latest_conversation_states(cdal: ConversationDataAccessLayer, initial_num_steps=0):
     """
-    流式读取 transcript.jsonl 末尾数据，
+    通过 CDAL 原生读取 SQLite，
     提取出最近一次大模型的 PLANNER_RESPONSE 陈述文本以及本次 Invocation 中的物理写入工具调用。
     """
     planner_text = None
     actual_modified_files = set()
     has_any_tool_calls = False
-    
-    if not os.path.exists(transcript_path):
-        return "", set(), False
 
     try:
-        # 使用 tail 读取最后 1000 行，防大文件内存暴增
-        output = subprocess.check_output(['tail', '-n', '1000', transcript_path], stderr=subprocess.STDOUT)
-        lines = output.decode('utf-8').strip().split('\n')
-        
-        # 逆序向前分析最近一次 Invocation 的内容
-        for line in reversed(lines):
-            if not line.strip():
-                continue
-            try:
-                step = json.loads(line)
-                step_type = step.get('type')
-                source = step.get('source')
-                step_index = step.get('step_index')
+        # 使用 CDAL 的原生 SQLite 倒序查询接口，安全获取最后 1000 步
+        for step in cdal.stream_steps_reverse(limit=1000):
+            step_type = step.get('type')
+            source = step.get('source')
+            step_index = step.get('step_index')
+            
+            # 水位线强截断，防止时序污染
+            if initial_num_steps > 0 and step_index is not None and step_index <= initial_num_steps:
+                break
+            
+            # 遇到真实用户的输入，代表交互回合结束，停止回溯
+            if step_type == 'USER_INPUT' or source in ['USER', 'USER_EXPLICIT']:
+                break
                 
-                # 水位线强截断，防止时序污染
-                if initial_num_steps > 0 and step_index is not None and step_index <= initial_num_steps:
-                    break
+            tool_calls = step.get('tool_calls', [])
+            if tool_calls:
+                has_any_tool_calls = True
                 
-                # 遇到真实用户的输入，代表交互回合结束，停止回溯
-                if step_type == 'USER_INPUT' or source in ['USER', 'USER_EXPLICIT']:
-                    break
+            # 锁定最近的一次 PLANNER_RESPONSE
+            if step_type == 'PLANNER_RESPONSE' and planner_text is None:
+                planner_text = step.get('content', '')
+                
+            # 分析并提取写入工具调用的目标文件，应用别名归一化
+            if tool_calls:
+                for call in tool_calls:
+                    name = call.get('name', '')
+                    args = call.get('args') or call.get('arguments') or {}
                     
-                tool_calls = step.get('tool_calls', [])
-                if tool_calls:
-                    has_any_tool_calls = True
-                    
-                # 锁定最近的一次 PLANNER_RESPONSE
-                if step_type == 'PLANNER_RESPONSE' and planner_text is None:
-                    planner_text = step.get('content', '')
-                    
-                # 分析并提取写入工具调用的目标文件，应用别名归一化
-                if tool_calls:
-                    for call in tool_calls:
-                        name = call.get('name', '')
-                        args = call.get('args') or call.get('arguments') or {}
-                        
-                        if name in ['write_to_file', 'replace_file_content', 'multi_replace_file_content']:
-                            if isinstance(args, str):
-                                try:
-                                    args = json.loads(args)
-                                except Exception:
-                                    pass
-                                    
-                            if isinstance(args, dict):
-                                base_name = normalize_filepath(args)
-                                if base_name:
-                                    actual_modified_files.add(base_name)
-            except Exception:
-                continue
+                    if name in ['write_to_file', 'replace_file_content', 'multi_replace_file_content']:
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except Exception:
+                                pass
+                                
+                        if isinstance(args, dict):
+                            base_name = normalize_filepath(args)
+                            if base_name:
+                                actual_modified_files.add(base_name)
     except Exception:
         pass
         
@@ -172,8 +161,16 @@ def main(context):
     except Exception:
         pass
 
+    conv_id = "default"
+    if transcript_path:
+        match = re.search(r'/brain/([^/]+)/', transcript_path)
+        if match:
+            conv_id = match.group(1)
+            
+    cdal = ConversationDataAccessLayer(conv_id)
     initial_num_steps = context.get('initialNumSteps', 0)
-    planner_text, actual_tool_files, has_any_tool_calls = get_latest_conversation_states(transcript_path, initial_num_steps)
+    
+    planner_text, actual_tool_files, has_any_tool_calls = get_latest_conversation_states(cdal, initial_num_steps)
     physical_files = get_physical_modifications(cwd, transcript_path)
     
     # 事实基座 = (解析 transcript 得到的工具调用文件集) U (物理增量比对得出的文件集)
@@ -182,12 +179,6 @@ def main(context):
     # 若本回合无任何工具调用且无物理变更，或未发生任何文本生成，直接放行
     if not planner_text or (not has_any_tool_calls and not physical_files):
         return {"injectSteps": [], "terminationBehavior": ""}
-
-    conv_id = "default"
-    if transcript_path:
-        match = re.search(r'/brain/([^/]+)/', transcript_path)
-        if match:
-            conv_id = match.group(1)
     
     mode = read_mode(conv_id, "strict")
 

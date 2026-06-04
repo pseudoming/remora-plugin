@@ -3,44 +3,34 @@ import sys
 import json
 import os
 
-def read_last_user_ai_rounds(path_or_id, rounds=10):
-    transcript_path = path_or_id
-    if not os.path.exists(transcript_path):
-        brain_dir = os.path.expanduser("~/.gemini/antigravity/brain")
-        transcript_path = os.path.join(brain_dir, path_or_id, ".system_generated", "logs", "transcript.jsonl")
+sys.path.insert(0, os.path.dirname(__file__))
+from lib.conversation import ConversationDataAccessLayer
 
-    if not os.path.exists(transcript_path):
-        print(f"Error: log path not found for ID or Path: {path_or_id}")
+def read_last_user_ai_rounds(conv_id, rounds=10):
+    cdal = ConversationDataAccessLayer(conv_id)
+
+    if not os.path.exists(cdal.db_path):
+        print(f"Error: db path not found for ID: {conv_id}")
         sys.exit(1)
         
     rounds_data = []
     try:
-        import subprocess
         limit = rounds * 50
-        output = subprocess.check_output(['tail', '-n', str(limit), transcript_path], stderr=subprocess.STDOUT)
-        lines = output.decode('utf-8').strip().split('\n')
-            
-        for line in reversed(lines):
-            if not line.strip():
+        for step in cdal.stream_steps_reverse(limit=limit):
+            step_type = step.get('type')
+            content = step.get('content', '')
+            if not content:
                 continue
-            try:
-                obj = json.loads(line)
-                step_type = obj.get('type')
-                content = obj.get('content', '')
-                if not content:
-                    continue
-                    
-                if step_type in ('USER_INPUT', 'PLANNER_RESPONSE'):
-                    rounds_data.append({
-                        "role": "user" if step_type == 'USER_INPUT' else "assistant",
-                        "content": content[:1000] # Limit output to avoid context explosion
-                    })
-                    if len(rounds_data) >= rounds * 2:
-                        break
-            except Exception:
-                continue
+                
+            if step_type in ('USER_INPUT', 'PLANNER_RESPONSE'):
+                rounds_data.append({
+                    "role": "user" if step_type == 'USER_INPUT' else "assistant",
+                    "content": content[:1000] # Limit output to avoid context explosion
+                })
+                if len(rounds_data) >= rounds * 2:
+                    break
     except Exception as e:
-        print(f"Error reading log: {e}")
+        print(f"Error reading db: {e}")
         sys.exit(1)
         
     for r in reversed(rounds_data):
@@ -48,8 +38,16 @@ def read_last_user_ai_rounds(path_or_id, rounds=10):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 read-session-log.py <conversation_id_or_path> [rounds]")
+        print("Usage: python3 read-session-log.py <conversation_id> [rounds]")
         sys.exit(1)
-    path = sys.argv[1]
+    
+    # Extract conv_id if path was passed for backwards compatibility
+    arg = sys.argv[1]
+    if '/' in arg:
+        import re
+        match = re.search(r'/brain/([^/]+)', arg)
+        if match:
+            arg = match.group(1)
+            
     r = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-    read_last_user_ai_rounds(path, r)
+    read_last_user_ai_rounds(arg, r)

@@ -28,41 +28,44 @@ def main(context):
         except:
             pass
             
-    # 动态读取 transcript.jsonl 获取最后一条用户指令
-    last_msg = ""
     transcript_path = context.get('transcriptPath')
-    heartbeat_lines = []
-    if transcript_path and os.path.exists(transcript_path):
-        try:
-            output = subprocess.check_output(["tail", "-n", "300", transcript_path], stderr=subprocess.STDOUT)
-            heartbeat_lines = [line.strip() for line in output.decode('utf-8').strip().split('\n') if line.strip()]
-        except Exception:
-            pass
-        # [重构] 新实现：直接调用系统原生的 tail 截取末尾数据。
-        # 优势：耗时稳定控制在个位数毫秒级，不随 file 体量增大而发生 I/O 与内存劣化，且不依赖对底层 payload 结构的猜测。
-        try:
-            output = subprocess.check_output(['tail', '-n', '50', transcript_path], stderr=subprocess.STDOUT)
-            lines = output.decode('utf-8').strip().split('\n')
-            
-            # 检测是否为新回合启动 (最后一条有效实体必须是 USER_INPUT)
-            is_new_turn = False
-            for line in reversed(lines):
-                if not line.strip(): continue
-                try:
-                    step = json.loads(line)
-                    # 剥除系统静默消息，定位真实交互 Step
-                    step_type = step.get('type')
-                    if step_type in ['EPHEMERAL_MESSAGE', 'SYSTEM_MESSAGE', 'ERROR_MESSAGE']:
-                        continue
-                    
-                    if step_type == 'USER_INPUT':
-                        is_new_turn = True
-                        last_msg = step.get('content', '')
-                    break
-                except Exception:
-                    continue
-        except Exception:
-            pass
+    
+    # 提取当前会话 ID
+    conv_id = "default"
+    if transcript_path:
+        match = re.search(r'/brain/([^/]+)/', transcript_path)
+        if match:
+            conv_id = match.group(1)
+            try:
+                with open(os.path.join(get_data_dir(), ".runtime", "remora_main_conv_id.txt"), "w") as mf:
+                    mf.write(conv_id)
+            except:
+                pass
+                
+    from lib.conversation import ConversationDataAccessLayer
+    cdal = ConversationDataAccessLayer(conv_id)
+    
+    # 动态读取 SQLite 获取最后一条用户指令
+    last_msg = ""
+    heartbeat_steps = []
+    is_new_turn = False
+    
+    try:
+        # 使用 CDAL 的原生 SQLite 倒序查询接口，安全获取最后 300 步
+        heartbeat_steps = list(cdal.stream_steps_reverse(limit=300))
+        
+        # 提取 last_msg 和 is_new_turn
+        # heartbeat_steps 已经是逆序的 (从新到旧)
+        for step in heartbeat_steps[:50]:
+            step_type = step.get('type')
+            if step_type in ['EPHEMERAL_MESSAGE', 'SYSTEM_MESSAGE', 'ERROR_MESSAGE']:
+                continue
+            if step_type == 'USER_INPUT':
+                is_new_turn = True
+                last_msg = step.get('content', '')
+            break
+    except Exception:
+        pass
     
     # 动态读取 keywords.json 获取触发词
     keywords_config_path = os.path.join(os.path.dirname(__file__), 'keywords.json')
@@ -76,18 +79,7 @@ def main(context):
     except:
         pass
         
-    # 提取当前会话 ID
-    conv_id = "default"
-    if transcript_path:
-        match = re.search(r'/brain/([^/]+)/', transcript_path)
-        if match:
-            conv_id = match.group(1)
-            # 写入主干会话 ID 以便 safety-check.py 兜底识别子代理，防止因 agentapi 超时引发死锁
-            try:
-                with open(os.path.join(get_data_dir(), ".runtime", "remora_main_conv_id.txt"), "w") as mf:
-                    mf.write(conv_id)
-            except:
-                pass
+
         
     inject_steps = []
     
@@ -95,7 +87,7 @@ def main(context):
     # 设计原理六：子代理创建的即时捕获与心跳断链续期状态机逻辑
     # ==========================================
     # 由于平台的 One-shot 计时器会在子代理发送 any 中间进度同步消息时自动静默取消，
-    # 我们直接在 PreInvocation 阶段从 transcript.jsonl 中分析最新 UUID，并计算
+    # 我们直接在 PreInvocation 阶段从 CDAL 原生层中分析最新 UUID，并计算
     # 子代理最近活动与最近一次 schedule 定时器的相对时序。若已被取消且模型未续期，
     # 在上下文最前沿通过 injectSteps 注入强强制心跳指示。
     subagent_uuid = None
@@ -105,14 +97,13 @@ def main(context):
     latest_schedule_index = -1
     subagent_finish_detected = False
     
-    if transcript_path and os.path.exists(transcript_path):
+    if heartbeat_steps:
         try:
             # Pass 1：提取最新的 subagent_uuid 以及 schedule 挂载状态
-            for idx, line in enumerate(reversed(heartbeat_lines)):
-                if not line.strip(): continue
-                step = json.loads(line)
+            # 注意：heartbeat_steps 本来就是逆序的，所以直接遍历即可
+            for idx, step in enumerate(heartbeat_steps):
                 step_type = step.get('type')
-                step_str = json.dumps(step)
+                step_str = json.dumps(step, ensure_ascii=False)
                 
                 # 记录最新的 schedule 挂载，及 schedule 挂载判定（无论时序，只要同一轮且提及了 monitor 探活即可）
                 # 从主干的 schedule 参数里直接正则提取最新拉起的子代理 UUID，从根源杜绝文本投毒及类型缺失的问题
@@ -153,20 +144,18 @@ def main(context):
                         
             # Pass 2：在 subagent_uuid 提取成功后，以该特定 ID 进行精准活跃检测，排除其它 UUID 及主干物理工具调用输出 of 噪声干扰
             if subagent_uuid and not subagent_finish_detected:
-                for idx, line in enumerate(reversed(heartbeat_lines)):
-                    if not line.strip(): continue
-                    step = json.loads(line)
+                for idx, step in enumerate(heartbeat_steps):
                     step_type = step.get('type')
-                    step_str = json.dumps(step)
+                    step_str = json.dumps(step, ensure_ascii=False)
                     
-                    # 彻底放宽拦截类型捕获各种格式的消息体，但严格排除系统自身的大型历史汇总记录（防止几百回合前的 UUID 印在当前最新行引发假活跃）
+                    # 彻底放宽拦截类型捕获各种格式的消息体，但严格排除系统自身的大型历史汇总记录
                     if step_type not in ["CONVERSATION_HISTORY", "CHECKPOINT"]:
                         # 精确匹配本子代理的活跃，且排除主会话自己物理命令/文件读写/子特工状态查询所产生的带有 UUID 的输出干扰
                         if subagent_uuid in step_str and not any(cmd in step_str for cmd in ["run_command", "view_file", "grep_search", "manage_subagents"]):
                             latest_subagent_activity_index = idx
                             break
                             
-            # 正常退出自动物理清除重试计数缓存 (澄清：由于大模型调用 subagent-monitor 时强制传入 of {conv_id} 就是主会话 ID，因此 monitor 内部写入的 parent_conv_id 与此处拦截脚本读取 of conv_id 在物理上是完全同一键值，清理路径严格对齐，无歧义)
+            # 正常退出自动物理清除重试计数缓存
             if subagent_finish_detected:
                 try:
                     retry_file = os.path.join(get_data_dir(), ".runtime", f"remora_subagent_retries_{conv_id}.json")

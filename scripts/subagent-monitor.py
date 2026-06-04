@@ -1,19 +1,10 @@
-from lib.paths import get_data_dir
 #!/usr/bin/env python3
+from lib.paths import get_data_dir
 import sys
 import json
 import os
 import subprocess
 from datetime import datetime, timezone
-
-def parse_iso_time(time_str):
-    """安全解析不同格式 of ISO 8601 和空格分隔的时间戳"""
-    try:
-        ts = time_str.replace('T', ' ').replace('Z', '').split('.')[0].strip()
-        return datetime.strptime(ts, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc)
-    except Exception:
-        # 异常兜底返回 None，由调用端自动回退使用文件的物理 mtime
-        return None
 
 def main():
     if len(sys.argv) < 2:
@@ -24,33 +15,31 @@ def main():
     # 支持接收第二个参数 parent_conv_id 作为重试计数的唯一物理 key，解决子代理重试更改 ID 导致计数清零的隐患
     parent_conv_id = sys.argv[2] if len(sys.argv) > 2 else conv_id
     
-    home_dir = os.environ.get("HOME", os.path.expanduser("~"))
-    log_path = f"{home_dir}/.gemini/antigravity/brain/{conv_id}/.system_generated/logs/transcript.jsonl"
+    from lib.conversation import ConversationDataAccessLayer
+    cdal = ConversationDataAccessLayer(conv_id)
     
-    if not os.path.exists(log_path):
-        print(json.dumps({"status": "not_found", "message": f"Subagent log path {log_path} not found"}))
+    if not os.path.exists(cdal.db_path):
+        print(json.dumps({"status": "not_found", "message": f"Subagent DB path {cdal.db_path} not found"}))
         sys.exit(0)
         
     try:
         # 扩大回溯行数至 200 行，以防大流式输出（如 run_command 的大量输出）导致无法探测到 PLANNER_RESPONSE
-        output = subprocess.check_output(["tail", "-n", "200", log_path], stderr=subprocess.STDOUT)
-        lines = [line.strip() for line in output.decode('utf-8').strip().split('\n') if line.strip()]
+        steps = list(cdal.stream_steps_reverse(limit=200))
     except Exception as e:
-        print(json.dumps({"status": "error", "message": f"Failed to read logs: {str(e)}"}))
+        print(json.dumps({"status": "error", "message": f"Failed to read db logs: {str(e)}"}))
         sys.exit(1)
             
-    if not lines:
-        print(json.dumps({"status": "empty", "message": "Log file is empty"}))
+    if not steps:
+        print(json.dumps({"status": "empty", "message": "DB file is empty"}))
         sys.exit(0)
         
     # 分析最近的步骤与发生时间戳
     latest_time_str = None
     last_tool_name = None
     
-    # 提取最近的有效时间戳与最近的工具调用
-    for line in reversed(lines):
+    # 提取最近的有效时间戳与最近的工具调用 (stream 已经倒序)
+    for step in steps:
         try:
-            step = json.loads(line)
             step_type = step.get("type")
             # 抓取最近的工具调用，包括独立物理工具执行及计划内工具
             if not last_tool_name:
@@ -69,9 +58,8 @@ def main():
         except Exception:
             continue
             
-    # 由于系统日志内不包含显式 timestamp，我们彻底摒弃 JSON 内联时间解析，
-    # 强制统一使用日志文件的物理修改时间 (mtime) 作为唯一的卡死计算基准，确保绝对鲁棒性。
-    mtime = os.path.getmtime(log_path)
+    # 强制统一使用 DB 文件的物理修改时间 (mtime) 作为唯一的卡死计算基准，确保绝对鲁棒性。
+    mtime = cdal.get_db_mtime()
     last_update = datetime.fromtimestamp(mtime, timezone.utc)
         
     now = datetime.now(timezone.utc)
