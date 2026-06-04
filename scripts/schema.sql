@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS topic_decisions (
     rationale TEXT NOT NULL,              -- 做出该决策的深层原因（为什么做，或者为什么不做）
     evidence_msg_ids TEXT,                -- JSON 数组格式的自增消息 ID 记录（用于温存储防篡改溯源）
     user_confirmed INTEGER DEFAULT 0,     -- 用户是否已物理确认（1 为确认，100% 压缩强保留）
-    created_at_line INTEGER DEFAULT 0,    -- 产生该决策时会话的物理行号，用于实现 Undo 回滚时的精准撤销清理
     decision_type TEXT DEFAULT 'approved',-- 决策类型（核准等）
     associated_files TEXT DEFAULT '[]',   -- JSON字符串，物理修改关联的文件列表
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
@@ -69,7 +68,7 @@ END;
 CREATE TABLE IF NOT EXISTS watermarks (
     project_uuid TEXT NOT NULL,           -- 关联的项目UUID
     conversation_id TEXT NOT NULL,        -- 对应的对话会话ID
-    last_line_processed INTEGER DEFAULT 0,-- 最后处理的行号
+    last_msg_id INTEGER DEFAULT 0,        -- 最后处理的消息ID
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 最后更新时间
     PRIMARY KEY (project_uuid, conversation_id)
 );

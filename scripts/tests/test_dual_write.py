@@ -35,7 +35,6 @@ def setup_db(monkeypatch):
                 CREATE TABLE watermarks (
                     conversation_id TEXT PRIMARY KEY,
                     project_uuid TEXT,
-                    last_line_processed INTEGER DEFAULT 0,
                     last_msg_id INTEGER DEFAULT 0,
                     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
@@ -62,8 +61,6 @@ def setup_db(monkeypatch):
                     associated_files TEXT,
                     evidence_msg_ids TEXT,
                     user_confirmed INTEGER DEFAULT 0,
-                    created_at_line INTEGER DEFAULT 0,
-                    created_at_msg_id INTEGER DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE messages (
@@ -99,7 +96,7 @@ def test_compactor_dual_write(monkeypatch):
     }
     
     with sqlite3.connect(TEST_DB_PATH) as conn:
-        key_content, current_line, last_line = read_transcript.read_incremental_logs(conn, session)
+        key_content, current_msg_id, last_msg_id = read_transcript.read_incremental_logs(conn, session)
         
         # Verify messages table populated
         messages = conn.execute("SELECT id, line_number FROM messages").fetchall()
@@ -107,11 +104,9 @@ def test_compactor_dual_write(monkeypatch):
         assert messages[0][1] == 1
         assert messages[1][1] == 2
         
-        # Verify dual write on watermarks table
-        watermarks = conn.execute("SELECT last_line_processed, last_msg_id FROM watermarks WHERE conversation_id='c1'").fetchall()
-        # In read_transcript, it initially sets it to 0,0, wait, but where does it update it?
-        # extract_decisions updates it to current_line!
-        assert watermarks[0] == (0, 0)
+        # Verify watermark table
+        watermarks = conn.execute("SELECT last_msg_id FROM watermarks WHERE conversation_id='c1'").fetchall()
+        assert watermarks[0] == (0,)
     
         # Mock LLM data mapping back
         # Let's mock a decision using line 1
@@ -129,38 +124,27 @@ def test_compactor_dual_write(monkeypatch):
         # Run the single-track snippet directly since extract_decisions invokes LLM
         evidence_msg_ids = d.get('evidence_msg_ids', [])
 
-        cursor = conn.execute("SELECT id FROM messages WHERE conversation_id=? AND line_number=?", (session['conversation_id'], current_line))
-        row = cursor.fetchone()
-        created_at_msg_id = row[0] if row else 0
-
         conn.execute(
             """INSERT INTO topic_decisions
-               (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, created_at_line, created_at_msg_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (session['project_uuid'], t.get('topic_id', ''),
              session['conversation_id'], d.get('decision', ''),
              d.get('rationale', ''),
              json.dumps(evidence_msg_ids),
-             0,
-             current_line,
-             created_at_msg_id))
+             0))
              
         # Also update watermark
-        cursor = conn.execute("SELECT id FROM messages WHERE conversation_id=? AND line_number=?", (session['conversation_id'], current_line))
-        row = cursor.fetchone()
-        last_msg_id = row[0] if row else 0
+        # Let's say current_msg_id is 2
         conn.execute(
-            "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-            (current_line, last_msg_id, session['project_uuid'], session['conversation_id']))
+            "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
+            (current_msg_id, session['project_uuid'], session['conversation_id']))
             
         conn.commit()
 
-        # Final assertion on single-track ID
-        decisions = conn.execute("SELECT evidence_msg_ids, created_at_line, created_at_msg_id FROM topic_decisions").fetchall()
+        decisions = conn.execute("SELECT evidence_msg_ids FROM topic_decisions").fetchall()
         assert len(decisions) == 1
-        assert decisions[0][0] == "[1]"  # single-track array (message ID)
-        assert decisions[0][1] == 2      # old line number
-        assert decisions[0][2] == 2      # new message ID
+        assert decisions[0][0] == "[1]"
 
-        watermarks = conn.execute("SELECT last_line_processed, last_msg_id FROM watermarks WHERE conversation_id='c1'").fetchall()
-        assert watermarks[0] == (2, 2)
+        watermarks = conn.execute("SELECT last_msg_id FROM watermarks WHERE conversation_id='c1'").fetchall()
+        assert watermarks[0] == (2,)

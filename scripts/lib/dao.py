@@ -379,9 +379,8 @@ def run_topic_garbage_collection() -> None:
                          )
                          AND (
                              COALESCE(
-                                 (SELECT MAX(m.timestamp) 
+                                 (SELECT MAX(td.created_at) 
                                   FROM topic_decisions td 
-                                  JOIN messages m ON td.created_at_msg_id = m.id 
                                   WHERE td.project_uuid = pt.uuid AND td.topic_id = pt.topic_id),
                                  pt.last_accessed_at
                              ) < datetime('now', '-72 hours')

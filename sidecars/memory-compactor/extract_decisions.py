@@ -253,22 +253,16 @@ def process_sessions(start_time):
                             ref_dict[fb] = {"file": fb, "source": "agent"}
                         conn.execute("UPDATE project_topics SET associated_files=?, referenced_files=?, last_accessed_at=CURRENT_TIMESTAMP WHERE uuid=? AND topic_id=?",
                                      (json.dumps(list(assoc_dict.values())), json.dumps(list(ref_dict.values())), session['project_uuid'], active_topic))
-                cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (current_msg_id,))
-                row = cursor.fetchone()
-                current_line = row[0] if row else 0
                 conn.execute(
-                    "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_line, current_msg_id, session['project_uuid'], session['conversation_id']))
+                    "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
+                    (current_msg_id, session['project_uuid'], session['conversation_id']))
                 conn.commit()
                 continue
 
             if not key_content.strip():
-                cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (current_msg_id,))
-                row = cursor.fetchone()
-                current_line = row[0] if row else 0
                 conn.execute(
-                    "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_line, current_msg_id, session['project_uuid'], session['conversation_id']))
+                    "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
+                    (current_msg_id, session['project_uuid'], session['conversation_id']))
                 conn.commit()
                 continue
 
@@ -318,12 +312,9 @@ If no significant topics, output: {{"topics": []}}
 
             llm_output = get_or_create_conversation(prompt)
             if not llm_output:
-                cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (current_msg_id,))
-                row = cursor.fetchone()
-                current_line = row[0] if row else 0
                 conn.execute(
-                    "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_line, current_msg_id, session['project_uuid'], session['conversation_id']))
+                    "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
+                    (current_msg_id, session['project_uuid'], session['conversation_id']))
                 conn.commit()
                 continue
 
@@ -357,29 +348,19 @@ If no significant topics, output: {{"topics": []}}
                         # LLM natively returns messages.id in 'evidence_msg_ids'
                         evidence_msg_ids = d.get('evidence_msg_ids', [])
 
-                        created_at_msg_id = current_msg_id
-                        cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (created_at_msg_id,))
-                        row = cursor.fetchone()
-                        created_at_line = row[0] if row else 0
-
                         conn.execute(
                             """INSERT INTO topic_decisions
-                               (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, created_at_line, created_at_msg_id)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                               (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed)
+                               VALUES (?, ?, ?, ?, ?, ?, ?)""",
                             (session['project_uuid'], t.get('topic_id', ''),
                              session['conversation_id'], d.get('decision', ''),
                              d.get('rationale', ''),
                              json.dumps(evidence_msg_ids),
-                             user_confirmed_val,
-                             created_at_line,
-                             created_at_msg_id))
+                             user_confirmed_val))
             except json.JSONDecodeError:
                 pass
 
-            cursor = conn.execute("SELECT line_number FROM messages WHERE id=?", (current_msg_id,))
-            row = cursor.fetchone()
-            current_line = row[0] if row else 0
             conn.execute(
-                "UPDATE watermarks SET last_line_processed=?, last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                (current_line, current_msg_id, session['project_uuid'], session['conversation_id']))
+                "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
+                (current_msg_id, session['project_uuid'], session['conversation_id']))
             conn.commit()

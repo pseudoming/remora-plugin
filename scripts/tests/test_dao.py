@@ -31,7 +31,6 @@ def setup_db(monkeypatch):
                 CREATE TABLE watermarks (
                     conversation_id TEXT PRIMARY KEY,
                     project_uuid TEXT,
-                    last_line_processed INTEGER DEFAULT 0,
                     last_msg_id INTEGER DEFAULT 0,
                     last_updated DATETIME
                 );
@@ -55,8 +54,6 @@ def setup_db(monkeypatch):
                     associated_files TEXT,
                     evidence_msg_ids TEXT,
                     user_confirmed INTEGER DEFAULT 0,
-                    created_at_line INTEGER DEFAULT 0,
-                    created_at_msg_id INTEGER DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE messages (
@@ -204,18 +201,15 @@ def test_topic_garbage_collection():
             conn.executescript("""
                 -- Topic 1: Old last_accessed_at, but recent messages -> Should NOT be deleted
                 INSERT INTO project_topics (uuid, topic_id, status, source, last_accessed_at) VALUES ('p1', 't1', 'closed', 'auto', '2000-01-01 00:00:00');
-                INSERT INTO messages (id, conversation_id, timestamp) VALUES (1, 'c1', datetime('now', '-1 hours'));
-                INSERT INTO topic_decisions (project_uuid, topic_id, user_confirmed, created_at_msg_id) VALUES ('p1', 't1', 0, 1);
+                INSERT INTO topic_decisions (project_uuid, topic_id, user_confirmed, created_at) VALUES ('p1', 't1', 0, datetime('now', '-1 hours'));
                 
                 -- Topic 2: Old last_accessed_at, old messages -> Should be deleted
                 INSERT INTO project_topics (uuid, topic_id, status, source, last_accessed_at) VALUES ('p1', 't2', 'closed', 'auto', '2000-01-01 00:00:00');
-                INSERT INTO messages (id, conversation_id, timestamp) VALUES (2, 'c1', datetime('now', '-80 hours'));
-                INSERT INTO topic_decisions (project_uuid, topic_id, user_confirmed, created_at_msg_id) VALUES ('p1', 't2', 0, 2);
+                INSERT INTO topic_decisions (project_uuid, topic_id, user_confirmed, created_at) VALUES ('p1', 't2', 0, datetime('now', '-80 hours'));
                 
                 -- Topic 3: Old last_accessed_at, old messages, but has user_confirmed=1 -> Should NOT be deleted
                 INSERT INTO project_topics (uuid, topic_id, status, source, last_accessed_at) VALUES ('p1', 't3', 'closed', 'auto', '2000-01-01 00:00:00');
-                INSERT INTO messages (id, conversation_id, timestamp) VALUES (3, 'c1', datetime('now', '-80 hours'));
-                INSERT INTO topic_decisions (project_uuid, topic_id, user_confirmed, created_at_msg_id) VALUES ('p1', 't3', 1, 3);
+                INSERT INTO topic_decisions (project_uuid, topic_id, user_confirmed, created_at) VALUES ('p1', 't3', 1, datetime('now', '-80 hours'));
             """)
     
     dao.run_topic_garbage_collection()

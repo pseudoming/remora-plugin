@@ -22,7 +22,6 @@ def setup_db():
                 CREATE TABLE watermarks (
                     conversation_id TEXT PRIMARY KEY,
                     project_uuid TEXT,
-                    last_line_processed INTEGER DEFAULT 0,
                     last_msg_id INTEGER DEFAULT 0,
                     last_updated DATETIME
                 );
@@ -38,7 +37,8 @@ def setup_db():
                 CREATE TABLE topic_decisions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     conversation_id TEXT,
-                    created_at_msg_id INTEGER
+                    evidence_msg_ids TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 CREATE TABLE remora_event_queue (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

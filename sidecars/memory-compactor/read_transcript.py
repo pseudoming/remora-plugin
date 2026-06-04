@@ -98,9 +98,28 @@ def read_incremental_logs(conn, session):
         conn.execute(
             "DELETE FROM messages WHERE conversation_id=? AND line_number > ?",
             (conv_id, target_rollback_line))
-        conn.execute(
-            "DELETE FROM topic_decisions WHERE conversation_id=? AND created_at_msg_id > ?",
-            (conv_id, target_msg_id))
+        try:
+            cursor = conn.execute("SELECT id, evidence_msg_ids FROM topic_decisions WHERE conversation_id=?", (conv_id,))
+            decisions = cursor.fetchall()
+            for dec_id, ev_ids_str in decisions:
+                try:
+                    ev_ids = json.loads(ev_ids_str) if ev_ids_str else []
+                    if any(int(eid) > target_msg_id for eid in ev_ids):
+                        conn.execute("DELETE FROM topic_decisions WHERE id=?", (dec_id,))
+                except Exception:
+                    pass
+        except sqlite3.OperationalError:
+            pass
+
+        # Deletion based on created_at timestamp
+        cursor = conn.execute("SELECT timestamp FROM messages WHERE id=?", (target_msg_id,))
+        row = cursor.fetchone()
+        target_timestamp = row[0] if row else None
+        if target_timestamp:
+            try:
+                conn.execute("DELETE FROM topic_decisions WHERE conversation_id=? AND created_at > ?", (conv_id, target_timestamp))
+            except sqlite3.OperationalError:
+                pass
         conn.execute(
             "DELETE FROM remora_event_queue WHERE project_uuid=? AND status='pending'",
             (session['project_uuid'],))
@@ -120,7 +139,7 @@ def read_incremental_logs(conn, session):
 
     if not watermark_row:
         conn.execute(
-            "INSERT OR IGNORE INTO watermarks (project_uuid, conversation_id, last_line_processed, last_msg_id) VALUES (?, ?, 0, 0)",
+            "INSERT OR IGNORE INTO watermarks (project_uuid, conversation_id, last_msg_id) VALUES (?, ?, 0)",
             (session['project_uuid'], conv_id))
 
     key_content = "\\n".join(new_snippets)
