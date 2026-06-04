@@ -36,11 +36,13 @@ class ConversationDataAccessLayer:
         if not os.path.exists(self.db_path):
             return -1
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT MAX(idx) FROM steps WHERE status = 5;")
-                row = cursor.fetchone()
-                return row[0] if row and row[0] is not None else -1
+            from contextlib import closing
+            with closing(sqlite3.connect(self.db_path, timeout=15.0)) as conn:
+                with conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT MAX(idx) FROM steps WHERE status = 5;")
+                    row = cursor.fetchone()
+                    return row[0] if row and row[0] is not None else -1
         except Exception:
             return -1
 

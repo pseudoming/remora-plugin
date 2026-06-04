@@ -12,9 +12,11 @@ DB_PATH = os.path.join(DATA_DIR, "remora_memory.db")
 SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "schema.sql")
 
 def init_db():
+    from contextlib import closing
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        with open(SCHEMA_PATH, 'r') as f:
+    with closing(sqlite3.connect(DB_PATH, timeout=15.0)) as conn:
+        with conn:
+            with open(SCHEMA_PATH, 'r') as f:
             conn.executescript(f.read())
         # Schema 动态迁移升级防线：如果 created_at_line 字段不存在，自动 Alter Table 动态加入该列
         try:

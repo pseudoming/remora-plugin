@@ -261,6 +261,9 @@ def recall_decisions_by_fts5_topic(project_uuid: str, conv_id: str, keyword: str
 
 def recall_decisions_by_like(project_uuid: str, conv_id: str, keyword: str, limit: int = 5) -> List[str]:
     try:
+        # Prevent LIKE wildcard injection
+        safe_keyword = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like_pattern = f"%{safe_keyword}%"
         with closing(_get_conn()) as conn:
             with conn:
                 cursor = conn.cursor()
@@ -268,9 +271,9 @@ def recall_decisions_by_like(project_uuid: str, conv_id: str, keyword: str, limi
                     SELECT '[' || topic_id || '] ' || decision || ' (原因: ' || rationale || ')'
                     FROM topic_decisions
                     WHERE (project_uuid = ? OR conversation_id = ?)
-                    AND (decision LIKE ? OR rationale LIKE ?)
+                    AND (decision LIKE ? ESCAPE '\\' OR rationale LIKE ? ESCAPE '\\')
                     LIMIT ?
-                """, (project_uuid, conv_id, f"%{keyword}%", f"%{keyword}%", limit))
+                """, (project_uuid, conv_id, like_pattern, like_pattern, limit))
                 return [row[0] for row in cursor.fetchall()]
     except Exception as e:
         logging.error(f"Error in recall_decisions_by_like: {e}")
@@ -300,11 +303,11 @@ def touch_topics_accessed_by_recall(project_uuid: str, conv_id: str, keyword: st
                     SELECT topic_id FROM (
                         SELECT topic_id FROM topic_decisions
                         WHERE (project_uuid = ? OR conversation_id = ?)
-                        AND (decision LIKE ? OR rationale LIKE ?)
+                        AND (decision LIKE ? ESCAPE '\\' OR rationale LIKE ? ESCAPE '\\')
                         LIMIT 5
                     )
                 )
-            """, (project_uuid, project_uuid, conv_id, conv_id, f'"{safe_keyword}"', project_uuid, conv_id, f"%{keyword}%", f"%{keyword}%"))
+            """, (project_uuid, project_uuid, conv_id, conv_id, f'"{safe_keyword}"', project_uuid, conv_id, f"%{safe_keyword}%", f"%{safe_keyword}%"))
 
 # ==========================================
 # GC Operations (session_gc.py, topic_gc.py)
@@ -315,8 +318,11 @@ def run_topic_garbage_collection() -> None:
     且该话题下没有任何 user_confirmed = 1 的决策的话题。
     """
     try:
+        import sys
         with closing(_get_conn()) as conn:
             with conn:
+                # Obtain EXCLUSIVE lock immediately to prevent Lock Upgrade Deadlocks in daemons
+                conn.execute("BEGIN EXCLUSIVE")
                 cursor = conn.execute(
                     """SELECT uuid, topic_id FROM project_topics
                        WHERE source = 'auto' AND status = 'closed'
@@ -332,6 +338,8 @@ def run_topic_garbage_collection() -> None:
                     print(f"[Remora GC] Pruned cold auto topic: {topic_id} in project {uuid}")
     except Exception as e:
         logging.error(f"Error running topic garbage collection: {e}")
+        import sys
+        sys.exit(1)
 
 def prune_expired_watermarks(brain_dir: str) -> None:
     """
@@ -340,8 +348,11 @@ def prune_expired_watermarks(brain_dir: str) -> None:
     """
     try:
         import os
+        import sys
         with closing(_get_conn()) as conn:
             with conn:
+                # Obtain EXCLUSIVE lock immediately to prevent Lock Upgrade Deadlocks in daemons
+                conn.execute("BEGIN EXCLUSIVE")
                 cursor = conn.execute("SELECT DISTINCT conversation_id FROM watermarks")
                 active_db_convs = [row[0] for row in cursor.fetchall()]
                 
@@ -356,4 +367,27 @@ def prune_expired_watermarks(brain_dir: str) -> None:
                         print(f"[Remora] 水印回收已清除会话: {conv_id}")
     except Exception as e:
         logging.error(f"Error pruning expired watermarks: {e}")
+        import sys
+        sys.exit(1)
 
+
+def merge_physical_files_to_topic(project_uuid: str, topic_id: str, physical_files: List[str]) -> None:
+    import json
+    with closing(_get_conn()) as conn:
+        with conn:
+            conn.execute("BEGIN EXCLUSIVE")
+            row = conn.execute("SELECT associated_files FROM project_topics WHERE uuid=? AND topic_id=?", (project_uuid, topic_id)).fetchone()
+            existing_assoc_json = row[0] if (row and row[0]) else "[]"
+            try:
+                existing_assoc = json.loads(existing_assoc_json)
+            except:
+                existing_assoc = []
+            
+            assoc_dict = {item.get('file'): item for item in existing_assoc if 'file' in item}
+            for pf in physical_files:
+                if pf not in assoc_dict:
+                    assoc_dict[pf] = {"file": pf, "source": "physical"}
+                elif "physical" not in assoc_dict[pf].get("source", ""):
+                    assoc_dict[pf]["source"] = assoc_dict[pf]["source"] + ", physical"
+                    
+            conn.execute("UPDATE project_topics SET associated_files=? WHERE uuid=? AND topic_id=?", (json.dumps(list(assoc_dict.values())), project_uuid, topic_id))

@@ -109,17 +109,7 @@ def main():
                                     physical_files.append(os.path.basename(parts[1].strip()))
                                     
                         if physical_files and t_id:
-                            existing_assoc_json = dao.get_topic_associated_files(project_uuid, t_id)
-                            existing_assoc = json.loads(existing_assoc_json) if existing_assoc_json else []
-                            assoc_dict = {item['file']: item for item in existing_assoc if 'file' in item}
-                            
-                            for pf in physical_files:
-                                if pf not in assoc_dict:
-                                    assoc_dict[pf] = {"file": pf, "source": "physical"}
-                                elif "physical" not in assoc_dict[pf].get("source", ""):
-                                    assoc_dict[pf]["source"] = assoc_dict[pf]["source"] + ", physical"
-                                    
-                            dao.update_topic_associated_files(project_uuid, t_id, json.dumps(list(assoc_dict.values())))
+                            dao.merge_physical_files_to_topic(project_uuid, t_id, physical_files)
                             print(f"[Remora] Integrated {len(physical_files)} physical changed files from sandbox.")
                     else:
                         print("No active sandbox worktree found. Nothing to merge.", file=sys.stderr)
