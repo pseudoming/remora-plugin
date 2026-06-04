@@ -10,23 +10,22 @@ import json, re, subprocess
 DB_PATH = get_db_path()
 
 
-try:
-    import remora_init
-except ImportError:
-    sys.path.insert(0, os.path.dirname(__file__))
-    import remora_init
-
 @hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Session Guardian 发生异常。状态同步防线已降级，但不影响正常对话。</system-reminder>"}]})
 def main(context):
-    # 0. 环境自愈
-    initialized = remora_init.init_environment()
+    # 0. Fail-Fast 探测环境是否已被 install.py 初始化
+    if os.path.dirname(__file__) not in sys.path:
+        sys.path.insert(0, os.path.dirname(__file__))
+    from lib.paths import get_data_dir
+    initialized_file = os.path.join(get_data_dir(), ".runtime", "installed.flag")
+    if not os.path.exists(initialized_file):
+        return {"injectSteps": [{"ephemeralMessage": "🚨 **[REMORA FATAL ERROR]** Plugin uninitialized! Please run `python3 install.py` in the plugin root."}]}
     
     # 物理缓存 LS API 凭据以解决子代理在 Hook 沙盒中缺乏鉴权环境变量的问题
     ls_addr = os.environ.get("ANTIGRAVITY_LS_ADDRESS")
     csrf_token = os.environ.get("ANTIGRAVITY_CSRF_TOKEN")
     if ls_addr and csrf_token:
         try:
-            with open("/tmp/remora_agent_env.json", "w", encoding="utf-8") as ef:
+            with open(os.path.join(get_data_dir(), ".runtime", "remora_agent_env.json"), "w", encoding="utf-8") as ef:
                 json.dump({"ANTIGRAVITY_LS_ADDRESS": ls_addr, "ANTIGRAVITY_CSRF_TOKEN": csrf_token}, ef)
         except:
             pass
@@ -87,7 +86,7 @@ def main(context):
             conv_id = match.group(1)
             # 写入主干会话 ID 以便 safety-check.py 兜底识别子代理，防止因 agentapi 超时引发死锁
             try:
-                with open("/tmp/remora_main_conv_id.txt", "w") as mf:
+                with open(os.path.join(get_data_dir(), ".runtime", "remora_main_conv_id.txt"), "w") as mf:
                     mf.write(conv_id)
             except:
                 pass
@@ -172,7 +171,7 @@ def main(context):
             # 正常退出自动物理清除重试计数缓存 (澄清：由于大模型调用 subagent-monitor 时强制传入 of {conv_id} 就是主会话 ID，因此 monitor 内部写入的 parent_conv_id 与此处拦截脚本读取 of conv_id 在物理上是完全同一键值，清理路径严格对齐，无歧义)
             if subagent_finish_detected:
                 try:
-                    retry_file = f"/tmp/remora_subagent_retries/{conv_id}.json"
+                    retry_file = fos.path.join(get_data_dir(), ".runtime", f"remora_subagent_retries_{conv_id}.json")
                     if os.path.exists(retry_file):
                         os.remove(retry_file)
                 except:
@@ -189,16 +188,12 @@ def main(context):
             "ephemeralMessage": (
                 "<system-reminder>\n"
                 f"Subagent {subagent_uuid} is currently running WITHOUT a heartbeat timer. Call schedule NOW. "
-                f"schedule(DurationSeconds=\"60\", Prompt=\"60s timeout for subagent {subagent_uuid}. Run: python3 ~/.gemini/config/plugins/remora-plugin/scripts/subagent-monitor.py {subagent_uuid} {conv_id}\")\n"
+                f"schedule(DurationSeconds=\"60\", Prompt=\"60s timeout for subagent {subagent_uuid}. Run: {PYTHON} {PLUGIN_ROOT}/scripts/subagent-monitor.py {subagent_uuid} {conv_id}\")\n"
                 "</system-reminder>"
             )
         })
 
-    # 幽灵报喜（只在刚完成初始化的那一回合生效）
-    if initialized:
-        inject_steps.append({
-            "ephemeralMessage": "<system-reminder>Remora 核心环境已自动初始化完成（Sidecar 将于 10 分钟内首次扫描）。防御系统在线，无需向用户报告此消息，请保持自然对话流。</system-reminder>"
-        })
+
 
     # ##########################################################
     # AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)

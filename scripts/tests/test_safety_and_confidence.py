@@ -5,8 +5,8 @@ import unittest
 import sqlite3
 import base64
 
-# 动态将插件下的 scripts 和 sidecars 注入环境变量路径，以便在测试脚本中可正确 import 模块
-PLUGIN_DIR = "/home/agent/.gemini/config/plugins/remora-plugin"
+# 动态将插件下的 scripts 和 sidecars 注入环境变量路径
+PLUGIN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(PLUGIN_DIR, "sidecars", "memory-compactor"))
 sys.path.insert(0, os.path.join(PLUGIN_DIR, "scripts"))
 

@@ -1,3 +1,4 @@
+from lib.paths import get_data_dir
 #!/usr/bin/env python3
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -49,9 +50,9 @@ def get_subagent_type(transcript_path):
     try:
         # 物理注入缓存的 LS 凭据，防止 Sandbox Hook 执行时由于缺少环境变量导致鉴权失败返回 1
         env = dict(os.environ)
-        if os.path.exists("/tmp/remora_agent_env.json"):
+        if os.path.exists(os.path.join(get_data_dir(), ".runtime", "remora_agent_env.json")):
             try:
-                with open("/tmp/remora_agent_env.json", "r", encoding="utf-8") as ef:
+                with open(os.path.join(get_data_dir(), ".runtime", "remora_agent_env.json"), "r", encoding="utf-8") as ef:
                     cached_env = json.load(ef)
                     env.update(cached_env)
             except:
@@ -68,18 +69,18 @@ def get_subagent_type(transcript_path):
                 return None
             return metadata.get("subagentSpec", {}).get("typeName")
         else:
-            with open("/tmp/remora_hook_debug.txt", "a", encoding="utf-8") as df:
+            with open(os.path.join(get_data_dir(), ".runtime", "remora_hook_debug.txt"), "a", encoding="utf-8") as df:
                 df.write(f"[remora] agentapi returncode={res.returncode}, stderr={res.stderr}\n")
     except Exception as e:
-        with open("/tmp/remora_hook_debug.txt", "a", encoding="utf-8") as df:
+        with open(os.path.join(get_data_dir(), ".runtime", "remora_hook_debug.txt"), "a", encoding="utf-8") as df:
             df.write(f"[remora] agentapi exception: {str(e)}\n")
 
     # ==========================================
     # 兜底死锁防护：如果进程查询失败/超时，但可确定该日志属于子会话，则特许升级为 is_sub = True
     # ==========================================
     try:
-        if os.path.exists("/tmp/remora_main_conv_id.txt"):
-            with open("/tmp/remora_main_conv_id.txt", "r") as f:
+        if os.path.exists(os.path.join(get_data_dir(), ".runtime", "remora_main_conv_id.txt")):
+            with open(os.path.join(get_data_dir(), ".runtime", "remora_main_conv_id.txt"), "r") as f:
                 main_id = f.read().strip()
                 if main_id and conv_id != main_id:
                     return "Remora_Subagent_Fallback"

@@ -24,6 +24,9 @@ def save_excluded_ids(ids):
 
 def get_project_id(conv_id):
     """通过 agentapi 获取这个会话的真实 projectId"""
+    import shutil
+    if not shutil.which("agentapi"):
+        return "unknown"
     try:
         result = subprocess.check_output(
             ["agentapi", "get-conversation-metadata", conv_id],

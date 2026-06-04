@@ -1,19 +1,21 @@
 import os
 
-def get_data_dir():
-    env_path = os.environ.get("ANTIGRAVITY_EXECUTABLE_DATA_DIR")
-    if env_path:
-        return env_path
+def find_plugin_root():
     current_dir = os.path.abspath(os.path.dirname(__file__))
-    parts = current_dir.split(os.sep)
-    if ".gemini" in parts:
-        idx = parts.index(".gemini")
-        gemini_root = os.sep.join(parts[:idx + 1])
-        antigravity_path = os.path.join(gemini_root, "antigravity")
-        if os.path.exists(antigravity_path):
-            return os.path.join(antigravity_path, "sidecar_data/remora-plugin/memory-compactor/data")
-        return os.path.join(gemini_root, "sidecar_data/remora-plugin/memory-compactor/data")
-    return os.path.join(current_dir, "..", "..", "sidecars", "memory-compactor", "data")
+    while current_dir != '/' and current_dir != '':
+        if os.path.exists(os.path.join(current_dir, "plugin.json")):
+            return current_dir
+        current_dir = os.path.dirname(current_dir)
+    raise RuntimeError("FATAL: Cannot find plugin.json to anchor PLUGIN_ROOT. Are you running outside the plugin directory?")
+
+def get_data_dir():
+    # 第一优先级：宿主内聚目录
+    # 第二优先级：~/.remora/data fallback
+    # 彻底废弃 ANTIGRAVITY_EXECUTABLE_DATA_DIR 优先级，避免与 install.py 的物理迁移产生撕裂。
+    plugin_root = find_plugin_root()
+    if os.access(plugin_root, os.W_OK):
+        return os.path.join(plugin_root, "data")
+    return os.path.expanduser("~/.remora/data")
 
 def get_db_path():
     return os.path.join(get_data_dir(), "remora_memory.db")

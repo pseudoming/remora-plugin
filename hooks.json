@@ -3,22 +3,22 @@
     "PreInvocation": [
       {
         "type": "command",
-        "command": "/usr/bin/python3 ./scripts/snapshot-git.py",
+        "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/scripts/snapshot-git.py",
         "timeout": 15
       },
       {
         "type": "command",
-        "command": "/usr/bin/python3 ./scripts/session-guardian.py",
+        "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/scripts/session-guardian.py",
         "timeout": 10
       },
       {
         "type": "command",
-        "command": "/usr/bin/python3 ./scripts/tone-injector.py",
+        "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/scripts/tone-injector.py",
         "timeout": 10
       },
       {
         "type": "command",
-        "command": "/usr/bin/python3 ./scripts/cognitive-push.py --stage=pre-invoke",
+        "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/scripts/cognitive-push.py --stage=pre-invoke",
         "timeout": 10
       }
     ],
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/python3 ./scripts/safety-check.py",
+            "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/scripts/safety-check.py",
             "timeout": 10
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/usr/bin/python3 ./scripts/cognitive-push.py --stage=pre-tool",
+            "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/scripts/cognitive-push.py --stage=pre-tool",
             "timeout": 10
           }
         ]
@@ -47,7 +47,7 @@
     "PostInvocation": [
       {
         "type": "command",
-        "command": "/usr/bin/python3 ./scripts/action-gate.py",
+        "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/scripts/action-gate.py",
         "timeout": 10
       }
     ],
@@ -59,7 +59,7 @@
       },
       {
         "type": "command",
-        "command": "/usr/bin/python3 ./scripts/clean-session-stats.py",
+        "command": "/usr/bin/python3 /home/agent/.gemini/config/plugins/remora-plugin/scripts/clean-session-stats.py",
         "timeout": 5
       }
     ]

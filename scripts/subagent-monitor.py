@@ -1,3 +1,4 @@
+from lib.paths import get_data_dir
 #!/usr/bin/env python3
 import sys
 import json
@@ -87,7 +88,7 @@ def main():
     status = "zombie" if is_zombie else "active"
     
     # 物理维护自愈重试计数 (绑定 parent_conv_id)
-    retry_dir = "/tmp/remora_subagent_retries"
+    retry_dir = os.path.join(get_data_dir(), ".runtime", "remora_subagent_retries")
     retry_file = f"{retry_dir}/{parent_conv_id}.json"
     retry_count = 0
     

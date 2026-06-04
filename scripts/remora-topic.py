@@ -1,3 +1,4 @@
+from lib.paths import get_data_dir
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -17,9 +18,9 @@ DB_PATH = get_db_path()
 def _force_cold_start(conn):
     # 强置 is_cold_start 信号位以实现冷启动与 Topic 切换同步
     main_conv_id = None
-    if os.path.exists("/tmp/remora_main_conv_id.txt"):
+    if os.path.exists(os.path.join(get_data_dir(), ".runtime", "remora_main_conv_id.txt")):
         try:
-            with open("/tmp/remora_main_conv_id.txt", "r") as mf:
+            with open(os.path.join(get_data_dir(), ".runtime", "remora_main_conv_id.txt"), "r") as mf:
                 main_conv_id = mf.read().strip()
         except:
             pass
@@ -142,7 +143,7 @@ def main():
                         print(f"Found latest subagent sandbox: {wt_name}", file=sys.stderr)
                         
                         merge_script = os.path.join(os.path.dirname(__file__), "sandbox-merge.py")
-                        res = subprocess.run(["python3", merge_script, wt_name], capture_output=True, text=True, check=True)
+                        res = subprocess.run([sys.executable, merge_script, wt_name, "--target-cwd", os.getcwd()], capture_output=True, text=True, check=True)
                         
                         # 解析 stdout 中的物理变更文件列表
                         physical_files = []

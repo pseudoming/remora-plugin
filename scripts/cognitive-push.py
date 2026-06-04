@@ -50,7 +50,7 @@ def _truncate_decisions(decisions):
         current_len += len(text)
     return "\n- ".join(texts)
 
-def _handle_pre_invocation(conn):
+def _handle_pre_invocation(context, conn):
     inject_steps = []
     # 查找最新的 session_id 判定冷启动
     session_row = conn.execute("SELECT session_id, is_cold_start FROM session_state ORDER BY updated_at DESC LIMIT 1").fetchone()
@@ -71,8 +71,8 @@ def _handle_pre_invocation(conn):
         prompt = f"<system-reminder>\n【Remora Line A: 会话恢复】\n检测到冷启动或话题切换。当前活跃话题: {topic_id}。\n已确立的核心约束：\n- {decision_text}\n⚠️ 请在后续回答中遵守上述约束。你在回复时自然提及约束原因即可，坚决不要复读本条系统提示，维持沟通心流。\n</system-reminder>"
         inject_steps.append({"ephemeralMessage": prompt})
         
-    # 物理消费冷启动信号
-    conn.execute("UPDATE session_state SET is_cold_start = 0, updated_at = CURRENT_TIMESTAMP WHERE session_id=?", (session_id,))
+    # 恢复物理消费，仅在消费成功且执行 Line A 后置 0
+    conn.execute("UPDATE session_state SET is_cold_start = 0 WHERE session_id=?", (session_id,))
     conn.commit()
     
     return {"injectSteps": inject_steps}
@@ -128,11 +128,13 @@ def main(context):
     try:
         with sqlite3.connect(DB_PATH) as conn:
             if args.stage == "pre-invoke":
-                return _handle_pre_invocation(conn)
+                return _handle_pre_invocation(context, conn)
             elif args.stage == "pre-tool":
                 return _handle_pre_tool_use(context, conn)
     except Exception as e:
-        pass
+        import traceback
+        print(f"[Remora Error] cognitive-push failed: {e}", file=sys.stderr)
+        traceback.print_exc()
             
     return {"injectSteps": []}
 

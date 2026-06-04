@@ -18,7 +18,7 @@ description: 手动切换、新建或关闭活跃的话题上下文
 ### 命令行调用规范
 使用 `run_command` 工具执行以下命令：
 ```bash
-/usr/bin/python3 ~/.gemini/config/plugins/remora-plugin/scripts/remora-topic.py <action> -u "${ANTIGRAVITY_PROJECT_ID}" -n "<name>"
+{PYTHON} {PLUGIN_ROOT}/scripts/remora-topic.py <action> -u "${ANTIGRAVITY_PROJECT_ID}" -n "<name>"
 ```
 - `<action>` 对应用户输入的动作，可选值为：`new`、`switch`、`close`。若用户未提供动作，默认为 `switch`。
 - `<name>` 对应话题的标识符。

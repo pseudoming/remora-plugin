@@ -22,8 +22,9 @@ def hook_entrypoint(fallback_result=None):
                 safe_fallback = {**fallback_result}
                 if "decision" in safe_fallback:
                     safe_fallback["decision_reason"] = f"Remora Fallback (Error: {str(e)})"
-                else:
-                    safe_fallback["error_reason"] = f"Remora Fallback (Error: {str(e)})"
+                import traceback
+                print(f"[Remora Hook Error] {str(e)}", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
                 print(json.dumps(safe_fallback))
             sys.exit(0)
         return wrapper

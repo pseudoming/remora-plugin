@@ -1,6 +1,7 @@
 import os, json, fcntl
 
-STATS_DIR = "/tmp/remora_view_file_stats"
+from lib.paths import get_data_dir
+STATS_DIR = os.path.join(get_data_dir(), ".runtime", "remora_view_file_stats")
 
 def get_stats_path(conv_id):
     os.makedirs(STATS_DIR, exist_ok=True)

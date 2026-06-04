@@ -22,7 +22,7 @@ def scan_and_ingest_artifacts(context):
     直接导入 messages 数据库，免去大模型在退出时同步抽取造成的交互延迟（保证开发心流）。
     """
     artifact_dir = context.get('artifactDirectoryPath', '')
-    project_uuid = os.environ.get("ANTIGRAVITY_PROJECT_ID", "unknown")
+    project_uuid = os.environ.get("ANTIGRAVITY_PROJECT_ID", os.environ.get("REMORA_PROJECT_ID", "unknown"))
     if not artifact_dir or not os.path.exists(artifact_dir):
         return
 
