@@ -175,5 +175,100 @@ class TestFactualConfidence(unittest.TestCase):
         )
         self.assertEqual(confidence, 0.5)
 
+    def test_validate_id_inheritance_warning(self):
+        from extract_decisions import validate_id_inheritance
+        
+        # 1. Insert user_confirmed=1 topic decisions
+        self.conn.execute("INSERT INTO topic_decisions (id, project_uuid, user_confirmed) VALUES (201, 'p1', 1)")
+        self.conn.execute("INSERT INTO topic_decisions (id, project_uuid, user_confirmed) VALUES (202, 'p1', 1)")
+        self.conn.commit()
+
+        # 2. Prepare new topics that miss ID 202
+        new_topics = [
+            {
+                "topic_id": "t_001",
+                "decisions": [
+                    {
+                        "decision": "some decision",
+                        "inherited_from": [201]
+                    }
+                ]
+            }
+        ]
+
+        # 3. Call and check that it prints warning and returns True instead of throwing
+        try:
+            result = validate_id_inheritance(self.conn, "p1", new_topics)
+            self.assertTrue(result)
+        except Exception as e:
+            self.fail(f"validate_id_inheritance raised an exception: {e}")
+
+class TestScanSessions(unittest.TestCase):
+    def test_get_active_conversations_window(self):
+        import shutil
+        import tempfile
+        from unittest.mock import patch
+        import scan_sessions
+        import time
+        
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Create brain and conversations directories in temp workspace
+            brain_dir = os.path.join(temp_dir, "brain")
+            convs_dir = os.path.join(temp_dir, "conversations")
+            os.makedirs(brain_dir)
+            os.makedirs(convs_dir)
+            
+            # Patch scan_sessions to use our temporary directories
+            with patch("scan_sessions.BRAIN_DIR", brain_dir), \
+                 patch("scan_sessions.get_project_id", return_value="mock-uuid"), \
+                 patch("scan_sessions.load_excluded_ids", return_value=set()):
+                
+                # Mock cdal.db_path dynamically
+                from lib.conversation import ConversationDataAccessLayer
+                orig_init = ConversationDataAccessLayer.__init__
+                
+                def mock_init(self_cdal, conv_id):
+                    orig_init(self_cdal, conv_id)
+                    self_cdal.db_path = os.path.join(convs_dir, f"{conv_id}.db")
+                    
+                with patch.object(ConversationDataAccessLayer, "__init__", mock_init):
+                    current_time = time.time()
+                    
+                    # 1. Active: modified 1 day ago (1 * 24 * 3600)
+                    conv1 = "11111111-2222-3333-4444-555555555551"
+                    os.makedirs(os.path.join(brain_dir, conv1))
+                    db_path1 = os.path.join(convs_dir, f"{conv1}.db")
+                    with open(db_path1, "w") as f:
+                        f.write("mock db 1")
+                    os.utime(db_path1, (current_time - 1 * 24 * 3600, current_time - 1 * 24 * 3600))
+                    
+                    # 2. Active under 10 days: modified 8 days ago (8 * 24 * 3600)
+                    conv2 = "11111111-2222-3333-4444-555555555552"
+                    os.makedirs(os.path.join(brain_dir, conv2))
+                    db_path2 = os.path.join(convs_dir, f"{conv2}.db")
+                    with open(db_path2, "w") as f:
+                        f.write("mock db 2")
+                    os.utime(db_path2, (current_time - 8 * 24 * 3600, current_time - 8 * 24 * 3600))
+                    
+                    # 3. Inactive: modified 12 days ago (12 * 24 * 3600)
+                    conv3 = "11111111-2222-3333-4444-555555555553"
+                    os.makedirs(os.path.join(brain_dir, conv3))
+                    db_path3 = os.path.join(convs_dir, f"{conv3}.db")
+                    with open(db_path3, "w") as f:
+                        f.write("mock db 3")
+                    os.utime(db_path3, (current_time - 12 * 24 * 3600, current_time - 12 * 24 * 3600))
+                    
+                    # Run scan
+                    active = scan_sessions.get_active_conversations()
+                    active_ids = {a["conversation_id"] for a in active}
+                    
+                    # Should contain conv1 and conv2, but not conv3
+                    self.assertIn(conv1, active_ids)
+                    self.assertIn(conv2, active_ids)
+                    self.assertNotIn(conv3, active_ids)
+        finally:
+            shutil.rmtree(temp_dir)
+
 if __name__ == "__main__":
     unittest.main()

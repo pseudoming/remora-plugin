@@ -68,7 +68,7 @@ def get_active_conversations():
         cdal = ConversationDataAccessLayer(conv_id)
         if os.path.exists(cdal.db_path):
             mtime = cdal.get_db_mtime()
-            if current_time - mtime <= 2 * 24 * 3600:
+            if current_time - mtime <= 10 * 24 * 3600:
                 project_uuid = get_project_id(conv_id)
                 active_sessions.append({
                     "project_uuid": project_uuid,
