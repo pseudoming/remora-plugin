@@ -15,15 +15,30 @@
         "type": "command",
         "command": "/usr/bin/python3 ./scripts/tone-injector.py",
         "timeout": 10
+      },
+      {
+        "type": "command",
+        "command": "/usr/bin/python3 ./scripts/cognitive-push.py --stage=pre-invoke",
+        "timeout": 10
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "run_command|view_file|grep_search|write_to_file|multi_replace_file_content",
+        "matcher": "run_command|view_file|grep_search|write_to_file|multi_replace_file_content|replace_file_content",
         "hooks": [
           {
             "type": "command",
             "command": "/usr/bin/python3 ./scripts/safety-check.py",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "write_to_file|multi_replace_file_content|replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 ./scripts/cognitive-push.py --stage=pre-tool",
             "timeout": 10
           }
         ]
