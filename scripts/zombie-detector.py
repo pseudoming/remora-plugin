@@ -47,7 +47,8 @@ def main():
     infrastructure_keywords = {
         "compactor.py", "safety-check.py", "zombie-detector.py", 
         "cognitive-push.py", "snapshot-git.py", "session-guardian.py", 
-        "tone-injector.py", "clean-session-stats.py", "action-gate.py"
+        "tone-injector.py", "clean-session-stats.py", "action-gate.py",
+        "shellIntegration-bash.sh"
     }
 
     try:
