@@ -294,7 +294,7 @@ You MUST output this exact timestamp on the first line before your JSON markdown
 [Sync Finished: {current_time_str}]
 
 You are an expert Architecture Decision Record (ADR) extractor.
-Analyze the following conversation snippets and extract all key topics. You MUST extract AT MOST 1 key topic and AT MOST 1 decision. Keep your response extremely brief (less than 100 words total) to avoid truncation.
+Analyze the following conversation snippets and extract all key topics.
 
 You MUST output ONLY a valid JSON object matching this schema:
 {{
