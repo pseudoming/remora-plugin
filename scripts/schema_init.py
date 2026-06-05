@@ -28,7 +28,7 @@ def init_db():
 
             # Schema 动态迁移升级防线三：扩展 project_topics 列以支持 Phase 17 机制
             for col, col_def in [("source", "TEXT DEFAULT 'auto'"), 
-                                 ("last_accessed_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                                 ("last_accessed_at", "TIMESTAMP DEFAULT '2026-06-05 00:00:00'"),
                                  ("associated_files", "TEXT DEFAULT '[]'"),
                                  ("referenced_files", "TEXT DEFAULT '[]'")]:
                 try:
@@ -49,7 +49,7 @@ def init_db():
             # Schema 动态迁移升级防线五：扩展 topic_decisions 列以支持语义类型与实体映射
             for col, col_def in [("decision_type", "TEXT DEFAULT 'approved'"),
                                  ("associated_files", "TEXT DEFAULT '[]'"),
-                                 ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP")]:
+                                 ("updated_at", "TIMESTAMP DEFAULT '2026-06-05 00:00:00'")]:
                 try:
                     conn.execute(f"SELECT {col} FROM topic_decisions LIMIT 1")
                 except sqlite3.OperationalError:

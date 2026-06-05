@@ -15,10 +15,10 @@ class TestQualityGate(unittest.TestCase):
         
         for root, dirs, files in os.walk(self.plugin_root):
             # Skip virtualenvs, __pycache__, git, and scratch
-            if ".git" in root or "__pycache__" in root or "node_modules" in root or "scratch" in root:
+            if ".git" in root or "__pycache__" in root or "node_modules" in root or "scratch" in root or ".agents" in root:
                 continue
             for file in files:
-                if file in generated_files:
+                if file in generated_files or file == "ORIGINAL_REQUEST.md":
                     continue
                 # For agents, ignore .json if it's not a template.json
                 if "agents" in root and file.endswith(".json") and not file.endswith(".template.json"):

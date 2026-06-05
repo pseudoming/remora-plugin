@@ -16,3 +16,7 @@ skills/remora-architecture/SKILL.md
 agents/*.json
 !agents/*.template.json
 .agents/
+hooks.json.bak
+hooks.template.json.bak
+ORIGINAL_REQUEST.md
+

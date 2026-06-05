@@ -137,7 +137,11 @@ def main(context):
                 
                 log_duration((time.perf_counter() - t0) * 1000.0, 0)
                 
+                
                 if is_tool_use:
+                    tool_name = context.get('toolCall', {}).get('name', '') if context else ''
+                    if tool_name == 'manage_task':
+                        continue
                     return {
                         "decision": "deny",
                         "reason": f"⚠️ 安全拦截：系统存在运行中的未托管衍生进程 {pid}，工具执行已被临时拒绝。"
