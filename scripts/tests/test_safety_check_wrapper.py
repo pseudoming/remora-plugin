@@ -143,7 +143,7 @@ def test_invoke_subagent_allow(mock_get_subagent):
         assert res["decision"] == "allow"
         assert "injectSteps" in res
 
-    assert "REMORA COORDINATOR MEMORY INJECTION" in res["injectSteps"][0]["ephemeralMessage"]
+    assert "REMORA COORDINATOR JIT INJECTION" in res["injectSteps"][0]["ephemeralMessage"]
 
 @patch("safety-check.get_subagent_type")
 @patch("os.path.exists")

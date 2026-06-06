@@ -37,11 +37,28 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
         return {"injectSteps": []}
 
     inject_steps = []
+
+    # In PreInvocation, when in discussion/planning phase, inject system discipline
+    mode = dao.read_mode(conv_id, "strict")
+    if mode == "relax":
+        # 中文翻译：[行为纪律] 您当前处于需求研讨与规划阶段。
+        # 禁止使用任何工具修改规划制品（/artifacts/）之外的物理代码文件。
+        # 若在此期间发现任何明显 Bug，严禁立即动手修复。您必须先将其写入实施计划中，并显式获得用户批准！
+        ephemeral_msg = (
+            "<system-discipline>\n"
+            "COORDINATOR BEHAVIORAL DISCIPLINE:\n"
+            "1. YOU ARE CURRENTLY IN THE REQUIREMENT DISCUSSION AND PLANNING PHASE.\n"
+            "2. DURING THIS PHASE, YOU ARE STRICTLY PROHIBITED FROM INVOKING ANY TOOLS (e.g., write_to_file, replace_file_content, run_command) THAT MODIFY CORE CODE FILES. YOU MAY ONLY MODIFY PLANNING ARTIFACTS IN THE `/artifacts/` SUBDIRECTORY.\n"
+            "3. IF YOU SPOT ANY OBVIOUS BUG OR CODE SMELL, DO NOT FIX IT IMMEDIATELY. YOU MUST DOCUMENT IT IN THE IMPLEMENTATION PLAN AND SEEK EXPLICIT USER APPROVAL BEFORE RUNNING ANY WRITES.\n"
+            "</system-discipline>"
+        )
+        inject_steps.append({"ephemeralMessage": ephemeral_msg})
+
     # 查找最新的 session_id 判定冷启动
     latest = dao.get_latest_session()
     if not latest or latest[1] == 0:
         dao.set_hook_state(conv_id, current_turn_idx, "resume_injected", "1")
-        return {"injectSteps": []}
+        return {"injectSteps": inject_steps}
 
 
         
@@ -162,7 +179,51 @@ def _handle_pre_tool_use(context, conv_id, current_turn_idx):
                 "reason": f"⛔ REMORA SAFETY LIMIT [ENTITY-PROTECTION]: Unauthorized edit to {target_file} blocked. Explain intent and retry.",
                 "injectSteps": [{"ephemeralMessage": prompt}]
             }
-        
+
+    # 方案 2：全局核心代码“首写拦截 + 自适应二次放行”
+    # 检查目标文件是否是规划制品
+    is_artifact = "/artifacts/" in target_file or target_file.endswith("task.md") or target_file.endswith("implementation_plan.md") or target_file.endswith("walkthrough.md")
+    
+    if not is_artifact:
+        # 如果不是规划制品且没有命中特定的保护决策（是普通的业务代码文件）
+        state_key = "first_write_deny:" + target_file
+        retry_status = dao.get_hook_state(conv_id, current_turn_idx, state_key)
+        if retry_status == "1":
+            # 第二次尝试，清除状态直接放行 (allow)
+            dao.set_hook_state(conv_id, current_turn_idx, state_key, "0")
+            return {"decision": "allow", "injectSteps": []}
+        else:
+            # 第一次尝试，记录状态为 "1"，并返回 deny 与 prompt 注入
+            dao.set_hook_state(conv_id, current_turn_idx, state_key, "1")
+            
+            # 中文翻译：
+            # ⛔ REMORA 安全限制 [全局写门禁]：未获授权的代码修改已拦截！
+            # ============================================================
+            # !!! 研讨防护与防冲动门禁触发 !!!
+            # 你正在非 Coding 阶段或首次调用中修改核心代码文件（目标：{target_file}）。
+            #
+            # 如需继续，你必须：
+            # 1. 解释意图：向用户说明你正在修改的核心代码文件及改动逻辑。
+            # 2. 自适应重试：若此修改确有必要且用户已批准，你必须在当前回合立即再次调用此写工具以解锁释放。
+            # ============================================================
+            prompt = (
+                f"<system-reminder>\n"
+                f"⛔ REMORA SAFETY LIMIT [GLOBAL-WRITE-GATE]: UNSANCTIONED WRITE BLOCKED!\n"
+                f"============================================================\n"
+                f"!!! DISCUSSION PROTECTION & ANTI-IMPULSIVE GATE TRIGGERED !!!\n"
+                f"YOU ARE ATTEMPTING TO MODIFY A CORE CODE FILE (Target: {target_file}) IN AN UNSANCTIONED DISCUSSION PHASE OR ON THE FIRST CALL.\n\n"
+                f"TO PROCEED, YOU MUST:\n"
+                f"1. EXPLAIN INTENT: EXPLAIN TO THE USER THE LOGIC AND PURPOSE OF MODIFYING THIS CORE FILE.\n"
+                f"2. ADAPTIVE RETRY: IF THIS EDIT IS INDEED SANCTIONED AND CONFIRMED, RE-EXECUTE THE WRITE TOOL IMMEDIATELY IN THE CURRENT TURN TO UNLOCK AND RELEASE.\n"
+                f"============================================================\n"
+                f"</system-reminder>"
+            )
+            return {
+                "decision": "deny",
+                "reason": f"⛔ REMORA SAFETY LIMIT [GLOBAL-WRITE-GATE]: Unauthorized edit to {target_file} blocked. Explain intent and retry.",
+                "injectSteps": [{"ephemeralMessage": prompt}]
+            }
+
     return {"injectSteps": []}
 
 @hook_entrypoint(fallback_result={"injectSteps": []})

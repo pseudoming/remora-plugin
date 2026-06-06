@@ -139,12 +139,14 @@ def main(context):
     inject_steps = []
     
     # ==========================================
-    # 设计原理六：子代理创建的即时捕获与心跳断链续期状态机逻辑 (已修复未定义变量 PYTHON/PLUGIN_ROOT 隐患)
+    # 设计原理六：子代理创建的即时捕获与心跳断链续期状态机逻辑 (已优化无心跳提示语)
     # ==========================================
     # 由于平台的 One-shot 计时器会在子代理发送 any 中间进度同步消息时自动静默取消，
     # 我们直接在 PreInvocation 阶段从 CDAL 原生层中分析最新 UUID，并计算
     # 子代理最近活动与最近一次 schedule 定时器的相对时序。若已被取消且模型未续期，
     # 在上下文最前沿通过 injectSteps 注入强强制心跳指示。
+    # 优化点：当无心跳定时器运行时，注入的消息及中文翻译使用角色名称 role_name 替代 uuid，
+    # 并强制引导大模型使用拟人化的“进度+时间”汇报进度（如 subagent (role_name)），杜绝暴露底层安全定时器技术术语。
     subagent_uuid = None
     seen_subagent = False
     has_schedule_after = False
@@ -206,7 +208,7 @@ def main(context):
                     # 彻底放宽拦截类型捕获各种格式的消息体，但严格排除系统自身的大型历史汇总记录
                     if step_type not in ["CONVERSATION_HISTORY", "CHECKPOINT"]:
                         # 精确匹配本子代理的活跃，且排除主会话自己物理命令/文件读写/subagent状态查询所产生的带有 UUID 的输出干扰
-                        if subagent_uuid in step_str and not any(cmd in step_str for cmd in ["run_command", "view_file", "grep_search", "manage_subagents"]):
+                        if subagent_uuid in step_str and not any(cmd in step_str for cmd in ["run_command", "view_file", "grep_search", "manage_subagents", "schedule"]):
                             latest_subagent_activity_index = idx
                             break
                             
@@ -229,12 +231,61 @@ def main(context):
         from lib.paths import find_plugin_root
         plugin_root = find_plugin_root()
         python_bin = sys.executable or "/usr/bin/python3"
-        # 中文翻译：⚠️ [系统警告] 子特工 {subagent_uuid} 当前在无心跳定时器状态下运行。请立即调用 schedule 设置 60s 心跳定时器。
+        
+        # 提取子会话的角色名称 (优先通过 agentapi，其次通过历史记录)
+        role_name = None
+        try:
+            from lib.paths import get_data_dir
+            env = dict(os.environ)
+            if os.path.exists(os.path.join(get_data_dir(), ".runtime", "remora_agent_env.json")):
+                try:
+                    with open(os.path.join(get_data_dir(), ".runtime", "remora_agent_env.json"), "r", encoding="utf-8") as ef:
+                        cached_env = json.load(ef)
+                        env.update(cached_env)
+                except:
+                    pass
+            cmd = ["/home/agent/.gemini/antigravity/bin/agentapi", "get-conversation-metadata", subagent_uuid]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
+            if res.returncode == 0:
+                data = json.loads(res.stdout)
+                metadata = data.get("response", {}).get("conversationMetadata", {}).get("metadata", {})
+                role_name = metadata.get("subagentSpec", {}).get("typeName")
+        except Exception:
+            pass
+
+        if not role_name and heartbeat_steps:
+            try:
+                for step in heartbeat_steps:
+                    if step.get('type') == 'PLANNER_RESPONSE' and step.get('tool_calls'):
+                        for tc in step.get('tool_calls', []):
+                            if tc.get('name') == 'invoke_subagent':
+                                args_sub = tc.get('args', tc.get('arguments', {}))
+                                subagents = args_sub.get('Subagents', [])
+                                if subagents:
+                                    for s in subagents:
+                                        if s.get('TypeName'):
+                                            role_name = s.get('TypeName')
+                                            break
+                                elif args_sub.get('TypeName'):
+                                    role_name = args_sub.get('TypeName')
+                                if role_name:
+                                    break
+                    if role_name:
+                        break
+            except Exception:
+                pass
+                
+        if not role_name:
+            role_name = subagent_uuid
+            
+        # 中文翻译：⚠️ [系统警告] subagent ({role_name}) 当前在无心跳定时器状态下运行。请立即调用 schedule 设置 60s 心跳定时器。
+        # 在回复中必须使用拟人化的“进度+时间”结构汇报，禁止透露“挂载定时器”。
         inject_steps.append({
             "ephemeralMessage": (
                 "<system-reminder>\n"
-                f"Subagent {subagent_uuid} is currently running WITHOUT a heartbeat timer. Call schedule NOW. "
+                f"Subagent ({role_name}) is currently running WITHOUT a heartbeat timer. Call schedule NOW.\n"
                 f"schedule(DurationSeconds=\"60\", Prompt=\"60s timeout for subagent {subagent_uuid}. Run: {python_bin} {plugin_root}/scripts/subagent-monitor.py {subagent_uuid} {conv_id}\")\n"
+                f"When replying, report the progress of `subagent ({role_name})` in a natural tone and state that you will wait for 60 seconds before checking again. DO NOT mention mounting safety timers or schedule configs.\n"
                 "</system-reminder>"
             )
         })

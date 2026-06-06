@@ -467,29 +467,43 @@ def test_snapshot_git(tmp_path):
 
 # 13. cognitive-push.py
 def test_cognitive_push_pre_invoke_not_cold_start():
-    # 1. No session or is_cold_start == 0
+    # 1. No session or is_cold_start == 0, mode is strict
     with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]):
         with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 0)), \
+             patch("cognitive_push.dao.read_mode", return_value="strict"), \
              patch("lib.dao.get_hook_state", return_value=None), \
              patch("lib.dao.set_hook_state"):
             res = cognitive_push.main.__wrapped__({"transcriptPath": "foo.jsonl"})
             assert res == {"injectSteps": []}
 
-        # 2. No session found
+        # 2. No session found, mode is strict
         with patch("cognitive_push.dao.get_latest_session", return_value=None), \
+             patch("cognitive_push.dao.read_mode", return_value="strict"), \
              patch("lib.dao.get_hook_state", return_value=None), \
              patch("lib.dao.set_hook_state"):
             res = cognitive_push.main.__wrapped__({"transcriptPath": "foo.jsonl"})
             assert res == {"injectSteps": []}
+
+        # 3. Mode is relax (discussion discipline should be injected even if not a cold start)
+        with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 0)), \
+             patch("cognitive_push.dao.read_mode", return_value="relax"), \
+             patch("lib.dao.get_hook_state", return_value=None), \
+             patch("lib.dao.set_hook_state"):
+            res = cognitive_push.main.__wrapped__({"transcriptPath": "foo.jsonl"})
+            assert len(res["injectSteps"]) == 1
+            msg = res["injectSteps"][0]["ephemeralMessage"]
+            assert "COORDINATOR BEHAVIORAL DISCIPLINE" in msg
 
 
 def test_cognitive_push_pre_invoke_success():
     # Setup mocks for active topic and decisions
     with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]):
+        # 1. Mode is strict, is cold start
         with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
              patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
              patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
              patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text"}]), \
+             patch("cognitive_push.dao.read_mode", return_value="strict"), \
              patch("cognitive_push.dao.get_hook_state", return_value=None), \
              patch("cognitive_push.dao.set_hook_state"), \
              patch("cognitive_push.dao.update_cold_start") as mock_update_cold, \
@@ -502,6 +516,25 @@ def test_cognitive_push_pre_invoke_success():
             assert "活跃话题: t1" in msg
             assert "dec_text" in msg
             mock_update_cold.assert_called_once_with("c1", 0)
+
+        # 2. Mode is relax and is cold start (both warnings should be injected)
+        with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
+             patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+             patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
+             patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text"}]), \
+             patch("cognitive_push.dao.read_mode", return_value="relax"), \
+             patch("cognitive_push.dao.get_hook_state", return_value=None), \
+             patch("cognitive_push.dao.set_hook_state"), \
+             patch("cognitive_push.dao.update_cold_start"), \
+             patch("lib.dao.get_hook_state", return_value=None), \
+             patch("lib.dao.set_hook_state"):
+             
+            res = cognitive_push.main.__wrapped__({"transcriptPath": "foo.jsonl"})
+            assert len(res["injectSteps"]) == 2
+            msg1 = res["injectSteps"][0]["ephemeralMessage"]
+            msg2 = res["injectSteps"][1]["ephemeralMessage"]
+            assert "COORDINATOR BEHAVIORAL DISCIPLINE" in msg1
+            assert "REMORA SESSION CONTINUATION WARNING" in msg2
 
 
 def test_cognitive_push_pre_tool_use():
@@ -537,7 +570,36 @@ def test_cognitive_push_pre_tool_use():
             assert "my_file.py" in msg
             assert "dec_text" in msg
 
-        # 4. Target file not protected
+        # 4. Target file not protected (First attempt should be Denied by Global Write Gate)
+        with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
+             patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+             patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
+             patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text", "files": ["other.py"]}]), \
+             patch("lib.dao.get_hook_state", return_value=None), \
+             patch("lib.dao.set_hook_state") as mock_set:
+             
+            res = cognitive_push.main.__wrapped__(ctx_protect)
+            assert res["decision"] == "deny"
+            assert "GLOBAL-WRITE-GATE" in res["reason"]
+            mock_set.assert_any_call("c1", 0, "first_write_deny:/path/to/my_file.py", "1")
+
+        # 5. Target file not protected (Second attempt should be Allowed by Global Write Gate)
+        with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
+             patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+             patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
+             patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text", "files": ["other.py"]}]), \
+             patch("lib.dao.get_hook_state", return_value="1"), \
+             patch("lib.dao.set_hook_state") as mock_set:
+             
+            res = cognitive_push.main.__wrapped__(ctx_protect)
+            assert res["decision"] == "allow"
+            mock_set.assert_any_call("c1", 0, "first_write_deny:/path/to/my_file.py", "0")
+
+        # 6. Target file is artifact (should allow directly)
+        ctx_artifact = {
+            "toolName": "write_to_file",
+            "toolArgs": {"TargetFile": "/path/to/artifacts/task.md"}
+        }
         with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
              patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
              patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
@@ -545,7 +607,7 @@ def test_cognitive_push_pre_tool_use():
              patch("lib.dao.get_hook_state", return_value=None), \
              patch("lib.dao.set_hook_state"):
              
-            res = cognitive_push.main.__wrapped__(ctx_protect)
+            res = cognitive_push.main.__wrapped__(ctx_artifact)
             assert res == {"injectSteps": []}
 
 
@@ -683,4 +745,113 @@ def test_subagent_monitor(tmp_path, capsys):
         assert data2["status"] == "zombie"
         assert data2["retry_count"] == 2
         assert data2["action_suggestion"] == "escalate_to_human"
+
+
+def test_session_guardian_subagent_warning(tmp_path):
+    # Setup installed.flag
+    runtime_dir = tmp_path / ".runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    (runtime_dir / "installed.flag").touch()
+    
+    # Write mock keywords.json
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    with open(keywords_path, 'w') as f:
+        json.dump({"hard_keywords": [], "soft_keywords": []}, f)
+
+    context = {
+        "transcriptPath": f"/tmp/brain/conv_1/transcript.jsonl"
+    }
+
+    mock_steps = [
+        {"type": "USER_INPUT", "content": "hello"},
+        {"type": "GENERIC", "content": "22222222-2222-2222-2222-222222222222 active progress update"},
+        {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "schedule", "args": {"DurationSeconds": "60", "Prompt": "60s timeout for subagent 22222222-2222-2222-2222-222222222222. Run: python3 scripts/subagent-monitor.py 22222222-2222-2222-2222-222222222222 conv_1"}}]},
+    ]
+
+    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("session_guardian.cleanup") as mock_cleanup, \
+         patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
+         patch("lib.dao.write_mode") as mock_write_mode, \
+         patch("subprocess.run") as mock_run:
+         
+        # Mock subprocess.run for agentapi get-conversation-metadata
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = json.dumps({
+            "response": {
+                "conversationMetadata": {
+                    "metadata": {
+                        "parentConversationId": "conv_1",
+                        "subagentSpec": {
+                            "typeName": "Remora_Deep_Diver"
+                        }
+                    }
+                }
+            }
+        })
+        mock_run.return_value = mock_res
+
+        mock_cdal = MagicMock()
+        mock_cdal.stream_steps_reverse.return_value = mock_steps
+        mock_cdal_cls.return_value = mock_cdal
+        
+        res = session_guardian.main.__wrapped__(context)
+        
+        # Verify the warning is injected
+        assert len(res["injectSteps"]) == 1
+        msg = res["injectSteps"][0]["ephemeralMessage"]
+        assert "Subagent (Remora_Deep_Diver) is currently running WITHOUT a heartbeat timer. Call schedule NOW." in msg
+        assert "When replying, report the progress of `subagent (Remora_Deep_Diver)` in a natural tone" in msg
+        assert "DO NOT mention mounting safety timers or schedule configs." in msg
+
+
+def test_session_guardian_subagent_warning_history_fallback(tmp_path):
+    # Setup installed.flag
+    runtime_dir = tmp_path / ".runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    (runtime_dir / "installed.flag").touch()
+    
+    # Write mock keywords.json
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    with open(keywords_path, 'w') as f:
+        json.dump({"hard_keywords": [], "soft_keywords": []}, f)
+
+    context = {
+        "transcriptPath": f"/tmp/brain/conv_1/transcript.jsonl"
+    }
+
+    mock_steps = [
+        {"type": "USER_INPUT", "content": "hello"},
+        {"type": "GENERIC", "content": "22222222-2222-2222-2222-222222222222 active progress update"},
+        {"type": "PLANNER_RESPONSE", "tool_calls": [
+            {"name": "invoke_subagent", "args": {"Subagents": [{"TypeName": "Remora_ReadOnly_Extractor"}]}},
+            {"name": "schedule", "args": {"DurationSeconds": "60", "Prompt": "60s timeout for subagent 22222222-2222-2222-2222-222222222222. Run: python3 scripts/subagent-monitor.py 22222222-2222-2222-2222-222222222222 conv_1"}}
+        ]},
+    ]
+
+    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("session_guardian.cleanup") as mock_cleanup, \
+         patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
+         patch("lib.dao.write_mode") as mock_write_mode, \
+         patch("subprocess.run") as mock_run:
+         
+        # Mock subprocess.run for agentapi get-conversation-metadata failing
+        mock_res = MagicMock()
+        mock_res.returncode = 1
+        mock_run.return_value = mock_res
+
+        mock_cdal = MagicMock()
+        mock_cdal.stream_steps_reverse.return_value = mock_steps
+        mock_cdal_cls.return_value = mock_cdal
+        
+        res = session_guardian.main.__wrapped__(context)
+        
+        # Verify the warning is injected with fallback to the history type name
+        assert len(res["injectSteps"]) == 1
+        msg = res["injectSteps"][0]["ephemeralMessage"]
+        assert "Subagent (Remora_ReadOnly_Extractor) is currently running WITHOUT a heartbeat timer. Call schedule NOW." in msg
+        assert "When replying, report the progress of `subagent (Remora_ReadOnly_Extractor)` in a natural tone" in msg
+
 
