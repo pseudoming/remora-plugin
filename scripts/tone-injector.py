@@ -33,33 +33,65 @@ def main(context):
         if match:
             conv_id = match.group(1)
             
+    from lib.conversation import ConversationDataAccessLayer
+    from lib.dao import get_hook_state, set_hook_state, trim_hook_states
+
+    cdal = ConversationDataAccessLayer(conv_id)
+    current_turn_idx = cdal.get_current_turn_idx()
+
+    # 物理时序裁剪 (Timeline Trimming)
+    last_seen = get_hook_state(conv_id, -1, 'last_seen_turn')
+    should_trim = False
+    if last_seen is None:
+        should_trim = True
+    else:
+        try:
+            should_trim = int(last_seen) != int(current_turn_idx)
+        except (ValueError, TypeError):
+            should_trim = False
+
+    if should_trim:
+        try:
+            trim_turn = int(current_turn_idx)
+        except (ValueError, TypeError):
+            trim_turn = 0
+        trim_hook_states(conv_id, trim_turn)
+        set_hook_state(conv_id, -1, 'last_seen_turn', str(trim_turn))
+
+
     mode = read_mode(conv_id, "strict")
             
     inject_steps = []
     if mode == "strict":
-        # 中文翻译：
-        # ⛔ REMORA 沟通风格限制 [严格语气]：
-        # ============================================================
-        # 你必须以最高的效率和直接性进行沟通！
-        #
-        # 1. 无运行注释：不要叙述你的内部审议或解释你的思考过程。先交付结果和结论。
-        # 2. 零奉承：绝不使用夸张、道歉或情感铺垫。
-        # 3. 极简注释：在代码编辑中，除非显式要求，否则不要写任何注释或文档字符串。
-        # 4. 事实错误报告：如果你犯了错误，事实且简明地承认它（例如，“修正了第25行的变量引用”）。不要重复道歉。
-        # ============================================================
-        strict_tone_msg = (
-            "<system-reminder>\n"
-            "⛔ REMORA COMMUNICATION STYLE CONSTRAINT [STRICT TONE]:\n"
-            "============================================================\n"
-            "YOU MUST COMMUNICATE WITH MAXIMUM EFFICIENCY AND DIRECTNESS!\n\n"
-            "1. NO RUNNING COMMENTARY: DO NOT NARRATE YOUR INTERNAL DELIBERATION OR EXPLAIN YOUR THOUGHT PROCESS. DELIVER RESULTS AND CONCLUSIONS FIRST.\n"
-            "2. ZERO FLATTERY: NEVER USE HYPERBOLE, APOLOGIES, OR EMOTIONAL FLATTENING.\n"
-            "3. MINIMAL COMMENTARY: IN CODE EDITS, WRITE NO COMMENTS OR DOCSTRINGS UNLESS EXPLICITLY ASKED.\n"
-            "4. FACTUAL ERROR REPORTING: IF YOU COMMITTED AN ERROR, ACKNOWLEDGE IT FACTUALLY AND CONCISELY (E.g., \"Corrected variable reference in line 25\"). DO NOT REPETITIVELY APOLOGIZE.\n"
-            "============================================================\n"
-            "</system-reminder>"
-        )
-        inject_steps.append({"ephemeralMessage": strict_tone_msg})
+        user_input_count = cdal.get_user_input_count()
+        if user_input_count % 5 == 0:
+            injected_val = get_hook_state(conv_id, current_turn_idx, 'tone_injected')
+            if not injected_val:
+                set_hook_state(conv_id, current_turn_idx, 'tone_injected', '1')
+
+                # 中文翻译：
+                # ⛔ REMORA 沟通风格限制 [严格语气]：
+                # ============================================================
+                # 你必须以最高的效率和直接性进行沟通！
+                #
+                # 1. 无运行注释：不要叙述你的内部审议或解释你的思考过程。先交付结果和结论。
+                # 2. 零奉承：绝不使用夸张、道歉或情感铺垫。
+                # 3. 极简注释：在代码编辑中，除非显式要求，否则不要写任何注释或文档字符串。
+                # 4. 事实错误报告：如果你犯了错误，事实且简明地承认它（例如，“修正了第25行的变量引用”）。不要重复道歉。
+                # ============================================================
+                strict_tone_msg = (
+                    "<system-reminder>\n"
+                    "⛔ REMORA COMMUNICATION STYLE CONSTRAINT [STRICT TONE]:\n"
+                    "============================================================\n"
+                    "YOU MUST COMMUNICATE WITH MAXIMUM EFFICIENCY AND DIRECTNESS!\n\n"
+                    "1. NO RUNNING COMMENTARY: DO NOT NARRATE YOUR INTERNAL DELIBERATION OR EXPLAIN YOUR THOUGHT PROCESS. DELIVER RESULTS AND CONCLUSIONS FIRST.\n"
+                    "2. ZERO FLATTERY: NEVER USE HYPERBOLE, APOLOGIES, OR EMOTIONAL FLATTENING.\n"
+                    "3. MINIMAL COMMENTARY: IN CODE EDITS, WRITE NO COMMENTS OR DOCSTRINGS UNLESS EXPLICITLY ASKED.\n"
+                    "4. FACTUAL ERROR REPORTING: IF YOU COMMITTED AN ERROR, ACKNOWLEDGE IT FACTUALLY AND CONCISELY (E.g., \"Corrected variable reference in line 25\"). DO NOT REPETITIVELY APOLOGIZE.\n"
+                    "============================================================\n"
+                    "</system-reminder>"
+                )
+                inject_steps.append({"ephemeralMessage": strict_tone_msg})
         
     return {"injectSteps": inject_steps}
 

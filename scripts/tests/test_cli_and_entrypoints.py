@@ -71,15 +71,20 @@ def test_tone_injector():
     assert "injectSteps" in res
     
     # 2. strict mode
-    with patch("tone_injector.read_mode", return_value="strict"):
+    with patch("tone_injector.read_mode", return_value="strict"), \
+         patch("lib.dao.get_hook_state", return_value=None), \
+         patch("lib.dao.set_hook_state"):
         res = tone_injector.main.__wrapped__({"transcriptPath": "/brain/c1/transcript.jsonl"})
         assert len(res["injectSteps"]) == 1
         assert "STRICT TONE" in res["injectSteps"][0]["ephemeralMessage"]
 
     # 3. relax mode
-    with patch("tone_injector.read_mode", return_value="relax"):
+    with patch("tone_injector.read_mode", return_value="relax"), \
+         patch("lib.dao.get_hook_state", return_value=None), \
+         patch("lib.dao.set_hook_state"):
         res = tone_injector.main.__wrapped__({"transcriptPath": "/brain/c1/transcript.jsonl"})
         assert len(res["injectSteps"]) == 0
+
 
 
 # 5. remora_init.py
@@ -464,12 +469,16 @@ def test_snapshot_git(tmp_path):
 def test_cognitive_push_pre_invoke_not_cold_start():
     # 1. No session or is_cold_start == 0
     with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]):
-        with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 0)):
+        with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 0)), \
+             patch("lib.dao.get_hook_state", return_value=None), \
+             patch("lib.dao.set_hook_state"):
             res = cognitive_push.main.__wrapped__({"transcriptPath": "foo.jsonl"})
             assert res == {"injectSteps": []}
 
         # 2. No session found
-        with patch("cognitive_push.dao.get_latest_session", return_value=None):
+        with patch("cognitive_push.dao.get_latest_session", return_value=None), \
+             patch("lib.dao.get_hook_state", return_value=None), \
+             patch("lib.dao.set_hook_state"):
             res = cognitive_push.main.__wrapped__({"transcriptPath": "foo.jsonl"})
             assert res == {"injectSteps": []}
 
@@ -481,7 +490,11 @@ def test_cognitive_push_pre_invoke_success():
              patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
              patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
              patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text"}]), \
-             patch("cognitive_push.dao.update_cold_start") as mock_update_cold:
+             patch("cognitive_push.dao.get_hook_state", return_value=None), \
+             patch("cognitive_push.dao.set_hook_state"), \
+             patch("cognitive_push.dao.update_cold_start") as mock_update_cold, \
+             patch("lib.dao.get_hook_state", return_value=None), \
+             patch("lib.dao.set_hook_state"):
              
             res = cognitive_push.main.__wrapped__({"transcriptPath": "foo.jsonl"})
             assert len(res["injectSteps"]) == 1
@@ -511,7 +524,11 @@ def test_cognitive_push_pre_tool_use():
         with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
              patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
              patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
-             patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text", "files": ["my_file.py"]}]):
+             patch("cognitive_push.dao.get_hook_state", return_value=None), \
+             patch("cognitive_push.dao.set_hook_state"), \
+             patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text", "files": ["my_file.py"]}]), \
+             patch("lib.dao.get_hook_state", return_value=None), \
+             patch("lib.dao.set_hook_state"):
              
             res = cognitive_push.main.__wrapped__(ctx_protect)
             assert len(res["injectSteps"]) == 1
@@ -524,10 +541,13 @@ def test_cognitive_push_pre_tool_use():
         with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
              patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
              patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
-             patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text", "files": ["other.py"]}]):
+             patch("cognitive_push.dao.get_confirmed_decisions", return_value=[{"text": "dec_text", "files": ["other.py"]}]), \
+             patch("lib.dao.get_hook_state", return_value=None), \
+             patch("lib.dao.set_hook_state"):
              
             res = cognitive_push.main.__wrapped__(ctx_protect)
             assert res == {"injectSteps": []}
+
 
 
 # 14. session-guardian.py

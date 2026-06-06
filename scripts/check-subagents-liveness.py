@@ -227,10 +227,20 @@ def run_as_hook(input_data):
         
     parent_conv_id = match.group(1)
     
+    from lib.dao import get_hook_state, set_hook_state, trim_hook_states
+    from lib.conversation import ConversationDataAccessLayer
+    
+    cdal = ConversationDataAccessLayer(parent_conv_id)
+    current_turn_idx = cdal.get_current_turn_idx()
+
+    # 物理时序裁剪 (Timeline Trimming)
+    last_seen = get_hook_state(parent_conv_id, -1, 'last_seen_turn')
+    if last_seen is None or int(last_seen) != current_turn_idx:
+        trim_hook_states(parent_conv_id, current_turn_idx)
+        set_hook_state(parent_conv_id, -1, 'last_seen_turn', str(current_turn_idx))
+
     # O(1) 心跳特异过滤：只在特定心跳探活上下文才审计，防止普通对话时发生 O(N) 步骤扫描雪崩
     try:
-        from lib.conversation import ConversationDataAccessLayer
-        cdal = ConversationDataAccessLayer(parent_conv_id)
         latest_msg = cdal.get_latest_user_message() or ""
         latest_planner = cdal.get_latest_planner_response() or ""
         full_text = latest_msg + " " + latest_planner
@@ -245,6 +255,43 @@ def run_as_hook(input_data):
         from lib.conversation import ConversationDataAccessLayer
         cdal = ConversationDataAccessLayer(parent_conv_id)
         
+        # 1. 检索 parent_conv_id 的 project_uuid 与活动话题时间范围
+        # Retrieve parent_conv_id's project_uuid and active topic timeframe
+        project_uuid = None
+        active_topic_ts = 0.0
+        try:
+            with sqlite3.connect(paths.get_db_path(), timeout=15) as conn:
+                row = conn.execute("SELECT project_uuid FROM watermarks WHERE conversation_id=? LIMIT 1", (parent_conv_id,)).fetchone()
+                if row:
+                    project_uuid = row[0]
+                    if project_uuid:
+                        topic_row = conn.execute("SELECT created_at FROM project_topics WHERE uuid=? AND status='open' LIMIT 1", (project_uuid,)).fetchone()
+                        if topic_row:
+                            active_topic_ts = parse_sqlite_timestamp(topic_row[0])
+        except Exception as db_err:
+            # 中文翻译：警告：获取 project_uuid 或活动话题信息失败
+            # Warning: Failed to fetch project_uuid or active topic info
+            print(f"Warning: Failed to fetch project_uuid or active topic info: {str(db_err)}", file=sys.stderr)
+
+        # 2. 时序范围截断：提取最后 20 条日志范围或当前活动话题的步骤
+        # Temporal range truncation: extract steps within the last 20 logs or active topic timeframe
+        all_steps = list(cdal.stream_steps_forward())
+        last_20_steps = all_steps[-20:] if len(all_steps) > 20 else all_steps
+        last_20_indices = {s.get('step_index') for s in last_20_steps if s.get('step_index') is not None}
+        
+        filtered_steps = []
+        for step in all_steps:
+            is_in_last_20 = step.get('step_index') in last_20_indices
+            is_in_active_topic = False
+            if active_topic_ts > 0.0:
+                step_ts_str = step.get('timestamp')
+                if step_ts_str:
+                    step_ts = parse_sqlite_timestamp(step_ts_str)
+                    if step_ts >= active_topic_ts:
+                        is_in_active_topic = True
+            if is_in_last_20 or is_in_active_topic:
+                filtered_steps.append(step)
+
         def find_all_uuids(val, parent_id):
             uuids = set()
             import re
@@ -265,8 +312,29 @@ def run_as_hook(input_data):
                     uuids.update(find_all_uuids(item, parent_id))
             return uuids
 
-        for step in cdal.stream_steps_forward():
-            subagent_ids.extend(list(find_all_uuids(step, parent_conv_id)))
+        candidate_subagent_ids = set()
+        for step in filtered_steps:
+            candidate_subagent_ids.update(find_all_uuids(step, parent_conv_id))
+
+        # 3. 会话关联过滤：不仅匹配 UUID，还要与 SQLite 中的 watermarks 进行关联，确保属于该项目
+        # Session-association filtering: verify candidate UUIDs are registered under the parent conversation's project_uuid in the watermarks table
+        if project_uuid:
+            try:
+                with sqlite3.connect(paths.get_db_path(), timeout=15) as conn:
+                    for sub_id in candidate_subagent_ids:
+                        row = conn.execute(
+                            "SELECT 1 FROM watermarks WHERE project_uuid=? AND conversation_id=? LIMIT 1",
+                            (project_uuid, sub_id)
+                        ).fetchone()
+                        if row:
+                            subagent_ids.append(sub_id)
+            except Exception as db_err:
+                # 中文翻译：警告：在水印关联过滤期间失败
+                # Warning: Failed during watermarks correlation filter
+                print(f"Warning: Failed during watermarks correlation filter: {str(db_err)}", file=sys.stderr)
+                subagent_ids = list(candidate_subagent_ids)
+        else:
+            subagent_ids = list(candidate_subagent_ids)
             
         subagent_ids = list(set(subagent_ids))
     except Exception as e:
@@ -285,19 +353,27 @@ def run_as_hook(input_data):
         reason_msg = f"⚠️ 警告：检测到后台子特工已卡死：\n" + "\n".join([f"- 特工 {sid}: {reason}" for sid, reason in dead_agents])
         dead_ids_str = ", ".join([f"'{sid}'" for sid, _ in dead_agents])
         
-        # 中文翻译：
-        # ⛔ REMORA 存活警告：子特工 {dead_ids_str} 无响应。
-        # 要解决此问题，您必须遵循以下自愈 SOP：
-        # 1. 强制终止：调用 `manage_subagents(Action='kill', ConversationIds=[{dead_ids_str}])`。
-        # 2. 清理僵尸进程：运行命令列出子代理路径下的进程（例如 `ps aux | grep -v grep | grep -E 'pytest|build'`）。若发现任何孤儿进程，使用 kill/pkill 清理。
-        # 3. 验证锁：确保在重新派发或重试前，没有会阻碍下一个子代理实例的数据库日志锁（例如 SQLite .db-journal 或 .runtime/ 中）。
-        ephemeral_msg = (
-            f"⛔ REMORA LIVENESS WARNING: Subagents {dead_ids_str} are unresponsive.\n"
-            f"To resolve this, you MUST follow this Self-Healing SOP:\n"
-            f"1. FORCE TERMINATE: Invoke `manage_subagents(Action='kill', ConversationIds=[{dead_ids_str}]).\n"
-            f"2. CLEAN ZOMBIE PROCESSES: Run a command to list processes under the subagent's path (e.g., `ps aux | grep -v grep | grep -E 'pytest|build'`). If any orphaned subprocesses are found, use kill/pkill to clean them up.\n"
-            f"3. VERIFY LOCKS: Ensure there are no database journal locks (e.g., in SQLite .db-journal or .runtime/) that could block next subagent instances before you respawn or retry."
-        )
+        # 检查同回合内 SOP 提示是否已经注入过
+        sop_injected = get_hook_state(parent_conv_id, current_turn_idx, "liveness_sop")
+        if not sop_injected:
+            set_hook_state(parent_conv_id, current_turn_idx, "liveness_sop", "injected")
+            # 中文翻译：
+            # ⛔ REMORA 存活警告：子特工 {dead_ids_str} 无响应。
+            # 要解决此问题，您必须遵循以下自愈 SOP：
+            # 1. 强制终止：调用 `manage_subagents(Action='kill', ConversationIds=[{dead_ids_str}])`。
+            # 2. 清理僵尸进程：运行命令列出子代理路径下的进程（例如 `ps aux | grep -v grep | grep -E 'pytest|build'`）。若发现任何孤儿进程，使用 kill/pkill 清理。
+            # 3. 验证锁：确保在重新派发或重试前，没有会阻碍下一个子代理实例的数据库日志锁（例如 SQLite .db-journal 或 .runtime/ 中）。
+            ephemeral_msg = (
+                f"⛔ REMORA LIVENESS WARNING: Subagents {dead_ids_str} are unresponsive.\n"
+                f"To resolve this, you MUST follow this Self-Healing SOP:\n"
+                f"1. FORCE TERMINATE: Invoke `manage_subagents(Action='kill', ConversationIds=[{dead_ids_str}]).\n"
+                f"2. CLEAN ZOMBIE PROCESSES: Run a command to list processes under the subagent's path (e.g., `ps aux | grep -v grep | grep -E 'pytest|build'`). If any orphaned subprocesses are found, use kill/pkill to clean them up.\n"
+                f"3. VERIFY LOCKS: Ensure there are no database journal locks (e.g., in SQLite .db-journal or .runtime/) that could block next subagent instances before you respawn or retry."
+            )
+        else:
+            # 中文翻译：
+            # ⛔ REMORA 存活警告：子特工 {dead_ids_str} 无响应。
+            ephemeral_msg = f"⛔ REMORA LIVENESS WARNING: Subagents {dead_ids_str} are unresponsive."
 
         # 判断是 PreInvocation 还是 PreToolUse 还是 Stop 阶段
         if not input_data.get('toolCall'):

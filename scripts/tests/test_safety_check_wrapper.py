@@ -137,9 +137,12 @@ def test_invoke_subagent_allow(mock_get_subagent):
         "transcriptPath": "/brain/conv123/transcript.jsonl"
     }
     
-    res = safety_check.main.__wrapped__(context)
-    assert res["decision"] == "allow"
-    assert "injectSteps" in res
+    with patch("lib.dao.get_hook_state", return_value=None), \
+         patch("lib.dao.set_hook_state"):
+        res = safety_check.main.__wrapped__(context)
+        assert res["decision"] == "allow"
+        assert "injectSteps" in res
+
     assert "REMORA COORDINATOR MEMORY INJECTION" in res["injectSteps"][0]["ephemeralMessage"]
 
 @patch("safety-check.get_subagent_type")

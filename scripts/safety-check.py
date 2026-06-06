@@ -38,8 +38,80 @@ import subprocess
 # 3. O(1) 乘算估值策略：采用行数 * 50 字节的快速常数估算，防止磁盘全表扫描导致超时。
 # 4. 进程级资源锁控制读写竞态，确保安全应对大模型高并发的读文件调用。
 
+def analyze_commit_style(new_msg: str, history_msgs: list) -> tuple:
+    """
+    分析提交消息风格是否与历史消息风格存在偏离。
+    """
+    if not history_msgs:
+        return False, []
+
+    history = [m.strip() for m in history_msgs if m.strip()]
+    if not history:
+        return False, []
+
+    mismatches = []
+    
+    # 匹配规范提交前缀模式 (Conventional Commit Prefix Pattern)
+    prefix_pattern = r'^([a-zA-Z0-9_\-]+):\s+(.*)$'
+    
+    def parse_msg(msg):
+        match = re.match(prefix_pattern, msg)
+        if match:
+            return match.group(1), match.group(2)
+        return None, msg
+
+    history_parsed = [parse_msg(m) for m in history]
+    new_prefix, new_body = parse_msg(new_msg)
+
+    # 1. 风格前缀比例规则 (Conventional Commit Prefix Rules)
+    has_prefix_count = sum(1 for p, b in history_parsed if p is not None)
+    prefix_ratio = has_prefix_count / len(history)
+    
+    if prefix_ratio >= 0.7:
+        if new_prefix is None:
+            mismatches.append("Missing conventional prefix (e.g. 'task: ')")
+    elif prefix_ratio <= 0.3:
+        if new_prefix is not None:
+            mismatches.append("Should not contain conventional prefix")
+
+    # 2. 消息体首字母大小写规则 (First Character Capitalization Rules)
+    def get_first_char_case(body):
+        for char in body:
+            if char.isalpha():
+                return 'upper' if char.isupper() else 'lower'
+        return None
+
+    history_cases = [get_first_char_case(b) for p, b in history_parsed]
+    history_cases = [c for c in history_cases if c is not None]
+    
+    if history_cases:
+        upper_count = sum(1 for c in history_cases if c == 'upper')
+        upper_ratio = upper_count / len(history_cases)
+        new_case = get_first_char_case(new_body)
+        
+        if new_case is not None:
+            if upper_ratio >= 0.7 and new_case == 'lower':
+                mismatches.append("First letter of message body should be capitalized")
+            elif upper_ratio <= 0.3 and new_case == 'upper':
+                mismatches.append("First letter of message body should be lowercase")
+
+    # 3. 句号结尾规则 (Ending Period Rules)
+    def ends_with_period(msg):
+        return msg.endswith('.')
+
+    history_periods = [ends_with_period(m) for m in history]
+    period_ratio = sum(1 for p in history_periods if p) / len(history)
+    new_has_period = ends_with_period(new_msg)
+
+    if period_ratio >= 0.7 and not new_has_period:
+        mismatches.append("Commit message should end with a period (.)")
+    elif period_ratio <= 0.3 and new_has_period:
+        mismatches.append("Commit message should not end with a period (.)")
+
+    return len(mismatches) > 0, mismatches
+
 def make_deny_reason(prefix, message, action_tip=""):
-    # 中文翻译：[安全拦截] 统一格式化 Remora 安全拦截的返回原因
+    # 中文翻译：[安全拦截] 统一格式化 Remora 安全拦截 of 返回原因
     # 英文对照：⛔ REMORA SAFETY INTERCEPT [{prefix}]: {message}\nACTION REQUIRED: {action_tip}
     reason = f"⛔ REMORA SAFETY INTERCEPT [{prefix}]: {message}"
     if action_tip:
@@ -106,11 +178,39 @@ def main(context):
     
     # 提取会话 ID 并读取临时模式缓存
     mode = "strict"
+    conv_id = "default"
     if transcript_path:
         match = re.search(r'/brain/([^/]+)/', transcript_path)
         if match:
             conv_id = match.group(1)
             mode = read_mode(conv_id, "strict")
+
+    # Timeline trimming (Timeline Trimming)
+    from lib.dao import get_hook_state, set_hook_state, delete_hook_state, trim_hook_states
+    from lib.conversation import ConversationDataAccessLayer
+    
+    cdal = ConversationDataAccessLayer(conv_id)
+    current_turn_idx = cdal.get_current_turn_idx()
+    
+    # Check if this turn has been trimmed
+    last_seen = get_hook_state(conv_id, -1, 'last_seen_turn')
+    should_trim = False
+    if last_seen is None:
+        should_trim = True
+    else:
+        try:
+            should_trim = int(last_seen) != int(current_turn_idx)
+        except (ValueError, TypeError):
+            should_trim = False
+
+    if should_trim:
+        try:
+            trim_turn = int(current_turn_idx)
+        except (ValueError, TypeError):
+            trim_turn = 0
+        trim_hook_states(conv_id, trim_turn)
+        set_hook_state(conv_id, -1, 'last_seen_turn', str(trim_turn))
+
 
     subagent_type = get_subagent_type(transcript_path)
     
@@ -166,20 +266,26 @@ def main(context):
                         "Direct execution in the main tree is prohibited!"
                     )
                 }
-        # 中文翻译：
-        # REMORA 协调器记忆注入：每当您调用子代理时，您必须同时调用 `schedule` 工具，设置 `DurationSeconds="60"` 以监控存活状态。在启动后立即退出当前回合。
-        return {
-            "decision": "allow",
-            "injectSteps": [
-                {
-                    "ephemeralMessage": (
-                        "REMORA COORDINATOR MEMORY INJECTION: Whenever you invoke a subagent, "
-                        "you MUST simultaneously call the `schedule` tool with `DurationSeconds=\"60\"` "
-                        "to monitor liveness. Exit the turn immediately after launching."
-                    )
-                }
-            ]
-        }
+        # 检查是否已注入过 JIT 指导
+        jit_injected = get_hook_state(conv_id, current_turn_idx, "subagent_jit")
+        if not jit_injected:
+            set_hook_state(conv_id, current_turn_idx, "subagent_jit", "injected")
+            # 中文翻译：
+            # REMORA 协调器记忆注入：每当您调用子代理时，您必须同时调用 `schedule` 工具，设置 `DurationSeconds="60"` 以监控存活状态。在启动后立即退出当前回合。
+            return {
+                "decision": "allow",
+                "injectSteps": [
+                    {
+                        "ephemeralMessage": (
+                            "REMORA COORDINATOR MEMORY INJECTION: Whenever you invoke a subagent, "
+                            "you MUST simultaneously call the `schedule` tool with `DurationSeconds=\"60\"` "
+                            "to monitor liveness. Exit the turn immediately after launching."
+                        )
+                    }
+                ]
+            }
+        else:
+            return {"decision": "allow"}
 
     # --------------------------------------------------------
     # 针对 view_file 的拦截
@@ -268,6 +374,86 @@ def main(context):
     # --------------------------------------------------------
     if tool_name == "run_command":
         cmd = args.get('CommandLine', '')
+        
+        # Intercept git commit -m commands
+        is_commit = False
+        commit_msg = None
+        
+        import shlex
+        try:
+            tokens = shlex.split(cmd)
+        except Exception:
+            tokens = cmd.split()
+            
+        if len(tokens) >= 2 and tokens[0] == 'git' and tokens[1] == 'commit':
+            is_commit = True
+            i = 0
+            messages = []
+            while i < len(tokens):
+                token = tokens[i]
+                if token in ('-m', '--message'):
+                    if i + 1 < len(tokens):
+                        messages.append(tokens[i+1])
+                        i += 2
+                        continue
+                elif token.startswith('--message='):
+                    parts = token.split('=', 1)
+                    if len(parts) > 1:
+                        messages.append(parts[1])
+                i += 1
+            if messages:
+                commit_msg = "\n".join(messages)
+
+        if is_commit and commit_msg is not None:
+            state_val = get_hook_state(conv_id, current_turn_idx, "git_commit_gate")
+            if state_val == "denied":
+                delete_hook_state(conv_id, current_turn_idx, "git_commit_gate")
+                return {"decision": "allow"}
+                
+            git_cwd = context.get('cwd', os.getcwd())
+            try:
+                # Run git log -n 10 --format="%B" to satisfy the style analysis requirement
+                res_b = subprocess.run(
+                    ["git", "log", "-n", "10", "--format=%B"],
+                    capture_output=True,
+                    text=True,
+                    cwd=git_cwd,
+                    timeout=5
+                )
+                
+                res_s = subprocess.run(
+                    ["git", "log", "-n", "10", "--format=%s"],
+                    capture_output=True,
+                    text=True,
+                    cwd=git_cwd,
+                    timeout=5
+                )
+                if res_s.returncode == 0:
+                    history_msgs = [line.strip() for line in res_s.stdout.split('\n') if line.strip()]
+                else:
+                    history_msgs = []
+            except Exception:
+                history_msgs = []
+                
+            deviates, mismatches = analyze_commit_style(commit_msg, history_msgs)
+            if deviates:
+                set_hook_state(conv_id, current_turn_idx, "git_commit_gate", "denied")
+                
+                # 中文翻译：
+                # ⛔ [安全限制 - 提交风格守卫] 提交消息风格偏离了历史提交风格。
+                # 不匹配项：{', '.join(mismatches)}
+                # 需要采取的行动：请运行 'git log -n 10 --format="%B"' 来审查历史提交风格并修正当前提交消息。
+                return {
+                    "decision": "deny",
+                    "reason": (
+                        f"⛔ REMORA SAFETY LIMIT [GIT-COMMIT-STYLE]: Commit message style deviates from history.\n"
+                        f"Mismatches: {', '.join(mismatches)}\n"
+                        f"ACTION REQUIRED: Run 'git log -n 10 --format=\"%B\"' to review commit history styles."
+                    )
+                }
+            else:
+                return {"decision": "allow"}
+
         
         # 1. 高吞吐量特征拦截 (Anti-Context-Rot)
         rot_pattern = r'\b(cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.py\b'

@@ -134,3 +134,23 @@ class ConversationDataAccessLayer:
             if step.get("type") == "PLANNER_RESPONSE":
                 return step.get("content", "")
         return None
+
+    def get_current_turn_idx(self) -> int:
+        """
+        [SSOT] Returns the idx of the latest USER_INPUT step, representing the current Turn ID.
+        """
+        for step in self.stream_steps_reverse(limit=1000):
+            if step.get("type") == "USER_INPUT":
+                return step.get("step_index", 0)
+        return 0
+
+    def get_user_input_count(self) -> int:
+        """
+        Returns the total number of USER_INPUT steps in the conversation.
+        """
+        count = 0
+        for step in self.stream_steps_forward():
+            if step.get("type") == "USER_INPUT":
+                count += 1
+        return count
+

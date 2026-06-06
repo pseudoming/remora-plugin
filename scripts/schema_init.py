@@ -46,6 +46,18 @@ def init_db():
                 )
             """)
 
+            # 新增 runtime_hook_state 跨进程 Hook 状态表
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS runtime_hook_state (
+                    session_id TEXT NOT NULL,
+                    turn_idx INTEGER NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT,
+                    PRIMARY KEY (session_id, turn_idx, key)
+                )
+            """)
+
+
             # Schema 动态迁移升级防线五：扩展 topic_decisions 列以支持语义类型与实体映射
             for col, col_def in [("decision_type", "TEXT DEFAULT 'approved'"),
                                  ("associated_files", "TEXT DEFAULT '[]'"),
@@ -187,3 +199,7 @@ def init_db():
                     print("[Remora] Database migrated watermarks to Phase 34 successfully.")
             except Exception as me:
                 print(f"Error during Phase 34 watermarks migration: {str(me)}", file=sys.stderr)
+
+if __name__ == "__main__":
+    init_db()
+

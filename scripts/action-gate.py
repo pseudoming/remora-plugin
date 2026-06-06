@@ -176,7 +176,35 @@ def main(context):
         if match:
             conv_id = match.group(1)
             
+    # 规则 7: Bypass gating if write tool returns error
+    tool_call_result = context.get('toolCallResult', {})
+    if tool_call_result and 'error' in tool_call_result and tool_call_result.get('error') is not None:
+        return {"injectSteps": [], "terminationBehavior": ""}
+            
+    from lib.dao import get_hook_state, set_hook_state, trim_hook_states
     cdal = ConversationDataAccessLayer(conv_id)
+    current_turn_idx = cdal.get_current_turn_idx()
+
+    # 物理时序裁剪 (Timeline Trimming)
+    last_seen = get_hook_state(conv_id, -1, 'last_seen_turn')
+    should_trim = False
+    if last_seen is None:
+        should_trim = True
+    else:
+        try:
+            should_trim = int(last_seen) != int(current_turn_idx)
+        except (ValueError, TypeError):
+            should_trim = False
+
+    if should_trim:
+        try:
+            trim_turn = int(current_turn_idx)
+        except (ValueError, TypeError):
+            trim_turn = 0
+        trim_hook_states(conv_id, trim_turn)
+        set_hook_state(conv_id, -1, 'last_seen_turn', str(trim_turn))
+
+    
     initial_num_steps = context.get('initialNumSteps', 0)
     
     profiler_step("start_conv_state_read")
@@ -235,26 +263,42 @@ def main(context):
     profiler_step("regex_matching_complete")
     
     if phantom_modifications:
-        # --------------------------------------------------------
-        # ⛔ [安全限制 - 动作拦截] 信任但验证 - 你的总结描述了你意图做的事情，但不一定是实际所做的事情。
-        # 我们检测到你声称编辑或写入了文件 ({', '.join(phantom_modifications)})，但未检测到任何物理修改或 git 状态差异。
-        # 要继续执行，你必须遵循以下步骤：
-        # 1. 验证工具执行：确保你实际调用了文件编辑工具（例如 `write_to_file`、`replace_file_content`），而不仅仅是输出声称完成的文本。
-        # 2. 检查差异：检查实际文件或运行 `git status` 以验证工具调用是否成功。
-        # 3. 物理重试：使用正确的参数重新调用正确的工具，以确保物理文件得到更新。
-        # --------------------------------------------------------
-        warning_msg = (
-            "⛔ REMORA SAFETY LIMIT [ACTION-GATING]: Trust but verify - your summary describes what you intended to do, not necessarily what you did.\n"
-            f"We detected that you claimed to edit or write to files ({', '.join(phantom_modifications)}), but no physical modifications or git status differences were detected.\n"
-            "To proceed, you MUST follow these steps:\n"
-            "1. VERIFY TOOL EXECUTION: Ensure you actually invoked file editing tools (e.g., `write_to_file`, `replace_file_content`) instead of just outputting text claiming completion.\n"
-            "2. CHECK DIFF: Inspect the actual file or run `git status` to verify if the tool call succeeded.\n"
-            "3. RETRY PHYSICALLY: Re-invoke the correct tool with the correct arguments to ensure the physical file is updated."
-        )
-        return {
-            "injectSteps": [{"ephemeralMessage": warning_msg}],
-            "terminationBehavior": "force_continue"
-        }
+        gating_cnt = get_hook_state(conv_id, current_turn_idx, "action_gating_cnt")
+        if gating_cnt == "1":
+            # 中文翻译：
+            # 底层检测模块发现了异常（物理文件未被修改），但模型自身可能能力不够，无法意识到是否真实修改。你必须在你的回答开头以中文输出：“底层检测模块发现了异常（物理文件未被修改），但模型自身可能能力不够，无法意识到是否真实修改。”
+            warning_prompt = (
+                "Underlying detection module discovered abnormal states (physical files were not modified), "
+                "but the model itself may lack capability to realize whether it actually modified them. "
+                "You MUST prepend your response in Chinese with: "
+                "\"底层检测模块发现了异常（物理文件未被修改），但模型自身可能能力不够，无法意识到是否真实修改。\""
+            )
+            return {
+                "injectSteps": [{"ephemeralMessage": warning_prompt}],
+                "terminationBehavior": ""
+            }
+        else:
+            set_hook_state(conv_id, current_turn_idx, "action_gating_cnt", "1")
+            # --------------------------------------------------------
+            # ⛔ [安全限制 - 动作拦截] 信任但验证 - 你的总结描述了你意图做的事情，但不一定是实际所做的事情。
+            # 我们检测到你声称编辑或写入了文件 ({', '.join(phantom_modifications)})，但未检测到任何物理修改或 git 状态差异。
+            # 要继续执行，你必须遵循以下步骤：
+            # 1. 验证工具执行：确保你实际调用了文件编辑工具（例如 `write_to_file`、`replace_file_content`），而不仅仅是输出声称完成的文本。
+            # 2. 检查差异：检查实际文件或运行 `git status` 以验证工具调用是否成功。
+            # 3. 物理重试：使用正确的参数重新调用正确的工具，以确保物理文件得到更新。
+            # --------------------------------------------------------
+            warning_msg = (
+                "⛔ REMORA SAFETY LIMIT [ACTION-GATING]: Trust but verify - your summary describes what you intended to do, not necessarily what you did.\n"
+                f"We detected that you claimed to edit or write to files ({', '.join(phantom_modifications)}), but no physical modifications or git status differences were detected.\n"
+                "To proceed, you MUST follow these steps:\n"
+                "1. VERIFY TOOL EXECUTION: Ensure you actually invoked file editing tools (e.g., `write_to_file`, `replace_file_content`) instead of just outputting text claiming completion.\n"
+                "2. CHECK DIFF: Inspect the actual file or run `git status` to verify if the tool call succeeded.\n"
+                "3. RETRY PHYSICALLY: Re-invoke the correct tool with the correct arguments to ensure the physical file is updated."
+            )
+            return {
+                "injectSteps": [{"ephemeralMessage": warning_msg}],
+                "terminationBehavior": "force_continue"
+            }
     else:
         return {"injectSteps": [], "terminationBehavior": ""}
 

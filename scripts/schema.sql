@@ -91,3 +91,13 @@ CREATE TABLE IF NOT EXISTS session_state (
     is_cold_start INTEGER DEFAULT 1,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- [P39] runtime_hook_state 跨进程 Hook 状态表
+CREATE TABLE IF NOT EXISTS runtime_hook_state (
+    session_id TEXT NOT NULL,
+    turn_idx INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT,
+    PRIMARY KEY (session_id, turn_idx, key)
+);
+
