@@ -236,14 +236,20 @@ def main(context):
     
     if phantom_modifications:
         # --------------------------------------------------------
-        # 🚨 警告拦截提示：大模型陈述了修改但并没有发起对应的工具调用 (Phantom Modification)
-        # 中文翻译：[安全断言拦截] 你在陈述中声称已经更新/创建了以下文件，但在本次执行中并未发送任何相匹配的写入工具调用。请必须首先发送 write_to_file / replace_file_content 工具调用，方可向用户汇报修改！
+        # ⛔ [安全限制 - 动作拦截] 信任但验证 - 你的总结描述了你意图做的事情，但不一定是实际所做的事情。
+        # 我们检测到你声称编辑或写入了文件 ({', '.join(phantom_modifications)})，但未检测到任何物理修改或 git 状态差异。
+        # 要继续执行，你必须遵循以下步骤：
+        # 1. 验证工具执行：确保你实际调用了文件编辑工具（例如 `write_to_file`、`replace_file_content`），而不仅仅是输出声称完成的文本。
+        # 2. 检查差异：检查实际文件或运行 `git status` 以验证工具调用是否成功。
+        # 3. 物理重试：使用正确的参数重新调用正确的工具，以确保物理文件得到更新。
         # --------------------------------------------------------
         warning_msg = (
-            f"🚨 DETECTION BLOCK: You claimed to have updated/created {list(phantom_modifications)} "
-            f"in your text, but did not call any write tool for them in this turn. "
-            f"You MUST execute the write tool call first before making such claims!\n"
-            f"</system-reminder>"
+            "⛔ REMORA SAFETY LIMIT [ACTION-GATING]: Trust but verify - your summary describes what you intended to do, not necessarily what you did.\n"
+            f"We detected that you claimed to edit or write to files ({', '.join(phantom_modifications)}), but no physical modifications or git status differences were detected.\n"
+            "To proceed, you MUST follow these steps:\n"
+            "1. VERIFY TOOL EXECUTION: Ensure you actually invoked file editing tools (e.g., `write_to_file`, `replace_file_content`) instead of just outputting text claiming completion.\n"
+            "2. CHECK DIFF: Inspect the actual file or run `git status` to verify if the tool call succeeded.\n"
+            "3. RETRY PHYSICALLY: Re-invoke the correct tool with the correct arguments to ensure the physical file is updated."
         )
         return {
             "injectSteps": [{"ephemeralMessage": warning_msg}],

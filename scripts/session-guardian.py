@@ -139,7 +139,7 @@ def main(context):
     inject_steps = []
     
     # ==========================================
-    # 设计原理六：子代理创建的即时捕获与心跳断链续期状态机逻辑
+    # 设计原理六：子代理创建的即时捕获与心跳断链续期状态机逻辑 (已修复未定义变量 PYTHON/PLUGIN_ROOT 隐患)
     # ==========================================
     # 由于平台的 One-shot 计时器会在子代理发送 any 中间进度同步消息时自动静默取消，
     # 我们直接在 PreInvocation 阶段从 CDAL 原生层中分析最新 UUID，并计算
@@ -226,11 +226,15 @@ def main(context):
                          (latest_schedule_index == -1 or latest_subagent_activity_index < latest_schedule_index))
                          
     if subagent_uuid and not subagent_finish_detected and (not has_schedule_after or is_timer_canceled):
+        from lib.paths import find_plugin_root
+        plugin_root = find_plugin_root()
+        python_bin = sys.executable or "/usr/bin/python3"
+        # 中文翻译：⚠️ [系统警告] 子特工 {subagent_uuid} 当前在无心跳定时器状态下运行。请立即调用 schedule 设置 60s 心跳定时器。
         inject_steps.append({
             "ephemeralMessage": (
                 "<system-reminder>\n"
                 f"Subagent {subagent_uuid} is currently running WITHOUT a heartbeat timer. Call schedule NOW. "
-                f"schedule(DurationSeconds=\"60\", Prompt=\"60s timeout for subagent {subagent_uuid}. Run: {PYTHON} {PLUGIN_ROOT}/scripts/subagent-monitor.py {subagent_uuid} {conv_id}\")\n"
+                f"schedule(DurationSeconds=\"60\", Prompt=\"60s timeout for subagent {subagent_uuid}. Run: {python_bin} {plugin_root}/scripts/subagent-monitor.py {subagent_uuid} {conv_id}\")\n"
                 "</system-reminder>"
             )
         })

@@ -139,6 +139,8 @@ def test_invoke_subagent_allow(mock_get_subagent):
     
     res = safety_check.main.__wrapped__(context)
     assert res["decision"] == "allow"
+    assert "injectSteps" in res
+    assert "REMORA COORDINATOR MEMORY INJECTION" in res["injectSteps"][0]["ephemeralMessage"]
 
 @patch("safety-check.get_subagent_type")
 @patch("os.path.exists")
@@ -279,13 +281,15 @@ def test_run_command_normal_deny_categories(mock_inspect, mock_get_subagent):
     mock_inspect.return_value = ("deny", "test")
     res = safety_check.main.__wrapped__(context)
     assert res["decision"] == "deny"
-    assert "Diagnostic and test commands must be delegated" in res["reason"]
+    assert "DIRECT COMMAND RUNS BLOCKED!" in res["reason"]
+    assert "UNTRUSTED CODE EXECUTION PREVENTED" in res["reason"]
     
     # Test "build" category -> Denied with build suggestion
     mock_inspect.return_value = ("deny", "build")
     res = safety_check.main.__wrapped__(context)
     assert res["decision"] == "deny"
-    assert "Build commands must be delegated" in res["reason"]
+    assert "DIRECT COMMAND RUNS BLOCKED!" in res["reason"]
+    assert "UNTRUSTED CODE EXECUTION PREVENTED" in res["reason"]
 
 @patch("safety-check.get_subagent_type")
 def test_grep_search_sensitive(mock_get_subagent):

@@ -38,6 +38,14 @@ import subprocess
 # 3. O(1) 乘算估值策略：采用行数 * 50 字节的快速常数估算，防止磁盘全表扫描导致超时。
 # 4. 进程级资源锁控制读写竞态，确保安全应对大模型高并发的读文件调用。
 
+def make_deny_reason(prefix, message, action_tip=""):
+    # 中文翻译：[安全拦截] 统一格式化 Remora 安全拦截的返回原因
+    # 英文对照：⛔ REMORA SAFETY INTERCEPT [{prefix}]: {message}\nACTION REQUIRED: {action_tip}
+    reason = f"⛔ REMORA SAFETY INTERCEPT [{prefix}]: {message}"
+    if action_tip:
+        reason += f"\nACTION REQUIRED: {action_tip}"
+    return reason
+
 def get_subagent_type(transcript_path):
     """通过系统官方 agentapi 查询当前子代理的 typeName，实现物理只读/读写属性提取"""
     if not transcript_path:
@@ -116,11 +124,12 @@ def main(context):
     # - 若为只读的日志搜索或数据库查询：使用 TypeName "Remora_ReadOnly_Extractor" 派发子代理
     # - 若为沙盒下的调试、测试或代码修改：使用 TypeName "Remora_Deep_Diver" 派发子代理
     # --------------------------------------------------------
-    rot_reason = (
-        "REMORA SAFETY INTERCEPT: Direct cat/grep or view_file on large logs (.jsonl/.log) in main context is prohibited to prevent context explosion.\n"
-        "Please invoke a subagent for isolation:\n"
-        "- For read-only log search or database queries: Typename 'Remora_ReadOnly_Extractor'\n"
-        "- For sandbox debugging, tests, or code modifications: Typename 'Remora_Deep_Diver'"
+    # 中文翻译：[防上下文腐败拦截] 禁止在主干上下文中直接对大日志文件（.jsonl/.log）使用 cat/grep 或 view_file，以防止上下文爆炸。请使用子代理进行隔离执行。
+    # 英文对照：⛔ REMORA SAFETY INTERCEPT [ANTI-ROT]: Direct cat/grep or view_file on large logs in main context is prohibited to prevent context explosion.\nACTION REQUIRED: Invoke 'Remora_ReadOnly_Extractor' for queries, or 'Remora_Deep_Diver' for modifications.
+    rot_reason = make_deny_reason(
+        "ANTI-ROT",
+        "Direct cat/grep or view_file on large logs in main context is prohibited to prevent context explosion.",
+        "Invoke 'Remora_ReadOnly_Extractor' for queries, or 'Remora_Deep_Diver' for modifications."
     )
 
     # --------------------------------------------------------
@@ -135,19 +144,42 @@ def main(context):
 
             # 增加 1500 字符强限拦截（底线防崩拦截座）
             if len(prompt_str) > 1500:
-                # 中文翻译：[子任务负载拦截] 指派给子代理的 Prompt 长度为 {len} 字符，已突破 1500 字符硬限。请做任务拆细与精炼描述！
+                # 中文翻译：[子任务负载拦截] 指派给子代理的 Prompt 长度突破 1500 字符硬限。请做任务拆细与精炼描述！
+                # 英文对照：⛔ REMORA SAFETY INTERCEPT [PAYLOAD ENFORCEMENT]: Subagent Prompt length ({len(prompt_str)} chars) exceeds 1500 limit.\nACTION REQUIRED: Please partition the task and simplify the description.
                 return {
                     "decision": "deny",
-                    "reason": f"REMORA PAYLOAD ENFORCEMENT: Subagent Prompt length ({len(prompt_str)} chars) exceeds 1500 limit. Please partition the task and simplify the description."
+                    "reason": make_deny_reason(
+                        "PAYLOAD ENFORCEMENT",
+                        f"Subagent Prompt length ({len(prompt_str)} chars) exceeds 1500 limit.",
+                        "Please partition the task and simplify the description."
+                    )
                 }
 
             if t_name == "Remora_Deep_Diver" and ws not in ['branch', 'share']:
                 # 中文翻译：[沙盒强制隔离] 'Remora_Deep_Diver' 必须通过 Workspace='branch' 或 'share' 在隔离环境中调用。禁止在主工作区直接执行以防污染！
+                # 英文对照：⛔ REMORA SAFETY INTERCEPT [SANDBOX ENFORCEMENT]: 'Remora_Deep_Diver' MUST be invoked with Workspace='branch' or 'share'.\nACTION REQUIRED: Direct execution in the main tree is prohibited!
                 return {
                     "decision": "deny",
-                    "reason": "REMORA SANDBOX ENFORCEMENT: 'Remora_Deep_Diver' MUST be invoked with Workspace='branch' or 'share'. Direct execution in the main tree is prohibited!"
+                    "reason": make_deny_reason(
+                        "SANDBOX ENFORCEMENT",
+                        "'Remora_Deep_Diver' MUST be invoked with Workspace='branch' or 'share'.",
+                        "Direct execution in the main tree is prohibited!"
+                    )
                 }
-        return {"decision": "allow"}
+        # 中文翻译：
+        # REMORA 协调器记忆注入：每当您调用子代理时，您必须同时调用 `schedule` 工具，设置 `DurationSeconds="60"` 以监控存活状态。在启动后立即退出当前回合。
+        return {
+            "decision": "allow",
+            "injectSteps": [
+                {
+                    "ephemeralMessage": (
+                        "REMORA COORDINATOR MEMORY INJECTION: Whenever you invoke a subagent, "
+                        "you MUST simultaneously call the `schedule` tool with `DurationSeconds=\"60\"` "
+                        "to monitor liveness. Exit the turn immediately after launching."
+                    )
+                }
+            ]
+        }
 
     # --------------------------------------------------------
     # 针对 view_file 的拦截
@@ -193,10 +225,38 @@ def main(context):
                                 
                             # 三级硬性熔断
                             if stats["accumulated_source_bytes"] > 400 * 1024 or stats["accumulated_data_bytes"] > 150 * 1024:
-                                # 中文翻译：⛔ [安全拦截] 累积读取量触发严格阈值！主干上下文濒临腐败，当前操作已被强制阻断。请立即委派子代理！重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
+                                # 中文翻译：
+                                # ⛔ [安全拦截] 累积读取量已超限！
+                                # ============================================================
+                                # !!! 警告：主干上下文濒临腐败 !!!
+                                # 源码读取：{stats['accumulated_source_bytes']//1024}KB (最大：400KB)
+                                # 数据读取：{stats['accumulated_data_bytes']//1024}KB (最大：150KB)
+                                #
+                                # 操作已被阻断！为了保持认知稳定性，您必须立即委派至子代理。
+                                #
+                                # 在您结束当前回合前，您必须：
+                                # 1. 归档进度：在 `/artifacts/task.md` 或当前决策日志中写入简短的进度报告与技术假设。
+                                # 2. 委派执行：调用 `Remora_ReadOnly_Extractor` 进行读取/查询，或调用 `Remora_Deep_Diver` 进行修改。
+                                # 3. 计划监控：在启动子代理时，您必须同时调用 `schedule` 工具，设置 `DurationSeconds="30"`。
+                                #
+                                # 切勿尝试在当前上下文中重新运行被拦截的读取命令！
+                                # ============================================================
                                 return {
                                     "decision": "deny", 
-                                    "reason": f"⛔ REMORA SAFETY INTERCEPT: CUMULATIVE READ LIMIT EXCEEDED (SOURCE: {stats['accumulated_source_bytes']//1024}KB, DATA: {stats['accumulated_data_bytes']//1024}KB). MAIN CONTEXT CORRUPTION IMMINENT. OPERATION BLOCKED. PLEASE DELEGATE TO A SUBAGENT! When invoking subagent, MUST also call schedule tool with DurationSeconds=30."
+                                    "reason": (
+                                        f"⛔ REMORA SAFETY INTERCEPT: CUMULATIVE READ LIMIT EXCEEDED!\n"
+                                        f"============================================================\n"
+                                        f"!!! WARNING: MAIN CONTEXT CORRUPTION IMMINENT !!!\n"
+                                        f"SOURCE READ: {stats['accumulated_source_bytes']//1024}KB (MAX: 400KB)\n"
+                                        f"DATA READ: {stats['accumulated_data_bytes']//1024}KB (MAX: 150KB)\n\n"
+                                        f"OPERATION BLOCKED! TO PRESERVE COGNITIVE STABILITY, YOU MUST IMMEDIATELY DELEGATE TO A SUBAGENT.\n\n"
+                                        f"BEFORE YOU EXIT THIS TURN, YOU MUST:\n"
+                                        f"1. ARCHIVE PROGRESS: WRITE A CONCISE PROGRESS REPORT AND TECHNICAL HYPOTHESES TO `/artifacts/task.md` OR THE ACTIVE DECISION LOG.\n"
+                                        f"2. DELEGATE EXECUTION: INVOKE `Remora_ReadOnly_Extractor` FOR READS/QUERIES, OR `Remora_Deep_Diver` FOR MODIFICATIONS.\n"
+                                        f"3. SCHEDULE MONITOR: YOU MUST SIMULTANEOUSLY CALL THE `schedule` TOOL WITH `DurationSeconds=\"30\"` WHEN LAUNCHING THE SUBAGENT.\n\n"
+                                        f"DO NOT ATTEMPT TO RE-RUN THE BLOCKED READ COMMAND IN THIS CONTEXT!\n"
+                                        f"============================================================"
+                                    )
                                 }
                         except Exception as e:
                             pass
@@ -221,10 +281,15 @@ def main(context):
             if is_sub:
                 # 若为只读特工，除日志外不可含有任何写或测试构建高危特征（必须为 allow）
                 if is_readonly_sub and decision != "allow":
-                    # 中文翻译：[安全防线拦截] 限制只读特工。Remora_ReadOnly_Extractor 仅被授权进行只读检索，严禁运行任何物理写操作、构建或测试命令！
+                    # 中文翻译：[只读安全拦截] 限制只读特工。Remora_ReadOnly_Extractor 仅被授权进行只读检索，严禁运行任何物理写操作、构建或测试命令！
+                    # 英文对照：⛔ REMORA SAFETY INTERCEPT [READONLY]: Remora_ReadOnly_Extractor is strictly read-only.\nACTION REQUIRED: Do not run write/test/build commands!
                     return {
                         "decision": "deny",
-                        "reason": "REMORA SAFETY INTERCEPT: Remora_ReadOnly_Extractor is strictly read-only and cannot run write/test/build commands!"
+                        "reason": make_deny_reason(
+                            "READONLY",
+                            "Remora_ReadOnly_Extractor is strictly read-only.",
+                            "Do not run write/test/build commands!"
+                        )
                     }
                 return {"decision": "allow"}
             else:
@@ -237,23 +302,43 @@ def main(context):
                 if is_deep_diver_sub and category in {"test", "build"}:
                     return {"decision": "allow"}
                 
-                if category == "test":
-                    # 中文翻译：[安全防线拦截] 诊断和测试命令已被拦截！您必须通过 invoke_subagent 委派给 Remora_Deep_Diver 并在分支沙盒中执行 (Workspace: 'branch')。
+                if category in ("test", "build"):
+                    # 中文翻译：
+                    # ⛔ [安全限制 - 阻断委派] 命令行直接运行已被拦截！
+                    # ============================================================
+                    # !!! 警告：未受信任的代码执行已被阻止 !!!
+                    # 为了保护当前活跃的工作树并在构建/测试阶段防止未审查代码执行或不安全的状态改变以维护 master 分支完整性，禁止直接执行 pytest/build。
+                    #
+                    # 您必须在隔离的工作空间中运行这些命令：
+                    # - 测试/诊断：通过 `invoke_subagent` 委派给 `Remora_Deep_Diver` 且 `Workspace: "branch"`。
+                    # - 编译/构建：通过 `invoke_subagent` 委派给 `Remora_Deep_Diver` 且 `Workspace: "share"`。
+                    #
+                    # 请勿尝试通过别名、Shell 脚本包装或替代路径运行来绕过此防线！所有绕过尝试将被记录并拦截。
+                    # ============================================================
                     return {
                         "decision": "deny",
-                        "reason": "REMORA DELEGATION BLOCKED: Diagnostic and test commands must be delegated via invoke_subagent using Remora_Deep_Diver (Workspace: 'branch')!"
-                    }
-                elif category == "build":
-                    # 中文翻译：[安全防线拦截] 构建命令已被拦截！您必须通过 invoke_subagent 委派给 Remora_Deep_Diver 并共享构建产物 (Workspace: 'share')。
-                    return {
-                        "decision": "deny",
-                        "reason": "REMORA DELEGATION BLOCKED: Build commands must be delegated via invoke_subagent using Remora_Deep_Diver (Workspace: 'share')!"
+                        "reason": (
+                            "⛔ REMORA SAFETY LIMIT [DELEGATION-BLOCKED]: DIRECT COMMAND RUNS BLOCKED!\n"
+                            "============================================================\n"
+                            "!!! WARNING: UNTRUSTED CODE EXECUTION PREVENTED !!!\n"
+                            "TO PROTECT THE ACTIVE WORKING TREE AND PRESERVE MASTER BRANCH INTEGRITY FROM UNSAFE STATE CHANGES OR UNREVIEWED CODE EXECUTION DURING BUILD/TEST PHASES, DIRECT EXECUTION OF pytest/build IS PROHIBITED.\n\n"
+                            "YOU MUST RUN THESE COMMANDS IN AN ISOLATED WORKSPACE:\n"
+                            "- FOR TESTING/DIAGNOSTICS: DELEGATE VIA `invoke_subagent` USING `Remora_Deep_Diver` WITH `Workspace: \"branch\"`.\n"
+                            "- FOR COMPILING/BUILDING: DELEGATE VIA `invoke_subagent` USING `Remora_Deep_Diver` WITH `Workspace: \"share\"`.\n\n"
+                            "DO NOT ATTEMPT TO BYPASS THIS DEFENSE BY ALIASING, SHELL SCRIPT WRAPPING, OR ALTERNATIVE PATH RUNS! ALL BYPASS ATTEMPTS WILL BE LOGGED AND BLOCKED.\n"
+                            "============================================================"
+                        )
                     }
                 else:
-                    # 中文翻译：[安全防线拦截] 命令行语法解析校验未通过。可能包含潜在命令绕过风险。请将其委派给子代理在隔离沙盒内执行！
+                    # 中文翻译：[命令验证拦截] 命令行语法解析校验未通过。可能包含潜在命令绕过风险。请将其委派给子代理在隔离沙盒内执行！
+                    # 英文对照：⛔ REMORA SAFETY INTERCEPT [DELEGATION]: Command verification failed due to syntax parser error.\nACTION REQUIRED: Please delegate to a subagent under (Workspace: 'branch')!
                     return {
                         "decision": "deny",
-                        "reason": "REMORA DELEGATION BLOCKED: Command verification failed due to syntax parser error. Please delegate to a subagent under (Workspace: 'branch')!"
+                        "reason": make_deny_reason(
+                            "DELEGATION",
+                            "Command verification failed due to syntax parser error.",
+                            "Please delegate to a subagent under (Workspace: 'branch')!"
+                        )
                     }
             else:
                 return {"decision": "allow"}

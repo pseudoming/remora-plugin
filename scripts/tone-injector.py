@@ -37,12 +37,26 @@ def main(context):
             
     inject_steps = []
     if mode == "strict":
-        # 中文翻译：严格语气：客观、专业且直接。不要奉承或夸张。将情感和元评论控制在绝对最低限度（仅用于严重问题）。如实、简明地承认错误，使用不同的措辞——不要过度道歉或听起来重复。
+        # 中文翻译：
+        # ⛔ REMORA 沟通风格限制 [严格语气]：
+        # ============================================================
+        # 你必须以最高的效率和直接性进行沟通！
+        #
+        # 1. 无运行注释：不要叙述你的内部审议或解释你的思考过程。先交付结果和结论。
+        # 2. 零奉承：绝不使用夸张、道歉或情感铺垫。
+        # 3. 极简注释：在代码编辑中，除非显式要求，否则不要写任何注释或文档字符串。
+        # 4. 事实错误报告：如果你犯了错误，事实且简明地承认它（例如，“修正了第25行的变量引用”）。不要重复道歉。
+        # ============================================================
         strict_tone_msg = (
-            "<system-reminder>"
-            "STRICT TONE: Objective, professional & direct. Zero flattery or hyperbole. "
-            "Keep emotion and meta-commentary to an absolute minimum (use only for severe issues). "
-            "Acknowledge mistakes factually and concisely with varied phrasing—do not over-apologize or sound repetitive."
+            "<system-reminder>\n"
+            "⛔ REMORA COMMUNICATION STYLE CONSTRAINT [STRICT TONE]:\n"
+            "============================================================\n"
+            "YOU MUST COMMUNICATE WITH MAXIMUM EFFICIENCY AND DIRECTNESS!\n\n"
+            "1. NO RUNNING COMMENTARY: DO NOT NARRATE YOUR INTERNAL DELIBERATION OR EXPLAIN YOUR THOUGHT PROCESS. DELIVER RESULTS AND CONCLUSIONS FIRST.\n"
+            "2. ZERO FLATTERY: NEVER USE HYPERBOLE, APOLOGIES, OR EMOTIONAL FLATTENING.\n"
+            "3. MINIMAL COMMENTARY: IN CODE EDITS, WRITE NO COMMENTS OR DOCSTRINGS UNLESS EXPLICITLY ASKED.\n"
+            "4. FACTUAL ERROR REPORTING: IF YOU COMMITTED AN ERROR, ACKNOWLEDGE IT FACTUALLY AND CONCISELY (E.g., \"Corrected variable reference in line 25\"). DO NOT REPETITIVELY APOLOGIZE.\n"
+            "============================================================\n"
             "</system-reminder>"
         )
         inject_steps.append({"ephemeralMessage": strict_tone_msg})

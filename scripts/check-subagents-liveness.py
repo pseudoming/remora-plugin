@@ -283,7 +283,22 @@ def run_as_hook(input_data):
             
     if dead_agents:
         reason_msg = f"⚠️ 警告：检测到后台子特工已卡死：\n" + "\n".join([f"- 特工 {sid}: {reason}" for sid, reason in dead_agents])
+        dead_ids_str = ", ".join([f"'{sid}'" for sid, _ in dead_agents])
         
+        # 中文翻译：
+        # ⛔ REMORA 存活警告：子特工 {dead_ids_str} 无响应。
+        # 要解决此问题，您必须遵循以下自愈 SOP：
+        # 1. 强制终止：调用 `manage_subagents(Action='kill', ConversationIds=[{dead_ids_str}])`。
+        # 2. 清理僵尸进程：运行命令列出子代理路径下的进程（例如 `ps aux | grep -v grep | grep -E 'pytest|build'`）。若发现任何孤儿进程，使用 kill/pkill 清理。
+        # 3. 验证锁：确保在重新派发或重试前，没有会阻碍下一个子代理实例的数据库日志锁（例如 SQLite .db-journal 或 .runtime/ 中）。
+        ephemeral_msg = (
+            f"⛔ REMORA LIVENESS WARNING: Subagents {dead_ids_str} are unresponsive.\n"
+            f"To resolve this, you MUST follow this Self-Healing SOP:\n"
+            f"1. FORCE TERMINATE: Invoke `manage_subagents(Action='kill', ConversationIds=[{dead_ids_str}]).\n"
+            f"2. CLEAN ZOMBIE PROCESSES: Run a command to list processes under the subagent's path (e.g., `ps aux | grep -v grep | grep -E 'pytest|build'`). If any orphaned subprocesses are found, use kill/pkill to clean them up.\n"
+            f"3. VERIFY LOCKS: Ensure there are no database journal locks (e.g., in SQLite .db-journal or .runtime/) that could block next subagent instances before you respawn or retry."
+        )
+
         # 判断是 PreInvocation 还是 PreToolUse 还是 Stop 阶段
         if not input_data.get('toolCall'):
             return {
@@ -291,7 +306,7 @@ def run_as_hook(input_data):
                 "reason": reason_msg,
                 "injectSteps": [
                     {
-                        "ephemeralMessage": f"{reason_msg}\n请立即执行 manage_subagents(Action='kill', ConversationIds={[sid for sid, _ in dead_agents]}) 终止卡死特工并启动自愈 SOP。"
+                        "ephemeralMessage": ephemeral_msg
                     }
                 ]
             }

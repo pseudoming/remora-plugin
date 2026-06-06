@@ -46,8 +46,30 @@ def _handle_pre_invocation(context):
     
     if decisions:
         decision_text = _truncate_decisions(decisions)
-        # 追加自然语言软化指令
-        prompt = f"<system-reminder>\n【Remora Line A: 会话恢复】\n检测到冷启动或话题切换。当前活跃话题: {topic_id}。\n已确立的核心约束：\n- {decision_text}\n⚠️ 请在后续回答中遵守上述约束。你在回复时自然提及约束原因即可，坚决不要复读本条系统提示，维持沟通心流。\n</system-reminder>"
+        # 中文翻译：
+        # ⚠️ REMORA 会话恢复警告：
+        # ============================================================
+        # 本次对话已被恢复或进行了上下文压缩！
+        # 应用程序状态和目录内容可能已发生变化。
+        # 为了保持逻辑一致性，你必须严格遵守以下从认知记忆中召回的物理锚定决策：
+        # 活跃话题: {topic_id}
+        # - {decision_text}
+        #
+        # 在任何情况下都不要忽略或覆写这些原则！
+        # ============================================================
+        decisions_from_memory = f"活跃话题: {topic_id}\n- {decision_text}"
+        prompt = (
+            f"<system-reminder>\n"
+            f"⚠️ REMORA SESSION CONTINUATION WARNING:\n"
+            f"============================================================\n"
+            f"THIS CONVERSATION HAS BEEN RESUMED OR CONTEXT-COMPACTED!\n"
+            f"APPLICATION STATE AND DIRECTORY CONTENTS MAY HAVE CHANGED.\n"
+            f"TO PRESERVE LOGICAL CONSISTENCY, YOU MUST STRICTLY COMPLY WITH THE FOLLOWING PHYSICALLY ANCHORED DECISIONS RECALLED FROM COGNITIVE MEMORY:\n"
+            f"{decisions_from_memory}\n\n"
+            f"DO NOT IGNORE OR OVERWRITE THESE PRINCIPLES UNDER ANY CIRCUMSTANCES!\n"
+            f"============================================================\n"
+            f"</system-reminder>"
+        )
         inject_steps.append({"ephemeralMessage": prompt})
         
     # 恢复物理消费，仅在消费成功且执行 Line A 后置 0
@@ -87,7 +109,36 @@ def _handle_pre_tool_use(context):
                 
     if hit_decisions:
         decision_text = _truncate_decisions(hit_decisions)
-        prompt = f"<system-reminder>\n【Remora Line B: 实体防护】\n🚨 MEMORY DEFENSE TRIGGERED:\n你正在修改受历史决策保护的文件 `{target_file}`。\n必须确保不违背以下已确认决策：\n- {decision_text}\n⚠️ 在回复中请自然提及你已充分考虑上述约束，维持顺畅心流。\n</system-reminder>"
+        # 中文翻译：
+        # ⛔ REMORA 安全限制 [实体防护]：禁止未经授权的自我修改！
+        # ============================================================
+        # !!! 关键策略违规 & 记忆防御触发 !!!
+        # 你尝试修改或破坏性覆写受物理保护的系统配置或决策实体（目标：{target_file}）。
+        #
+        # 必须遵守的决策：
+        # - {decision_text}
+        #
+        # 严禁未经授权更改核心代理行为规则或决策锚点，以防状态漂移！
+        #
+        # 如需继续，你必须：
+        # 1. 解释意图：与用户讨论并确认修改此受保护配置的原因。
+        # 2. 手动确认：在提出进一步编辑之前，确保用户在对话中显式允许该更改。
+        # ============================================================
+        prompt = (
+            f"<system-reminder>\n"
+            f"⛔ REMORA SAFETY LIMIT [ENTITY-PROTECTION]: UNSANCTIONED SELF-MODIFICATION BLOCKED!\n"
+            f"============================================================\n"
+            f"!!! CRITICAL POLICY VIOLATION & MEMORY DEFENSE TRIGGERED !!!\n"
+            f"YOU ATTEMPTED TO MODIFY OR DESTRUCTIVELY OVERWRITE PHYSICALLY PROTECTED SYSTEM CONFIGURATIONS OR DECISION ENTITIES (Target: {target_file}).\n\n"
+            f"THE DECISIONS YOU MUST COMPLY WITH:\n"
+            f"- {decision_text}\n\n"
+            f"UNAUTHORIZED ALTERATION OF CORE AGENT BEHAVIOR RULES OR DECISION ANCHORS IS STRICTLY PROHIBITED TO PREVENT STATE DRIFT!\n\n"
+            f"TO PROCEED, YOU MUST:\n"
+            f"1. EXPLAIN INTENT: DISCUSS WITH THE USER AND CONFIRM THE REASON FOR MODIFYING THIS PROTECTED CONFIGURATION.\n"
+            f"2. MANUAL CONFIRM: ENSURE THE USER EXPLICITLY PERMITS THE CHANGE IN THE CONVERSATION BEFORE PROPOSING FURTHER EDITS.\n"
+            f"============================================================\n"
+            f"</system-reminder>"
+        )
         return {"injectSteps": [{"ephemeralMessage": prompt}]}
         
     return {"injectSteps": []}
