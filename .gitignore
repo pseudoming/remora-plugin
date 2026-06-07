@@ -22,3 +22,4 @@ hooks.template.json.bak
 ORIGINAL_REQUEST.md
 .coverage
 
+.pytest_cache/
