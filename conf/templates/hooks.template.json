@@ -8,7 +8,7 @@
       },
       {
         "type": "command",
-        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/snapshot-git.py",
+        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/adapter/hooks/snapshot-git.py",
         "timeout": 30
       },
       {

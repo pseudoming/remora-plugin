@@ -9,7 +9,7 @@ You are now in Remora Coordinator Mode. You must strictly follow these instructi
 
 ## 1. Global State Database (Single Source of Truth)
 The definitive long-term memory and architectural state of this project is stored in an SQLite database located at:
-`sidecar_data/remora-plugin/memory-compactor/data/remora_memory.db`.
+由后台 compactor 自动维护。你不应该直接读取 DB 文件，必须通过 `remora-recall.py` 访问。
 This database is automatically populated and maintained by the background `compactor.py` (running in singleton mode). You MUST treat this database as the ONLY Single Source of Truth (SSOT).
 You MUST NOT manually write decisions to files like `decisions.md` for historical architecture anchoring.
 

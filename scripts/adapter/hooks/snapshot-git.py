@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from core.filesystem import get_snapshot
 from adapter.bridge.context import hook_entrypoint
 
