@@ -460,3 +460,74 @@ def test_hook_entrypoint_base_exception_non_tool():
         output = mock_stdout.getvalue().strip()
         result = _json.loads(output)
         assert result == {}
+
+
+def test_hook_entrypoint_stop_hook():
+    @hook_entrypoint()
+    def dummy_hook(input_data):
+        return {"decision": "allow"}
+
+    with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"executionNum": 1}))), \
+         patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
+         patch("lib.progress.ProgressSentinel"), \
+         patch("lib.context.HookProfiler"), \
+         patch("os.path.exists", return_value=False), \
+         patch.object(_sys, "exit") as mock_exit:
+        dummy_hook()
+        mock_exit.assert_called_once_with(0)
+        output = mock_stdout.getvalue().strip()
+        result = _json.loads(output)
+        assert result["decision"] == "allow"
+
+
+def test_hook_entrypoint_post_tool_use():
+    @hook_entrypoint()
+    def dummy_hook(input_data):
+        return {"some": "value"}
+
+    with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"postTool": True}))), \
+         patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
+         patch("lib.progress.ProgressSentinel"), \
+         patch("lib.context.HookProfiler"), \
+         patch("os.path.exists", return_value=False), \
+         patch.object(_sys, "exit") as mock_exit:
+        dummy_hook()
+        mock_exit.assert_called_once_with(0)
+        output = mock_stdout.getvalue().strip()
+        result = _json.loads(output)
+        assert result == {}
+
+
+def test_hook_entrypoint_exception_with_tool_use():
+    @hook_entrypoint()
+    def dummy_hook(input_data):
+        raise ValueError("test error")
+
+    with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"toolCall": {"name": "write"}}))), \
+         patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
+         patch("lib.progress.ProgressSentinel"), \
+         patch("lib.context.HookProfiler"), \
+         patch("os.path.exists", return_value=False), \
+         patch.object(_sys, "exit"):
+        dummy_hook()
+        output = mock_stdout.getvalue().strip()
+        result = _json.loads(output)
+        assert result["decision"] == "allow"
+        assert "Remora Fallback" in result["decision_reason"]
+
+
+def test_hook_entrypoint_system_exit_zero_non_tool():
+    @hook_entrypoint()
+    def dummy_hook(input_data):
+        sys.exit(0)
+
+    with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"invocationNum": 1}))), \
+         patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
+         patch("lib.progress.ProgressSentinel"), \
+         patch("lib.context.HookProfiler"), \
+         patch("os.path.exists", return_value=False), \
+         patch.object(_sys, "exit"):
+        dummy_hook()
+        output = mock_stdout.getvalue().strip()
+        result = _json.loads(output)
+        assert result == {}
