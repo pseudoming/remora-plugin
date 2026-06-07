@@ -69,7 +69,7 @@ python3 install.py
 
 install.py 执行以下步骤：
 1. Quality gate 静态架构检查
-2. 模板渲染：`hooks.template.json` → `hooks.json`、agent templates、sidecar 配置
+2. 模板渲染：`conf/templates/hooks.template.json` → `hooks.json`、agent templates、sidecar 配置
 3. Workflow 部署：`global_workflows/` → `~/.gemini/config/global_workflows/`
 4. 数据库初始化：调用 `scripts/schema/schema_init.py` 建表并执行动态迁移
 
@@ -105,7 +105,7 @@ python3 -m pytest scripts/tests/ -q
 ### 开发新 Hook
 
 1. 在 `scripts/adapter/hooks/` 编写新脚本，使用 `@hook_entrypoint` 装饰器
-2. 在 `hooks.template.json` 中配置挂载阶段（如 `PreToolUse`）
+2. 在 `conf/templates/hooks.template.json` 中配置挂载阶段（如 `PreToolUse`）
 3. 运行 `python3 install.py` 重新渲染 `hooks.json`
 4. 注意：Hook JSON payload 中**禁止注入自定义键**，仅使用标准 schema 字段（`decision`、`reason`、`injectSteps`、`ephemeralMessage` 等）
 
