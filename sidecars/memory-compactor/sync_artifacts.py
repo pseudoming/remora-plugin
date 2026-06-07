@@ -6,6 +6,8 @@ import sqlite3
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
 from schema.schema_init import DB_PATH
+from lib.paths import extract_conv_id
+from lib.dao import insert_file_change
 
 def calculate_md5(file_path):
     """计算制品的 MD5 哈希以做增量变更过滤"""
@@ -66,7 +68,10 @@ def scan_and_ingest_artifacts(context):
                 """INSERT INTO messages (conversation_id, line_number, timestamp, role, content, topic_id)
                    VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?)""",
                 (sync_conv_id, 999900 + target_files.index(filename), filename, content, json.dumps(["artifact_topic"])))
-            
+
+            conv_id = extract_conv_id(context.get('transcriptPath', ''))
+            if conv_id:
+                insert_file_change(project_uuid, conv_id, filename, "artifact")
             # 确保在 project_topics 表中也有此全局约束话题的记录
             conn.execute(
                 """INSERT OR REPLACE INTO project_topics (uuid, topic_id, status, summary)

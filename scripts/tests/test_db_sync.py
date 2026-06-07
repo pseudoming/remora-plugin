@@ -14,7 +14,7 @@ TEST_DB_PATH = "/tmp/test_remora_db_sync.db"
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
     monkeypatch.setattr(dao, "get_db_path", lambda: TEST_DB_PATH)
-    import schema_init
+    from schema import schema_init
     monkeypatch.setattr(schema_init, "DB_PATH", TEST_DB_PATH)
     monkeypatch.setattr(schema_init, "DATA_DIR", "/tmp")
 
@@ -149,3 +149,50 @@ def test_compactor_db_sync(monkeypatch):
 
         watermarks = conn.execute("SELECT last_msg_id FROM watermarks WHERE conversation_id='c1'").fetchall()
         assert watermarks[0] == (2,)
+
+
+def test_sync_artifacts_file_changes_artifact():
+    from unittest.mock import patch, MagicMock
+    import sync_artifacts
+
+    conv_id = "aaa-bbb-ccc-ddd-eee"
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = None
+    mock_insert = MagicMock()
+
+    with patch("sync_artifacts.insert_file_change", mock_insert, create=True), \
+         patch("sync_artifacts.extract_conv_id", return_value=conv_id, create=True), \
+         patch("sync_artifacts.calculate_md5", return_value="new_hash"), \
+         patch("os.path.exists", return_value=True), \
+         patch("builtins.open", create=True), \
+         patch("sqlite3.connect", return_value=mock_conn):
+        sync_artifacts.scan_and_ingest_artifacts({
+            "artifactDirectoryPath": "/fake/artifacts",
+            "transcriptPath": f"/home/agent/.gemini/antigravity/brain/{conv_id}/logs/transcript.jsonl"
+        })
+
+        call_filenames = {c.args[2] for c in mock_insert.call_args_list}
+        assert "implementation_plan.md" in call_filenames
+        assert "walkthrough.md" in call_filenames
+        assert all(c.args[3] == "artifact" for c in mock_insert.call_args_list)
+
+
+def test_sync_artifacts_file_changes_no_transcript():
+    from unittest.mock import patch, MagicMock
+    import sync_artifacts
+
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = None
+    mock_insert = MagicMock()
+
+    with patch("sync_artifacts.insert_file_change", mock_insert, create=True), \
+         patch("sync_artifacts.calculate_md5", return_value="new_hash"), \
+         patch("os.path.exists", return_value=True), \
+         patch("builtins.open", create=True), \
+         patch("sqlite3.connect", return_value=mock_conn):
+        sync_artifacts.scan_and_ingest_artifacts({
+            "artifactDirectoryPath": "/fake/artifacts"
+        })
+
+        for c in mock_insert.call_args_list:
+            assert c.args[3] != "artifact"
