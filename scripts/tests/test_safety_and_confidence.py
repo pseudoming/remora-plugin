@@ -7,7 +7,7 @@ import base64
 
 # 动态将插件下的 scripts 和 sidecars 注入环境变量路径
 PLUGIN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, os.path.join(PLUGIN_DIR, "sidecars", "memory-compactor"))
+sys.path.insert(0, os.path.join(PLUGIN_DIR, "scripts", "adapter", "sidecar", "compactor"))
 # 导入要测试的模块
 from core.rules.inspector import inspect_command, decode_base64_token
 from extract_decisions import calculate_factual_confidence

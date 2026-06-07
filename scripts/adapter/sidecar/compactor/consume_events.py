@@ -1,7 +1,10 @@
+import os
 import json
 import re
 import time
 import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 from extract_decisions import get_or_create_conversation, AgentApiError
 

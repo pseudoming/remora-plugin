@@ -95,7 +95,7 @@ flowchart TD
 
 ### 3. Stop 流程
 * **业务描述**：当 Agent 运行结束并退回离线状态时执行。用于异步搜刮制品，将新修改的 Markdown 文档增量导入温存储，并重置会话计数器。
-* **底层脚本**：`{PLUGIN_ROOT}/sidecars/memory-compactor/compactor.py`（带 `--event-driven` 参数）与 `{PLUGIN_ROOT}/adapter/maintenance/clean-session-stats.py`。
+* **底层脚本**：`{PLUGIN_ROOT}/scripts/adapter/sidecar/compactor/compactor.py`（带 `--event-driven` 参数）与 `{PLUGIN_ROOT}/adapter/maintenance/clean-session-stats.py`。
 * **SQLite 交互**：
   * **表**：
     * `artifact_hashes`：保存和覆盖被提取制品的 MD5 哈希以支持增量比较。
@@ -224,7 +224,7 @@ flowchart TD
 
 ### 6. 会话/主题垃圾回收流程
 * **业务描述**：Compactor 后台守护进程定期轮询时自动运行，负责清理超期的、不活跃的或无用户确认的自动生成话题和会话事实，控制温存储数据库的体积。
-* **底层脚本**：`{PLUGIN_ROOT}/sidecars/memory-compactor/compactor.py`（在守护进程模式下），具体包含 `{PLUGIN_ROOT}/adapter/maintenance/session_gc.py` 与 `{PLUGIN_ROOT}/adapter/maintenance/topic_gc.py`。
+* **底层脚本**：`{PLUGIN_ROOT}/scripts/adapter/sidecar/compactor/compactor.py`（在守护进程模式下），具体包含 `{PLUGIN_ROOT}/adapter/maintenance/session_gc.py` 与 `{PLUGIN_ROOT}/adapter/maintenance/topic_gc.py`。
 * **SQLite 交互**：
   * **表**：
     * `project_topics`：物理级 `DELETE`。
@@ -428,7 +428,7 @@ sequenceDiagram
 
 ## 四、 核心后台 Compactor 服务集成机制
 
-上面介绍的各大流程，最终通过 `{PLUGIN_ROOT}/sidecars/memory-compactor/compactor.py` 进行整合与驱动。
+上面介绍的各大流程，最终通过 `{PLUGIN_ROOT}/scripts/adapter/sidecar/compactor/compactor.py` 进行整合与驱动。
 在 **Daemon 后台挂载** 模式下，Compactor 的业务链按如下步骤流式运行：
 
 ```mermaid

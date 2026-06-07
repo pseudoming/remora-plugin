@@ -1,4 +1,4 @@
-import subprocess, os
+import subprocess, os, hashlib
 
 def get_active_files(cwd):
     try:
@@ -46,3 +46,10 @@ def get_snapshot(cwd):
         except Exception:
             pass
     return snapshot
+
+def calculate_md5(file_path):
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()

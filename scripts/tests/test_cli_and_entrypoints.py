@@ -779,25 +779,12 @@ def test_session_guardian_subagent_warning(tmp_path):
          patch("session_guardian.cleanup") as mock_cleanup, \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode") as mock_write_mode, \
-         patch("subprocess.run") as mock_run:
-         
-        # Mock subprocess.run for agentapi get-conversation-metadata
-        mock_res = MagicMock()
-        mock_res.returncode = 0
-        mock_res.stdout = json.dumps({
-            "response": {
-                "conversationMetadata": {
-                    "metadata": {
-                        "parentConversationId": "conv_1",
-                        "subagentSpec": {
-                            "typeName": "Remora_Deep_Diver"
-                        }
-                    }
-                }
-            }
-        })
-        mock_run.return_value = mock_res
-
+         patch("adapter.bridge.agentapi.get_metadata") as mock_meta:
+        mock_meta.return_value = {
+            "parentConversationId": "conv_1",
+            "subagentSpec": {"typeName": "Remora_Deep_Diver"}
+        }
+        
         mock_cdal = MagicMock()
         mock_cdal.stream_steps_reverse.return_value = mock_steps
         mock_cdal_cls.return_value = mock_cdal
@@ -1345,15 +1332,10 @@ def test_session_guardian_get_subagent_type_corrupt_env(tmp_path):
     env_file = runtime_dir / "remora_agent_env.json"
     env_file.write_text("{corrupt_json}")
     with patch("session_guardian.get_data_dir", return_value=str(tmp_path)), \
-         patch("subprocess.run") as mock_run:
-        mock_res = MagicMock()
-        mock_res.returncode = 0
-        mock_res.stdout = json.dumps({
-            "response": {"conversationMetadata": {"metadata": {
-                "parentConversationId": "p1", "subagentSpec": {"typeName": "X"}
-            }}}
-        })
-        mock_run.return_value = mock_res
+         patch("adapter.bridge.subagent.get_metadata") as mock_meta:
+        mock_meta.return_value = {
+            "parentConversationId": "p1", "subagentSpec": {"typeName": "X"}
+        }
         assert session_guardian.get_subagent_type("/tmp/brain/c1/t.jsonl") == "X"
 
 
@@ -1387,7 +1369,7 @@ def test_session_guardian_get_subagent_type_fallback_main_id(tmp_path):
     main_id_file = runtime_dir / "remora_main_conv_id.txt"
     main_id_file.write_text("main_conv")
     with patch("session_guardian.get_data_dir", return_value=str(tmp_path)), patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("subprocess.run", side_effect=Exception("api timeout")):
+         patch("adapter.bridge.subagent.get_metadata", side_effect=Exception("api timeout")):
         res = session_guardian.get_subagent_type("/tmp/brain/sub_1/t.jsonl")
         assert res == "Remora_Subagent_Fallback"
 
@@ -1937,16 +1919,11 @@ def test_session_guardian_role_name_cache_exception(tmp_path):
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
-         patch("subprocess.run") as mock_run:
-        # agentapi returns with parent_id + subagentSpec so sub_type is not None
-        mock_res = MagicMock()
-        mock_res.returncode = 0
-        mock_res.stdout = json.dumps({
-            "response": {"conversationMetadata": {"metadata": {
-                "parentConversationId": "p1", "subagentSpec": {"typeName": "SomeAgent"}
-            }}}
-        })
-        mock_run.return_value = mock_res
+         patch("adapter.bridge.agentapi.get_metadata") as mock_meta:
+        mock_meta.return_value = {
+            "parentConversationId": "p1",
+            "subagentSpec": {"typeName": "SomeAgent"}
+        }
         mock_cdal = MagicMock()
         mock_cdal.stream_steps_reverse.return_value = [
             {"type": "GENERIC", "content": "22222222-2222-2222-2222-222222222222 active progress update"},

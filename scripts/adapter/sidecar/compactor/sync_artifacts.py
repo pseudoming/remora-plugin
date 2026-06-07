@@ -1,21 +1,15 @@
 import os
 import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
 import json
 import hashlib
 import sqlite3
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
 from schema.schema_init import DB_PATH
 from adapter.bridge.paths import extract_conv_id
 from lib.dao import insert_file_change
-
-def calculate_md5(file_path):
-    """计算制品的 MD5 哈希以做增量变更过滤"""
-    hash_md5 = hashlib.md5()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            hash_md5.update(chunk)
-    return hash_md5.hexdigest()
+from core.filesystem import calculate_md5
 
 def scan_and_ingest_artifacts(context):
     """

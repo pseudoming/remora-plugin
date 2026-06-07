@@ -1,14 +1,16 @@
 import os
 import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
 import json
 import time
 import random
 import re
 import subprocess
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
 from schema.schema_init import DATA_DIR
 from adapter.bridge.conversation import ConversationDataAccessLayer
+from adapter.bridge.agentapi import get_project_id as _agentapi_get_project_id
 
 BRAIN_DIR = os.path.expanduser("~/.gemini/antigravity/brain")
 EXCLUDE_FILE = os.path.join(DATA_DIR, "compactor_managed_conversations.json")
@@ -25,29 +27,7 @@ def save_excluded_ids(ids):
 
 def get_project_id(conv_id):
     """通过 agentapi 获取这个会话的真实 projectId"""
-    import shutil
-    default_mock_id = "11111111-1111-1111-1111-111111111111"
-    
-    cmd = shutil.which("agentapi")
-    if not cmd:
-        fallback = os.path.expanduser("~/.gemini/antigravity/bin/agentapi")
-        if os.path.exists(fallback):
-            cmd = fallback
-        else:
-            return default_mock_id
-            
-    try:
-        result = subprocess.check_output(
-            [cmd, "get-conversation-metadata", conv_id],
-            stderr=subprocess.STDOUT, timeout=10)
-        data = json.loads(result.decode('utf-8'))
-        project_id = (data.get("response", {})
-            .get("conversationMetadata", {})
-            .get("metadata", {})
-            .get("projectId", ""))
-        return project_id if project_id else default_mock_id
-    except Exception:
-        return default_mock_id
+    return _agentapi_get_project_id(conv_id)
 
 def get_active_conversations():
     """扫描 brain 目录，获取最近 48 小时内有活动的会话

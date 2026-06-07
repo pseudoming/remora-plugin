@@ -1,12 +1,13 @@
 import os
 import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
 import json
 import time
 import re
 import sqlite3
 import subprocess
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
 from schema.schema_init import DB_PATH, DATA_DIR
 
 from scan_sessions import (
@@ -17,6 +18,8 @@ from scan_sessions import (
     save_excluded_ids
 )
 from warm_storage_sync import read_incremental_logs
+from adapter.bridge.agentapi import send_message, create_conversation
+from core.coverage import calculate_factual_confidence, validate_id_inheritance
 
 CONV_MARKER_FILE = os.path.join(DATA_DIR, "compactor_conversation_id.txt")
 BRAIN_DIR = os.path.expanduser("~/.gemini/antigravity/brain")
@@ -25,22 +28,9 @@ MAX_EXECUTION_TIME = 300
 class AgentApiError(Exception):
     pass
 
-def get_agentapi_cmd(action, *args):
-    import shutil
-    cmd = shutil.which("agentapi")
-    if not cmd:
-        fallback = os.path.expanduser("~/.gemini/antigravity/bin/agentapi")
-        if os.path.exists(fallback):
-            cmd = fallback
-        else:
-            cmd = "agentapi"
-    return [cmd, action] + list(args)
-
 def get_or_create_conversation(prompt):
     """复用已有会话，或在没有可复用会话时创建新的"""
     excluded_ids = load_excluded_ids()
-    sub_env = os.environ.copy()
-    sub_env["ANTIGRAVITY_PROJECT_ID"] = "11111111-1111-1111-1111-111111111111"
 
     if os.path.exists(CONV_MARKER_FILE):
         with open(CONV_MARKER_FILE, 'r') as f:
@@ -69,45 +59,31 @@ def get_or_create_conversation(prompt):
                         pass
                 else:
                     try:
-                        subprocess.check_output(
-                            get_agentapi_cmd("send-message", conv_id, prompt),
-                            env=sub_env, stderr=subprocess.STDOUT, timeout=120)
-                        
-                        # 核心重构：从 Mock 会话数据库中直连读取未转义的最新明文回复
+                        send_message(conv_id, prompt)
                         reply = cdal.get_latest_planner_response()
                         return reply if reply else ""
-                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                    except subprocess.CalledProcessError as e:
                         raise AgentApiError(f"Fail-Fast: send-message failed. Abandoning execution. Error: {e}")
 
     try:
         current_date_str = time.strftime('%Y-%m-%d', time.localtime())
         init_prompt = f"# Remora Memory Compactor ({current_date_str})\n\n" + prompt
-        result = subprocess.check_output(
-            get_agentapi_cmd("new-conversation", init_prompt),
-            env=sub_env, stderr=subprocess.STDOUT, timeout=120)
-        output = result.decode('utf-8').strip()
+        resp = create_conversation(init_prompt)
 
-        reply = ""
-        try:
-            resp = json.loads(output)
-            new_conv_id = (resp.get('response', {})
-                .get('newConversation', {})
-                .get('conversationId', ''))
-            if new_conv_id:
-                with open(CONV_MARKER_FILE, 'w') as f:
-                    f.write(new_conv_id)
-                excluded_ids.add(new_conv_id)
-                save_excluded_ids(excluded_ids)
-                
-                # 核心重构：从 newConversation 中提取明文 reply
-                reply = (resp.get('response', {})
-                    .get('newConversation', {})
-                    .get('reply', ''))
-        except json.JSONDecodeError:
-            pass
+        reply = (resp.get('response', {})
+            .get('newConversation', {})
+            .get('reply', ''))
+        new_conv_id = (resp.get('response', {})
+            .get('newConversation', {})
+            .get('conversationId', ''))
+        if new_conv_id:
+            with open(CONV_MARKER_FILE, 'w') as f:
+                f.write(new_conv_id)
+            excluded_ids.add(new_conv_id)
+            save_excluded_ids(excluded_ids)
 
-        return reply if reply else output
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        return reply if reply else json.dumps(resp)
+    except subprocess.CalledProcessError as e:
         raise AgentApiError(f"Fail-Fast: new-conversation failed. Abandoning execution. Error: {e}")
 
 def extract_factual_baseline(conv_id, start_line):
@@ -153,63 +129,6 @@ def extract_factual_baseline(conv_id, start_line):
         pass
         
     return list(baseline_files), list(baseline_actions)
-
-def calculate_factual_confidence(conn, baseline_files, baseline_actions, output_topics):
-    """
-    在 Python 侧计算 Decisions 对 Baseline 的覆盖率作为客观置信度
-    """
-    if not baseline_files and not baseline_actions:
-        return 1.0
-    covered_files = 0
-    covered_actions = 0
-    decisions_text = ""
-    for t in output_topics:
-        for d in t.get("decisions", []):
-            decisions_text += " " + d.get("decision", "").lower() + " " + d.get("rationale", "").lower()
-            
-    for f in baseline_files:
-        if f.lower() in decisions_text:
-            covered_files += 1
-            
-    for action in baseline_actions:
-        if action.startswith("confirm:"):
-            dec_id = action.split(":")[1]
-            try:
-                cursor = conn.execute("SELECT user_confirmed FROM topic_decisions WHERE id=?", (dec_id,))
-                row = cursor.fetchone()
-                if row and row[0] == 1:
-                    covered_actions += 1
-            except Exception:
-                pass
-                
-    total_items = len(baseline_files) + len(baseline_actions)
-    covered_items = covered_files + covered_actions
-    return min(1.0, covered_items / total_items) if total_items > 0 else 1.0
-
-def validate_id_inheritance(conn, project_uuid, new_topics):
-    """
-    校验所有标记了 user_confirmed=1 的历史决策 ID，是否完全被合并后的新决策继承 (Method A)
-    防止由于大模型误删、合并时流失已确认的核心决策。
-    """
-    cursor = conn.execute(
-        "SELECT id FROM topic_decisions WHERE project_uuid = ? AND user_confirmed = 1",
-        (project_uuid,)
-    )
-    confirmed_ids = {row[0] for row in cursor.fetchall()}
-    if not confirmed_ids:
-        return True
-    inherited_ids = set()
-    for t in new_topics:
-        for d in t.get("decisions", []):
-            for val in d.get("inherited_from", []):
-                try:
-                    inherited_ids.add(int(val))
-                except (ValueError, TypeError):
-                    pass
-    missing_ids = confirmed_ids - inherited_ids
-    if missing_ids:
-        print(f"REMORA HARD ANCHOR VIOLATION WARNING: user_confirmed=1 IDs lost: {list(missing_ids)}.")
-    return True
 
 def _get_active_topic(conn, project_uuid):
     try:

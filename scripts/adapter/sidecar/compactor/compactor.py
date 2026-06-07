@@ -7,12 +7,13 @@ import time
 import sqlite3
 import os
 import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
 import argparse
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
 from schema.schema_init import DB_PATH, DATA_DIR, init_db
-from session_gc import prune_expired_watermarks
-from topic_gc import run_garbage_collection
+from adapter.maintenance.session_gc import prune_expired_watermarks
+from adapter.maintenance.topic_gc import run_garbage_collection
 
 from sidecar_lock import acquire_lock, release_lock
 from extract_decisions import process_sessions, AgentApiError

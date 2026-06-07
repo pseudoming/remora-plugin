@@ -1,26 +1,19 @@
 import os
 import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
+
 import json
 import time
 import sqlite3
 import re
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
 from schema.schema_init import DB_PATH
 
 from scan_sessions import is_subagent_session
 from adapter.bridge.conversation import ConversationDataAccessLayer
+from core.liveness import format_timestamp
 
 MAX_PROMPT_LENGTH = 8000
-
-def format_timestamp(ts_str):
-    """
-    统一时间戳为 SQLite 标准 'YYYY-MM-DD HH:MM:SS' 字符串，以消除类型与格式失配 bug
-    """
-    if not ts_str:
-        return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
-    ts_str = ts_str.replace('T', ' ').replace('Z', '')
-    return ts_str[:19]
 
 def read_incremental_logs(conn, session):
     """利用 CDAL 进行增量读取，并将原日志叙写存入 messages 表"""

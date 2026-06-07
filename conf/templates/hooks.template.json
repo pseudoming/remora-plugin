@@ -74,7 +74,7 @@
     "Stop": [
       {
         "type": "command",
-        "command": "{PYTHON} {PLUGIN_ROOT}/sidecars/memory-compactor/compactor.py --event-driven",
+        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/adapter/sidecar/compactor/compactor.py --event-driven",
         "timeout": 30
       },
       {

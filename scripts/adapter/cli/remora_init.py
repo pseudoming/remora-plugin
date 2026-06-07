@@ -51,7 +51,7 @@ def init_environment():
             
     # 3. 赋予执行权限 (+x)
     if initialized:
-        for pattern in ["scripts/**/*.py", "scripts/**/*.sh", "sidecars/memory-compactor/*.py"]:
+        for pattern in ["scripts/**/*.py", "scripts/**/*.sh", "scripts/adapter/sidecar/compactor/*.py"]:
             for file_path in glob.glob(os.path.join(plugin_dir, pattern), recursive=True):
                 st = os.stat(file_path)
                 os.chmod(file_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

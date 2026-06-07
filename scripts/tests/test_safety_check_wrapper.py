@@ -22,41 +22,25 @@ def test_get_subagent_type_invalid_paths():
     assert safety_check.get_subagent_type("") is None
     assert safety_check.get_subagent_type("/no/brain/here") is None
 
-@patch("subprocess.run")
+@patch("adapter.bridge.subagent.get_metadata")
 @patch("os.path.exists")
-def test_get_subagent_type_api_success(mock_exists, mock_run):
+def test_get_subagent_type_api_success(mock_exists, mock_meta):
     # Ensure plugin.json exists so find_plugin_root succeeds
     mock_exists.side_effect = lambda p: True if "plugin.json" in str(p) else False
     
-    # Mock subprocess.run returning successful metadata
-    mock_res = MagicMock()
-    mock_res.returncode = 0
-    mock_res.stdout = json.dumps({
-        "response": {
-            "conversationMetadata": {
-                "metadata": {
-                    "parentConversationId": "parent123",
-                    "subagentSpec": {
-                        "typeName": "Remora_ReadOnly_Extractor"
-                    }
-                }
-            }
-        }
-    })
-    mock_run.return_value = mock_res
+    mock_meta.return_value = {
+        "parentConversationId": "parent123",
+        "subagentSpec": {"typeName": "Remora_ReadOnly_Extractor"}
+    }
     
     res = safety_check.get_subagent_type("/brain/conv123/transcript.jsonl")
     assert res == "Remora_ReadOnly_Extractor"
 
-@patch("subprocess.run")
+@patch("adapter.bridge.subagent.get_metadata")
 @patch("os.path.exists")
 @patch("builtins.open")
-def test_get_subagent_type_fallback(mock_open, mock_exists, mock_run):
-    # Mock subprocess run failing
-    mock_res = MagicMock()
-    mock_res.returncode = 1
-    mock_res.stderr = "error"
-    mock_run.return_value = mock_res
+def test_get_subagent_type_fallback(mock_open, mock_exists, mock_meta):
+    mock_meta.side_effect = Exception("api down")
     
     # Mock exists for main conv ID file and plugin.json
     mock_exists.side_effect = lambda p: True if ("plugin.json" in str(p) or str(p).endswith("remora_main_conv_id.txt")) else False

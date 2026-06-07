@@ -6,7 +6,7 @@ from adapter.bridge.stats import cleanup, get_stats
 from core.logger import warn, error
 
 import json, re, subprocess
-from adapter.bridge.subagent import get_subagent_type, AGENTAPI_BIN
+from adapter.bridge.subagent import get_subagent_type
 from core.liveness import clean_system_reminders, detect_mode, HARD_KEYWORDS, SOFT_KEYWORDS
 from adapter.bridge.paths import get_data_dir, extract_conv_id, find_plugin_root
 from lib import dao
@@ -187,20 +187,9 @@ def main(context):
         # 提取子会话的角色名称 (优先通过 agentapi，其次通过历史记录)
         role_name = None
         try:
-            env = dict(os.environ)
-            if os.path.exists(os.path.join(get_data_dir(), ".runtime", "remora_agent_env.json")):
-                try:
-                    with open(os.path.join(get_data_dir(), ".runtime", "remora_agent_env.json"), "r", encoding="utf-8") as ef:
-                        cached_env = json.load(ef)
-                        env.update(cached_env)
-                except Exception:
-                    pass
-            cmd = [AGENTAPI_BIN, "get-conversation-metadata", subagent_uuid]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5, env=env)
-            if res.returncode == 0:
-                data = json.loads(res.stdout)
-                metadata = data.get("response", {}).get("conversationMetadata", {}).get("metadata", {})
-                role_name = metadata.get("subagentSpec", {}).get("typeName")
+            from adapter.bridge.agentapi import get_metadata
+            metadata = get_metadata(subagent_uuid)
+            role_name = metadata.get("subagentSpec", {}).get("typeName")
         except Exception:
             pass
 

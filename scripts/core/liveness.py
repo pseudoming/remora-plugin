@@ -71,3 +71,11 @@ def judge_zombie(idle_seconds: int, tool_name: str) -> Tuple[bool, int]:
     limit = 180 if is_heavy else 60
     is_zombie = idle_seconds > limit
     return (is_zombie, limit)
+
+
+def format_timestamp(ts_str):
+    if not ts_str:
+        import time
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
+    ts_str = ts_str.replace('T', ' ').replace('Z', '')
+    return ts_str[:19]

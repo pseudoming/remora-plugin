@@ -1,9 +1,9 @@
 import os
 import sys
 import pytest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 
 _KEYWORDS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
@@ -12,12 +12,16 @@ _KEYWORDS_PATH = os.path.join(
 
 
 @pytest.fixture(autouse=True)
-def _protect_keywords_json():
-    """Save and restore keywords.json around each test.
+def _mock_agentapi():
+    """Prevent tests from calling the real agentapi binary.
+    All agentapi calls return empty dict by default."""
+    with patch("adapter.bridge.agentapi._call", return_value=b'{}'):
+        yield
 
-    session_guardian tests write mock keywords to the source tree file.
-    This fixture prevents tests from corrupting the canonical version.
-    """
+
+@pytest.fixture(autouse=True)
+def _protect_keywords_json():
+    """Save and restore keywords.json around each test."""
     if os.path.exists(_KEYWORDS_PATH):
         with open(_KEYWORDS_PATH, "r") as f:
             backup = f.read()
