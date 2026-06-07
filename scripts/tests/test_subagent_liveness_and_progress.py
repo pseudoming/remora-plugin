@@ -16,7 +16,7 @@ if scripts_dir not in sys.path:
 
 from lib.progress import ProgressSentinel
 import lib.paths as paths
-import lib.dao as dao
+import lib.dao as dao  # noqa: F401
 
 # Dynamically import hyphenated script: check-subagents-liveness.py
 liveness_script_path = os.path.join(scripts_dir, "sandbox", "check-subagents-liveness.py")
@@ -33,7 +33,6 @@ def mock_env(tmp_path, monkeypatch):
     # Mock db path to use a temporary db inside tmp_path
     temp_db_path = os.path.join(tmp_path, "test_remora_memory.db")
     monkeypatch.setattr(paths, "get_db_path", lambda: temp_db_path)
-    monkeypatch.setattr(dao, "get_db_path", lambda: temp_db_path)
     
     # Initialize the temp DB structure
     conn = sqlite3.connect(temp_db_path, timeout=15)

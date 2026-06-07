@@ -13,7 +13,7 @@ TEST_DB_PATH = "/tmp/test_remora_dao.db"
 
 @pytest.fixture(autouse=True)
 def setup_db(monkeypatch):
-    monkeypatch.setattr(dao, "get_db_path", lambda: TEST_DB_PATH)
+    monkeypatch.setattr(paths, "get_db_path", lambda: TEST_DB_PATH)
     if os.path.exists(TEST_DB_PATH):
         os.remove(TEST_DB_PATH)
         
@@ -465,9 +465,9 @@ def test_runtime_hook_operations():
 
 
 def test_common_exceptions(monkeypatch):
-    def broken_conn():
+    def broken_conn(*args, **kwargs):
         raise sqlite3.OperationalError("mock error")
-    monkeypatch.setattr(dao, "_get_conn", broken_conn)
+    monkeypatch.setattr(sqlite3, "connect", broken_conn)
     assert dao.read_mode("test") == "standard"
     assert dao.get_latest_session() is None
     assert dao.get_project_uuid_by_conv("test") is None
@@ -482,9 +482,9 @@ def test_common_exceptions(monkeypatch):
 
 
 def test_runtime_hook_exceptions(monkeypatch):
-    def broken_conn():
+    def broken_conn(*args, **kwargs):
         raise sqlite3.OperationalError("mock error")
-    monkeypatch.setattr(dao, "_get_conn", broken_conn)
+    monkeypatch.setattr(sqlite3, "connect", broken_conn)
     assert dao.get_runtime_hook_value("test", 0, "key") is None
     dao.set_runtime_hook_value("test", 0, "key", "val")
     dao.delete_runtime_hook_value("test", 0, "key")
@@ -492,17 +492,17 @@ def test_runtime_hook_exceptions(monkeypatch):
 
 
 def test_gc_exception(monkeypatch):
-    def broken_conn():
+    def broken_conn(*args, **kwargs):
         raise sqlite3.OperationalError("mock error")
-    monkeypatch.setattr(dao, "_get_conn", broken_conn)
+    monkeypatch.setattr(sqlite3, "connect", broken_conn)
     with pytest.raises(SystemExit):
         dao.run_topic_garbage_collection()
 
 
 def test_prune_exception(monkeypatch, tmp_path):
-    def broken_conn():
+    def broken_conn(*args, **kwargs):
         raise sqlite3.OperationalError("mock error")
-    monkeypatch.setattr(dao, "_get_conn", broken_conn)
+    monkeypatch.setattr(sqlite3, "connect", broken_conn)
     with pytest.raises(SystemExit):
         dao.prune_expired_watermarks(str(tmp_path))
 

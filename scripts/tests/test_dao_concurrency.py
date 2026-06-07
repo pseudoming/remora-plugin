@@ -61,11 +61,12 @@ def temp_db(tmp_path, monkeypatch):
 
 
 def test_run_topic_garbage_collection_lock_contention(temp_db, monkeypatch):
-    # Shorten connection timeout in dao._get_conn to trigger lock contention quickly
-    monkeypatch.setattr(dao, "_get_conn", lambda: sqlite3.connect(temp_db, timeout=0.1))
+    # Shorten connection timeout to trigger lock contention quickly
+    original_connect = sqlite3.connect
+    monkeypatch.setattr(sqlite3, "connect", lambda *a, **kw: original_connect(*a, timeout=kw.pop('timeout', 0.1), **kw))
     
     # Establish a secondary connection and acquire an EXCLUSIVE lock
-    conn_lock = sqlite3.connect(temp_db, timeout=0.1)
+    conn_lock = sqlite3.connect(temp_db, timeout=0.2)
     conn_lock.execute("BEGIN EXCLUSIVE")
     # Run a write to hold the exclusive lock
     conn_lock.execute("INSERT INTO project_topics (uuid, topic_id) VALUES ('u1', 't1')")
@@ -86,8 +87,9 @@ def test_prune_expired_watermarks_lock_contention(temp_db, monkeypatch, tmp_path
     brain_dir = tmp_path / "brain"
     brain_dir.mkdir()
     
-    # Shorten connection timeout in dao._get_conn to trigger lock contention quickly
-    monkeypatch.setattr(dao, "_get_conn", lambda: sqlite3.connect(temp_db, timeout=0.1))
+    # Shorten connection timeout to trigger lock contention quickly
+    original_connect = sqlite3.connect
+    monkeypatch.setattr(sqlite3, "connect", lambda *a, **kw: original_connect(*a, timeout=kw.pop('timeout', 0.1), **kw))
     
     # Seed db with expired data that requires pruning
     with sqlite3.connect(temp_db) as conn:
@@ -95,7 +97,7 @@ def test_prune_expired_watermarks_lock_contention(temp_db, monkeypatch, tmp_path
         conn.commit()
     
     # Establish a secondary connection and acquire an EXCLUSIVE lock
-    conn_lock = sqlite3.connect(temp_db, timeout=0.1)
+    conn_lock = sqlite3.connect(temp_db)
     conn_lock.execute("BEGIN EXCLUSIVE")
     conn_lock.execute("INSERT INTO project_topics (uuid, topic_id) VALUES ('u2', 't2')")
     

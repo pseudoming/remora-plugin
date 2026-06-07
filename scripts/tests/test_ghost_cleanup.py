@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from unittest.mock import patch
 
 import lib.dao as dao
+import lib.paths as paths
 import cleanup_ghost_records
 
 @pytest.fixture
@@ -50,7 +51,7 @@ def test_fix_db_no_ghost_records(test_db, capsys):
         conn.execute("INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 1, 'user', 'hello')")
         conn.commit()
 
-    with patch.object(dao, 'get_db_path', return_value=test_db):
+    with patch.object(paths, 'get_db_path', return_value=test_db):
         cleanup_ghost_records.fix_db()
 
     captured = capsys.readouterr()
@@ -70,7 +71,7 @@ def test_fix_db_with_ghost_records(test_db, capsys):
         conn.execute("INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 5, 'assistant', '')")
         conn.commit()
 
-    with patch.object(dao, 'get_db_path', return_value=test_db):
+    with patch.object(paths, 'get_db_path', return_value=test_db):
         cleanup_ghost_records.fix_db()
 
     captured = capsys.readouterr()
