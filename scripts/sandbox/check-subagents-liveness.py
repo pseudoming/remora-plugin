@@ -12,7 +12,7 @@ scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
-from lib import paths
+from adapter.bridge import paths
 from lib import dao
 
 def parse_sqlite_timestamp(ts_val) -> float:
@@ -184,7 +184,7 @@ def run_audit(conv_id: str, parent_conv_id: str = None) -> dict:
     if is_dead:
         # 顺便写回 progress.json，将其标记为 blocked，加速下一次感知
         try:
-            from lib.progress import ProgressSentinel
+            from adapter.bridge.progress import ProgressSentinel
             home_dir = os.environ.get("HOME", os.path.expanduser("~"))
             transcript_dummy = os.path.join(home_dir, ".gemini", "antigravity", "brain", conv_id, ".system_generated", "transcript.jsonl")
             ProgressSentinel.update(transcript_dummy, "blocked", details=death_reason)
@@ -213,7 +213,7 @@ def run_audit(conv_id: str, parent_conv_id: str = None) -> dict:
             }
         }
 
-from lib.context import hook_entrypoint
+from adapter.bridge.context import hook_entrypoint
 
 @hook_entrypoint(fallback_result={"decision": "allow"})
 def run_as_hook(input_data):
@@ -229,7 +229,7 @@ def run_as_hook(input_data):
     parent_conv_id = match.group(1)
     
     from lib.dao import get_hook_state, set_hook_state, trim_hook_states
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     
     cdal = ConversationDataAccessLayer(parent_conv_id)
     current_turn_idx = cdal.get_current_turn_idx()
@@ -253,7 +253,7 @@ def run_as_hook(input_data):
     # 自动探测子特工 ID
     subagent_ids = []
     try:
-        from lib.conversation import ConversationDataAccessLayer
+        from adapter.bridge.conversation import ConversationDataAccessLayer
         cdal = ConversationDataAccessLayer(parent_conv_id)
         
         # 1. 检索 parent_conv_id 的 project_uuid 与活动话题时间范围

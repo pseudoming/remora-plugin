@@ -1,6 +1,6 @@
 import sqlite3
 from contextlib import closing
-from lib import paths
+from adapter.bridge import paths
 
 def _get_conn():
     return sqlite3.connect(paths.get_db_path(), timeout=15)

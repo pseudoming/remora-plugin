@@ -5,7 +5,7 @@ import subprocess
 
 AGENTAPI_BIN = os.path.expanduser("~/.gemini/antigravity/bin/agentapi")
 
-from lib.paths import extract_conv_id
+from adapter.bridge.paths import extract_conv_id
 
 
 def get_subagent_type(transcript_path):
@@ -13,7 +13,7 @@ def get_subagent_type(transcript_path):
     if not conv_id:
         return None
 
-    from lib.paths import get_data_dir
+    from adapter.bridge.paths import get_data_dir
     data_dir = get_data_dir()
 
     try:

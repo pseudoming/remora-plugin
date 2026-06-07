@@ -19,7 +19,7 @@ zombie_detector = importlib.util.module_from_spec(spec)
 sys.modules["zombie_detector"] = zombie_detector
 spec.loader.exec_module(zombie_detector)
 
-from lib.context import hook_entrypoint
+from adapter.bridge.context import hook_entrypoint
 
 class TestHookEntrypointRefactor(unittest.TestCase):
     @patch("sys.stdin")

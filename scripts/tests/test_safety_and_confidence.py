@@ -226,7 +226,7 @@ class TestScanSessions(unittest.TestCase):
                  patch("scan_sessions.load_excluded_ids", return_value=set()):
                 
                 # Mock cdal.db_path dynamically
-                from lib.conversation import ConversationDataAccessLayer
+                from adapter.bridge.conversation import ConversationDataAccessLayer
                 orig_init = ConversationDataAccessLayer.__init__
                 
                 def mock_init(self_cdal, conv_id):

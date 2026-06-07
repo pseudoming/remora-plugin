@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.context import hook_entrypoint
-from lib.stats import cleanup, get_stats
+from adapter.bridge.context import hook_entrypoint
+from adapter.bridge.stats import cleanup, get_stats
 
 import json, re, subprocess
-from lib.subagent import get_subagent_type, AGENTAPI_BIN
+from adapter.bridge.subagent import get_subagent_type, AGENTAPI_BIN
 
 @hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Session Guardian 发生异常。状态同步防线已降级，但不影响正常对话。</system-reminder>"}]})
 def main(context):
@@ -13,7 +13,7 @@ def main(context):
     scripts_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
-    from lib.paths import get_data_dir
+    from adapter.bridge.paths import get_data_dir
     initialized_file = os.path.join(get_data_dir(), ".runtime", "installed.flag")
     if not os.path.exists(initialized_file):
         return {"injectSteps": [{"ephemeralMessage": "🚨 **[REMORA FATAL ERROR]** Plugin uninitialized! Please run `python3 install.py` in the plugin root."}]}
@@ -30,7 +30,7 @@ def main(context):
             
     transcript_path = context.get('transcriptPath')
     
-    from lib.paths import extract_conv_id
+    from adapter.bridge.paths import extract_conv_id
 
 
     # 提取当前会话 ID
@@ -51,7 +51,7 @@ def main(context):
             except:
                 pass
                 
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     cdal = ConversationDataAccessLayer(conv_id)
     
     # 动态读取 SQLite 获取最后一条用户指令
@@ -182,14 +182,14 @@ def main(context):
                          (latest_schedule_index == -1 or latest_subagent_activity_index < latest_schedule_index))
                          
     if subagent_uuid and not subagent_finish_detected and (not has_schedule_after or is_timer_canceled):
-        from lib.paths import find_plugin_root
+        from adapter.bridge.paths import find_plugin_root
         plugin_root = find_plugin_root()
         python_bin = sys.executable or "/usr/bin/python3"
         
         # 提取子会话的角色名称 (优先通过 agentapi，其次通过历史记录)
         role_name = None
         try:
-            from lib.paths import get_data_dir
+            from adapter.bridge.paths import get_data_dir
             env = dict(os.environ)
             if os.path.exists(os.path.join(get_data_dir(), ".runtime", "remora_agent_env.json")):
                 try:

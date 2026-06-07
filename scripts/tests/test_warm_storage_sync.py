@@ -55,11 +55,11 @@ def setup_db():
 def test_cursor_resume(tmp_path, monkeypatch):
     import sys
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'scripts')))
-    import lib.conversation
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     def mock_stream(self, start_idx=0):
         for i in range(1, 11):
             yield {"step_index": i, "type": "USER_INPUT", "content": f"msg {i}", "source": "USER", "timestamp": "2026-06-04T00:00:00Z"}
-    monkeypatch.setattr(lib.conversation.ConversationDataAccessLayer, "stream_steps_forward", mock_stream)
+    monkeypatch.setattr(ConversationDataAccessLayer, "stream_steps_forward", mock_stream)
     
     # Mock initial DB state (processed up to 5)
     from contextlib import closing
@@ -95,7 +95,7 @@ def test_cursor_resume(tmp_path, monkeypatch):
 def test_proto_role_parsing(tmp_path, monkeypatch):
     import sys
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'scripts')))
-    import lib.conversation
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     from lib.proto_decoder import extract_step_payload
 
     # Test raw decoding function directly first
@@ -124,7 +124,7 @@ def test_proto_role_parsing(tmp_path, monkeypatch):
         # Yield one user step and one model step using the serialized blobs
         yield {"step_index": 1, "type": "USER_INPUT", "content": "user query", "timestamp": "2026-06-04T00:00:00Z", "role": "user"}
         yield {"step_index": 2, "type": "PLANNER_RESPONSE", "content": "model response", "timestamp": "2026-06-04T00:00:01Z", "role": "model"}
-    monkeypatch.setattr(lib.conversation.ConversationDataAccessLayer, "stream_steps_forward", mock_stream)
+    monkeypatch.setattr(ConversationDataAccessLayer, "stream_steps_forward", mock_stream)
 
     session = {
         'project_uuid': 'proj2',

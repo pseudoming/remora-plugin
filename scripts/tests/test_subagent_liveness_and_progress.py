@@ -14,8 +14,8 @@ scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
-from lib.progress import ProgressSentinel
-import lib.paths as paths
+from adapter.bridge.progress import ProgressSentinel
+import adapter.bridge.paths as paths
 import lib.dao as dao  # noqa: F401
 
 # Dynamically import hyphenated script: check-subagents-liveness.py
@@ -325,7 +325,7 @@ def test_liveness_hook_mode_auto_detect(mock_env, monkeypatch, capsys):
             "details": "Active step"
         }, f)
         
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     
     def mock_stream(self):
         yield {
@@ -413,7 +413,7 @@ def test_liveness_with_watermarks_and_timeframe(mock_env, monkeypatch, capsys):
     monkeypatch.setattr(select, "select", lambda r, w, x, t: ([sys.stdin], [], []))
     monkeypatch.setattr(sys, "argv", ["check-subagents-liveness.py"])
     
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     
     # Total steps = 28. Last 20 are steps 8 to 27.
     # Step 5 (sub_stale) is NOT in the last 20, and is before active topic, so it should be filtered out.

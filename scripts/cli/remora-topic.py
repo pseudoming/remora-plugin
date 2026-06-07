@@ -5,7 +5,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.paths import get_data_dir
+from adapter.bridge.paths import get_data_dir
 """
 Remora Topic Controller Script
 用于手动控制话题状态修改 (new/switch/close) 以及手动打标确认决策 (confirm)

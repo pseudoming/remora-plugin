@@ -6,7 +6,7 @@ import sqlite3
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
 from schema.schema_init import DB_PATH
-from lib.paths import extract_conv_id
+from adapter.bridge.paths import extract_conv_id
 from lib.dao import insert_file_change
 
 def calculate_md5(file_path):

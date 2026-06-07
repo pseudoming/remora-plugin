@@ -4,7 +4,7 @@ import json
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.conversation import ConversationDataAccessLayer
+from adapter.bridge.conversation import ConversationDataAccessLayer
 
 def read_last_user_ai_rounds(conv_id, rounds=10):
     cdal = ConversationDataAccessLayer(conv_id)

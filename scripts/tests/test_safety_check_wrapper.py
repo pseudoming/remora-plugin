@@ -539,7 +539,7 @@ def test_trim_turn_type_error(mock_get_subagent):
         "transcriptPath": "/brain/conv123/transcript.jsonl"
     }
 
-    with patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("lib.dao.get_hook_state", return_value="not_a_number"), \
          patch("safety-check.read_mode", return_value="strict"):
         mock_cdal = MagicMock()

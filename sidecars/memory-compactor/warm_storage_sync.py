@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from schema.schema_init import DB_PATH
 
 from scan_sessions import is_subagent_session
-from lib.conversation import ConversationDataAccessLayer
+from adapter.bridge.conversation import ConversationDataAccessLayer
 
 MAX_PROMPT_LENGTH = 8000
 

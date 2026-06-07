@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
-from lib.context import hook_entrypoint
-from lib.session import read_mode
+from adapter.bridge.context import hook_entrypoint
+from adapter.bridge.session import read_mode
 
 import json, re
 
@@ -33,7 +33,7 @@ def main(context):
         if match:
             conv_id = match.group(1)
             
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     from lib.dao import get_hook_state, set_hook_state, trim_hook_states
 
     cdal = ConversationDataAccessLayer(conv_id)

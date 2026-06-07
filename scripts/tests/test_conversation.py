@@ -3,7 +3,7 @@ import io
 import sqlite3
 import pytest
 from unittest.mock import patch, MagicMock
-from lib.conversation import ConversationDataAccessLayer
+from adapter.bridge.conversation import ConversationDataAccessLayer
 
 @pytest.fixture
 def temp_home(tmp_path, monkeypatch):
@@ -113,7 +113,7 @@ def test_get_db_mtime(temp_home):
     cdal = ConversationDataAccessLayer(conv_id)
     assert cdal.get_db_mtime() > 0.0
 
-@patch("lib.conversation.extract_step_payload")
+@patch("adapter.bridge.conversation.extract_step_payload")
 def test_stream_steps_reverse(mock_extract, temp_home):
     conv_id = "test_conv_reverse"
     db_path = temp_home / ".gemini" / "antigravity" / "conversations" / f"{conv_id}.db"
@@ -135,7 +135,7 @@ def test_stream_steps_reverse(mock_extract, temp_home):
     assert results[0] == {"raw": "p3", "step_index": 3}
     assert results[1] == {"raw": "p2", "step_index": 2}
 
-@patch("lib.conversation.extract_step_payload")
+@patch("adapter.bridge.conversation.extract_step_payload")
 def test_stream_steps_reverse_exception(mock_extract, temp_home):
     conv_id = "test_conv_reverse_exc"
     db_path = temp_home / ".gemini" / "antigravity" / "conversations" / f"{conv_id}.db"
@@ -147,7 +147,7 @@ def test_stream_steps_reverse_exception(mock_extract, temp_home):
     cdal = ConversationDataAccessLayer(conv_id)
     assert list(cdal.stream_steps_reverse()) == []
 
-@patch("lib.conversation.extract_step_payload")
+@patch("adapter.bridge.conversation.extract_step_payload")
 def test_stream_steps_forward(mock_extract, temp_home):
     conv_id = "test_conv_forward"
     db_path = temp_home / ".gemini" / "antigravity" / "conversations" / f"{conv_id}.db"
@@ -169,7 +169,7 @@ def test_stream_steps_forward(mock_extract, temp_home):
     assert results[0] == {"raw": "p11", "step_index": 11}
     assert results[1] == {"raw": "p12", "step_index": 12}
 
-@patch("lib.conversation.extract_step_payload")
+@patch("adapter.bridge.conversation.extract_step_payload")
 def test_stream_steps_forward_exception(mock_extract, temp_home):
     conv_id = "test_conv_forward_exc"
     db_path = temp_home / ".gemini" / "antigravity" / "conversations" / f"{conv_id}.db"
@@ -180,7 +180,7 @@ def test_stream_steps_forward_exception(mock_extract, temp_home):
     cdal = ConversationDataAccessLayer(conv_id)
     assert list(cdal.stream_steps_forward()) == []
 
-@patch("lib.conversation.extract_step_payload")
+@patch("adapter.bridge.conversation.extract_step_payload")
 def test_get_latest_user_message(mock_extract, temp_home):
     conv_id = "test_conv_user"
     db_path = temp_home / ".gemini" / "antigravity" / "conversations" / f"{conv_id}.db"
@@ -201,7 +201,7 @@ def test_get_latest_user_message(mock_extract, temp_home):
     cdal = ConversationDataAccessLayer(conv_id)
     assert cdal.get_latest_user_message() == "hello user"
 
-@patch("lib.conversation.extract_step_payload")
+@patch("adapter.bridge.conversation.extract_step_payload")
 def test_get_latest_user_message_none(mock_extract, temp_home):
     conv_id = "test_conv_user_none"
     db_path = temp_home / ".gemini" / "antigravity" / "conversations" / f"{conv_id}.db"
@@ -211,7 +211,7 @@ def test_get_latest_user_message_none(mock_extract, temp_home):
     cdal = ConversationDataAccessLayer(conv_id)
     assert cdal.get_latest_user_message() is None
 
-@patch("lib.conversation.extract_step_payload")
+@patch("adapter.bridge.conversation.extract_step_payload")
 def test_get_latest_planner_response(mock_extract, temp_home):
     conv_id = "test_conv_planner"
     db_path = temp_home / ".gemini" / "antigravity" / "conversations" / f"{conv_id}.db"
@@ -230,7 +230,7 @@ def test_get_latest_planner_response(mock_extract, temp_home):
     cdal = ConversationDataAccessLayer(conv_id)
     assert cdal.get_latest_planner_response() == "planner message"
 
-@patch("lib.conversation.extract_step_payload")
+@patch("adapter.bridge.conversation.extract_step_payload")
 def test_get_latest_planner_response_none(mock_extract, temp_home):
     conv_id = "test_conv_planner_none"
     db_path = temp_home / ".gemini" / "antigravity" / "conversations" / f"{conv_id}.db"
@@ -249,7 +249,7 @@ import sys as _sys
 import json as _json
 import time as _time
 
-from lib.context import hook_entrypoint, get_profiler, _active_profiler
+from adapter.bridge.context import hook_entrypoint, get_profiler, _active_profiler
 
 
 def test_hook_entrypoint_default_fallback():
@@ -259,8 +259,8 @@ def test_hook_entrypoint_default_fallback():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"toolCall": {"name": "test"}}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit") as mock_exit:
         dummy_hook()
@@ -277,8 +277,8 @@ def test_hook_entrypoint_none_fallback_uses_default():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"toolCall": {"name": "test"}}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()
@@ -294,8 +294,8 @@ def test_hook_entrypoint_stdin_json_error():
 
     with patch.object(_sys, "stdin", io.StringIO("not valid json {{{")), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False):
         try:
             dummy_hook()
@@ -313,8 +313,8 @@ def test_hook_entrypoint_stdin_json_error_with_log_file():
 
     with patch.object(_sys, "stdin", io.StringIO("not valid json {{{")), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=True), \
          patch("builtins.open", create=True):
         try:
@@ -333,8 +333,8 @@ def test_hook_entrypoint_status_completed():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"transcriptPath": "/tmp/t.jsonl"}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel") as mock_sentinel, \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel") as mock_sentinel, \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()
@@ -348,8 +348,8 @@ def test_hook_entrypoint_invocation_non_dict_result():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"invocationNum": 1}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()
@@ -365,8 +365,8 @@ def test_hook_entrypoint_invocation_with_inject_steps():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"invocationNum": 1}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()
@@ -382,8 +382,8 @@ def test_hook_entrypoint_system_exit_code_zero_tool_use():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"toolCall": {"name": "test"}}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit") as mock_exit:
         dummy_hook()
@@ -399,8 +399,8 @@ def test_hook_entrypoint_system_exit_nonzero_non_tool():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"invocationNum": 1}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit") as mock_exit:
         dummy_hook()
@@ -416,8 +416,8 @@ def test_hook_entrypoint_exception_with_decision_fallback():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"toolCall": {"name": "test"}}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()
@@ -435,8 +435,8 @@ def test_hook_entrypoint_exception_no_decision_fallback():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"toolCall": {"name": "test"}}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()
@@ -452,8 +452,8 @@ def test_hook_entrypoint_base_exception_non_tool():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"invocationNum": 1}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()
@@ -469,8 +469,8 @@ def test_hook_entrypoint_stop_hook():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"executionNum": 1}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit") as mock_exit:
         dummy_hook()
@@ -487,8 +487,8 @@ def test_hook_entrypoint_post_tool_use():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"postTool": True}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit") as mock_exit:
         dummy_hook()
@@ -505,8 +505,8 @@ def test_hook_entrypoint_exception_with_tool_use():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"toolCall": {"name": "write"}}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()
@@ -523,8 +523,8 @@ def test_hook_entrypoint_system_exit_zero_non_tool():
 
     with patch.object(_sys, "stdin", io.StringIO(_json.dumps({"invocationNum": 1}))), \
          patch.object(_sys, "stdout", new=io.StringIO()) as mock_stdout, \
-         patch("lib.progress.ProgressSentinel"), \
-         patch("lib.context.HookProfiler"), \
+         patch("adapter.bridge.progress.ProgressSentinel"), \
+         patch("adapter.bridge.context.HookProfiler"), \
          patch("os.path.exists", return_value=False), \
          patch.object(_sys, "exit"):
         dummy_hook()

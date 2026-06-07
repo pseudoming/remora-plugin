@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'sidecars', 'memory-compactor')))
 
 import lib.dao as dao
-import lib.paths as paths
+import adapter.bridge.paths as paths
 
 TEST_DB_PATH = "/tmp/test_remora_db_sync.db"
 
@@ -84,11 +84,11 @@ def setup_db(monkeypatch):
 
 
 def test_compactor_db_sync(monkeypatch):
-    import lib.conversation
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     def mock_stream(self, start_idx=0):
         yield {"step_index": 1, "type": "USER_INPUT", "source": "user", "content": "Hello", "timestamp": "2026-06-04T12:00:00Z"}
         yield {"step_index": 2, "type": "PLANNER_RESPONSE", "source": "agent", "content": "Hi", "timestamp": "2026-06-04T12:00:01Z"}
-    monkeypatch.setattr(lib.conversation.ConversationDataAccessLayer, "stream_steps_forward", mock_stream)
+    monkeypatch.setattr(ConversationDataAccessLayer, "stream_steps_forward", mock_stream)
     
     # Run warm_storage_sync
     import warm_storage_sync

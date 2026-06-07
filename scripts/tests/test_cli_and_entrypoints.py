@@ -410,7 +410,7 @@ def test_schema_init_main_block(tmp_path):
     mod = types.ModuleType("schema_init_maintest")
     mod.__dict__["__name__"] = "__main__"
     mod.__dict__["__file__"] = os.path.join(scripts_dir, "schema", "schema_init.py")
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)):
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)):
         filepath = os.path.join(scripts_dir, "schema", "schema_init.py")
         with open(filepath) as f:
             source = f.read()
@@ -439,7 +439,7 @@ def test_schema_init_main_block(tmp_path):
     mod.__dict__["__file__"] = os.path.join(scripts_dir, "schema", "schema_init.py")
     # Redirect DB_PATH to a temp location to avoid side effects
     fake_db = tmp_path / "fake_memory.db"
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)):
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)):
         source = open(os.path.join(scripts_dir, "schema", "schema_init.py")).read()
         exec(source, mod.__dict__)
 def test_snapshot_git(tmp_path):
@@ -620,7 +620,7 @@ def test_cognitive_push_pre_tool_use():
 # 14. session-guardian.py
 def test_session_guardian_uninitialized(tmp_path):
     # installed.flag is missing
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)):
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)):
         res = session_guardian.main.__wrapped__({})
         assert len(res["injectSteps"]) == 1
         assert "REMORA FATAL ERROR" in res["injectSteps"][0]["ephemeralMessage"]
@@ -647,8 +647,8 @@ def test_session_guardian_success(tmp_path, capsys):
         {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "schedule", "args": {"DurationSeconds": "30", "Prompt": "subagent-monitor.py fake_uuid c1"}}]}
     ]
 
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup") as mock_cleanup, \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 200 * 1024, "accumulated_data_bytes": 10 * 1024}), \
          patch("lib.dao.write_mode") as mock_write_mode, \
@@ -703,7 +703,7 @@ def test_subagent_monitor(tmp_path, capsys):
     db_file.touch()
 
     with patch("subagent_monitor.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("sys.argv", ["subagent-monitor.py", "sub_1", "parent_1"]), \
          patch("subagent_monitor.datetime") as mock_datetime:
          
@@ -773,8 +773,8 @@ def test_session_guardian_subagent_warning(tmp_path):
         {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "schedule", "args": {"DurationSeconds": "60", "Prompt": "60s timeout for subagent 22222222-2222-2222-2222-222222222222. Run: python3 scripts/subagent-monitor.py 22222222-2222-2222-2222-222222222222 conv_1"}}]},
     ]
 
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup") as mock_cleanup, \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode") as mock_write_mode, \
@@ -902,7 +902,7 @@ def test_read_session_log_main_block_with_args(capsys):
     with patch("sys.argv", ["read-session-log.py", "conv_id_1", "5"]), \
          patch.object(sys, "exit", side_effect=SystemExit), \
          patch("os.path.exists", return_value=True), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
         mock_cdal = MagicMock()
         mock_cdal.stream_steps_reverse.return_value = [
             {"type": "USER_INPUT", "content": "msg1"},
@@ -931,7 +931,7 @@ def test_read_session_log_main_block_path_arg(capsys):
     with patch("sys.argv", ["read-session-log.py", "/brain/conv_abc/transcript.jsonl"]), \
          patch.object(sys, "exit", side_effect=SystemExit), \
          patch("os.path.exists", return_value=True), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
         mock_cdal = MagicMock()
         mock_cdal.stream_steps_reverse.return_value = [
             {"type": "USER_INPUT", "content": "extracted"},
@@ -1046,7 +1046,7 @@ def test_subagent_monitor_no_argv(capsys):
 
 def test_subagent_monitor_db_not_found(capsys):
     with patch("sys.argv", ["subagent-monitor.py", "sub_1"]), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
         mock_cdal = MagicMock()
         mock_cdal.db_path = "/nonexistent/db"
         mock_cdal_cls.return_value = mock_cdal
@@ -1057,7 +1057,7 @@ def test_subagent_monitor_db_not_found(capsys):
 
 def test_subagent_monitor_stream_error(capsys):
     with patch("sys.argv", ["subagent-monitor.py", "sub_1"]), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
         mock_cdal = MagicMock()
         mock_cdal.db_path = "/fake/db"
         mock_cdal.stream_steps_reverse.side_effect = Exception("stream failed")
@@ -1069,7 +1069,7 @@ def test_subagent_monitor_stream_error(capsys):
 
 def test_subagent_monitor_empty_steps(capsys):
     with patch("sys.argv", ["subagent-monitor.py", "sub_1"]), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
         mock_cdal = MagicMock()
         mock_cdal.db_path = "/fake/db"
         mock_cdal.stream_steps_reverse.return_value = []
@@ -1090,7 +1090,7 @@ def test_subagent_monitor_tool_name_detection(capsys):
         ("LIST_DIRECTORY", "list_directory"),
     ]:
         with patch("sys.argv", ["subagent-monitor.py", "sub_1"]), \
-             patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+             patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
              patch("subagent_monitor.datetime") as mock_datetime, \
              patch("subagent_monitor.get_data_dir", return_value="/tmp"):
             mock_cdal = MagicMock()
@@ -1107,7 +1107,7 @@ def test_subagent_monitor_tool_name_detection(capsys):
 
 def test_subagent_monitor_exception_in_loop(capsys):
     with patch("sys.argv", ["subagent-monitor.py", "sub_1"]), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("subagent_monitor.datetime") as mock_datetime, \
          patch("subagent_monitor.get_data_dir", return_value="/tmp"):
         mock_cdal = MagicMock()
@@ -1131,7 +1131,7 @@ def test_subagent_monitor_not_zombie_retry_cleanup(tmp_path, capsys):
         json.dump({"retry_count": 3}, f)
 
     with patch("sys.argv", ["subagent-monitor.py", "sub_1", "parent_1"]), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("subagent_monitor.datetime") as mock_datetime, \
          patch("subagent_monitor.get_data_dir", return_value=str(tmp_path)):
         mock_cdal = MagicMock()
@@ -1217,7 +1217,7 @@ def test_remora_topic_main_execution():
 
 def test_subagent_monitor_planner_tool_calls(capsys):
     with patch("sys.argv", ["subagent-monitor.py", "sub_1"]), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("subagent_monitor.datetime") as mock_datetime, \
          patch("subagent_monitor.get_data_dir", return_value="/tmp"):
         mock_cdal = MagicMock()
@@ -1237,7 +1237,7 @@ def test_subagent_monitor_planner_tool_calls(capsys):
 
 def test_subagent_monitor_planner_other_tool(capsys):
     with patch("sys.argv", ["subagent-monitor.py", "sub_1"]), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("subagent_monitor.datetime") as mock_datetime, \
          patch("subagent_monitor.get_data_dir", return_value="/tmp"):
         mock_cdal = MagicMock()
@@ -1259,7 +1259,7 @@ def test_subagent_monitor_zombie_retry_exception(tmp_path, capsys):
     retry_dir = tmp_path / ".runtime" / "remora_subagent_retries"
     retry_dir.mkdir(parents=True)
     with patch("sys.argv", ["subagent-monitor.py", "sub_1"]), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("subagent_monitor.datetime") as mock_datetime, \
          patch("subagent_monitor.get_data_dir", return_value=str(tmp_path)):
         mock_cdal = MagicMock()
@@ -1300,8 +1300,8 @@ def test_session_guardian_subagent_warning_history_fallback(tmp_path):
         ]},
     ]
 
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup") as mock_cleanup, \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode") as mock_write_mode, \
@@ -1343,7 +1343,7 @@ def test_session_guardian_get_subagent_type_corrupt_env(tmp_path):
     runtime_dir.mkdir(parents=True, exist_ok=True)
     env_file = runtime_dir / "remora_agent_env.json"
     env_file.write_text("{corrupt_json}")
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
          patch("subprocess.run") as mock_run:
         mock_res = MagicMock()
         mock_res.returncode = 0
@@ -1359,7 +1359,7 @@ def test_session_guardian_get_subagent_type_corrupt_env(tmp_path):
 def test_session_guardian_get_subagent_type_no_parent_id(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
          patch("subprocess.run") as mock_run:
         mock_res = MagicMock()
         mock_res.returncode = 0
@@ -1375,7 +1375,7 @@ def test_session_guardian_get_subagent_type_no_parent_id(tmp_path):
 def test_session_guardian_get_subagent_type_api_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
          patch("subprocess.run", side_effect=Exception("api timeout")):
         assert session_guardian.get_subagent_type("/tmp/brain/c1/t.jsonl") is None
 
@@ -1385,7 +1385,7 @@ def test_session_guardian_get_subagent_type_fallback_main_id(tmp_path):
     runtime_dir.mkdir(parents=True, exist_ok=True)
     main_id_file = runtime_dir / "remora_main_conv_id.txt"
     main_id_file.write_text("main_conv")
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
          patch("subprocess.run", side_effect=Exception("api timeout")):
         res = session_guardian.get_subagent_type("/tmp/brain/sub_1/t.jsonl")
         assert res == "Remora_Subagent_Fallback"
@@ -1396,7 +1396,7 @@ def test_session_guardian_get_subagent_type_fallback_same_id(tmp_path):
     runtime_dir.mkdir(parents=True, exist_ok=True)
     main_id_file = runtime_dir / "remora_main_conv_id.txt"
     main_id_file.write_text("c1")
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
          patch("subprocess.run", side_effect=Exception("api timeout")):
         # conv_id == main_id -> no fallback
         assert session_guardian.get_subagent_type("/tmp/brain/c1/t.jsonl") is None
@@ -1405,7 +1405,7 @@ def test_session_guardian_get_subagent_type_fallback_same_id(tmp_path):
 def test_session_guardian_get_subagent_type_fallback_no_main_file(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
          patch("subprocess.run", side_effect=Exception("api timeout")):
         assert session_guardian.get_subagent_type("/tmp/brain/c1/t.jsonl") is None
 
@@ -1421,8 +1421,8 @@ def test_session_guardian_main_syspath_insert(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"):
@@ -1446,8 +1446,8 @@ def test_session_guardian_env_write_exception(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1467,8 +1467,8 @@ def test_session_guardian_transcript_no_match(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"):
@@ -1489,8 +1489,8 @@ def test_session_guardian_should_write_false(tmp_path):
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     # Mock subprocess.run so get_subagent_type works and returns None
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1517,8 +1517,8 @@ def test_session_guardian_exception_writing_main_id(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1545,8 +1545,8 @@ def test_session_guardian_all_skip_types_loop_exhaust(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1572,8 +1572,8 @@ def test_session_guardian_non_user_input_break(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1597,8 +1597,8 @@ def test_session_guardian_step_parsing_exception(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1618,8 +1618,8 @@ def test_session_guardian_keywords_load_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1646,8 +1646,8 @@ def test_session_guardian_no_heartbeat_steps(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"):
@@ -1665,8 +1665,8 @@ def test_session_guardian_schedule_no_subagent_monitor(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1691,8 +1691,8 @@ def test_session_guardian_uuid_already_set(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1722,8 +1722,8 @@ def test_session_guardian_uuid_matches_conv(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1762,8 +1762,8 @@ def test_session_guardian_manage_subagents_kill(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1789,8 +1789,8 @@ def test_session_guardian_system_confirm_kill(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1815,8 +1815,8 @@ def test_session_guardian_terminated_subagent_confirm(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1845,8 +1845,8 @@ def test_session_guardian_pass2_no_activity_match(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1871,8 +1871,8 @@ def test_session_guardian_pass2_history_type_skip(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1899,8 +1899,8 @@ def test_session_guardian_retry_cleanup_exception(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1931,8 +1931,8 @@ def test_session_guardian_role_name_cache_exception(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1966,8 +1966,8 @@ def test_session_guardian_role_name_history_fallback_type_on_args(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -1998,8 +1998,8 @@ def test_session_guardian_role_name_no_subagents_list(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -2031,8 +2031,8 @@ def test_session_guardian_role_name_history_exception(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -2065,8 +2065,8 @@ def test_session_guardian_hard_keyword_override(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": ["override_kw"], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode") as mock_write_mode, \
@@ -2091,8 +2091,8 @@ def test_session_guardian_is_new_turn_cleanup(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup") as mock_cleanup, \
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode"), \
@@ -2116,8 +2116,8 @@ def test_session_guardian_stats_exception(tmp_path):
     keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
-    with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
-         patch("lib.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+    with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("session_guardian.cleanup"), \
          patch("session_guardian.get_stats", side_effect=Exception("stats fail")), \
          patch("lib.dao.write_mode"), \

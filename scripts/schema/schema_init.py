@@ -5,7 +5,7 @@ import sys
 scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
-from lib.paths import get_data_dir
+from adapter.bridge.paths import get_data_dir
 
 DATA_DIR = get_data_dir()
 DB_PATH = os.path.join(DATA_DIR, "remora_memory.db")

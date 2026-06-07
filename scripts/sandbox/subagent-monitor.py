@@ -3,7 +3,7 @@ import sys
 import json
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.paths import get_data_dir
+from adapter.bridge.paths import get_data_dir
 import subprocess
 from datetime import datetime, timezone
 
@@ -16,7 +16,7 @@ def main():
     # 支持接收第二个参数 parent_conv_id 作为重试计数的唯一物理 key，解决子代理重试更改 ID 导致计数清零的隐患
     parent_conv_id = sys.argv[2] if len(sys.argv) > 2 else conv_id
     
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     cdal = ConversationDataAccessLayer(conv_id)
     
     if not os.path.exists(cdal.db_path):

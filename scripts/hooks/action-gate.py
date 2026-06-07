@@ -7,10 +7,10 @@ import re
 import subprocess
 from pathlib import Path
 
-from lib.context import hook_entrypoint, get_profiler
+from adapter.bridge.context import hook_entrypoint, get_profiler
 from lib.filesystem import get_snapshot, get_active_files
-from lib.paths import extract_conv_id
-from lib.session import read_mode
+from adapter.bridge.paths import extract_conv_id
+from adapter.bridge.session import read_mode
 
 # ##########################################################
 # AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)
@@ -100,7 +100,7 @@ def normalize_filepath(arguments_dict):
             return os.path.basename(val)
     return ""
 
-from lib.conversation import ConversationDataAccessLayer
+from adapter.bridge.conversation import ConversationDataAccessLayer
 
 def get_latest_conversation_states(cdal: ConversationDataAccessLayer, initial_num_steps=0):
     """

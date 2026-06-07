@@ -2,14 +2,14 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'rules'))
-from lib.paths import get_data_dir
-from lib.context import hook_entrypoint
-from lib.session import read_mode
-from lib.stats import accumulate
+from adapter.bridge.paths import get_data_dir
+from adapter.bridge.context import hook_entrypoint
+from adapter.bridge.session import read_mode
+from adapter.bridge.stats import accumulate
 
 # 引入抽离出的核心算法模块
 from safety_rules import inspect_command
-from lib.subagent import get_subagent_type
+from adapter.bridge.subagent import get_subagent_type
 
 import json
 import re
@@ -70,7 +70,7 @@ def main(context):
 
     # Timeline trimming (Timeline Trimming)
     from lib.dao import get_hook_state, set_hook_state, delete_hook_state, trim_hook_states
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     
     cdal = ConversationDataAccessLayer(conv_id)
     current_turn_idx = cdal.get_current_turn_idx()

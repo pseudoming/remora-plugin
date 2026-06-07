@@ -49,7 +49,7 @@ class ProgressSentinel:
                 match = re.search(r'/brain/([^/]+)/', transcript_path)
                 if match:
                     conv_id = match.group(1)
-                    from .conversation import ConversationDataAccessLayer
+                    from adapter.bridge.conversation import ConversationDataAccessLayer
                     final_step_index = ConversationDataAccessLayer(conv_id).get_max_step_index()
         
         if final_step_index is None:

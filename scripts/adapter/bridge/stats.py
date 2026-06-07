@@ -1,6 +1,6 @@
 import os, json, fcntl
 
-from lib.paths import get_data_dir
+from adapter.bridge.paths import get_data_dir
 STATS_DIR = os.path.join(get_data_dir(), ".runtime", "remora_view_file_stats")
 
 def get_stats_path(conv_id):

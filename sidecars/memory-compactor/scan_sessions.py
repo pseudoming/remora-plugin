@@ -8,7 +8,7 @@ import subprocess
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
 from schema.schema_init import DATA_DIR
-from lib.conversation import ConversationDataAccessLayer
+from adapter.bridge.conversation import ConversationDataAccessLayer
 
 BRAIN_DIR = os.path.expanduser("~/.gemini/antigravity/brain")
 EXCLUDE_FILE = os.path.join(DATA_DIR, "compactor_managed_conversations.json")

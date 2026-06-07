@@ -4,8 +4,8 @@ import json
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.stats import cleanup
-from lib.context import hook_entrypoint
+from adapter.bridge.stats import cleanup
+from adapter.bridge.context import hook_entrypoint
 
 @hook_entrypoint(fallback_result={})
 def main(context):

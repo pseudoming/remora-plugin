@@ -5,8 +5,8 @@ import json
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from lib.context import hook_entrypoint
-from lib.paths import extract_conv_id
+from adapter.bridge.context import hook_entrypoint
+from adapter.bridge.paths import extract_conv_id
 from lib import dao
 
 MAX_CHARS = 750  # 粗略控制 300 tokens 预算上限
@@ -191,7 +191,7 @@ def main(context):
         if latest:
             conv_id = latest[0]
             
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     
     cdal = ConversationDataAccessLayer(conv_id)
     current_turn_idx = cdal.get_current_turn_idx()

@@ -46,7 +46,7 @@ def get_or_create_conversation(prompt):
         with open(CONV_MARKER_FILE, 'r') as f:
             conv_id = f.read().strip()
             if conv_id:
-                from lib.conversation import ConversationDataAccessLayer
+                from adapter.bridge.conversation import ConversationDataAccessLayer
                 cdal = ConversationDataAccessLayer(conv_id)
                 should_rollover = False
                 if os.path.exists(cdal.db_path):
@@ -118,7 +118,7 @@ def extract_factual_baseline(conv_id, start_line):
     baseline_files = set()
     baseline_actions = set()
     
-    from lib.conversation import ConversationDataAccessLayer
+    from adapter.bridge.conversation import ConversationDataAccessLayer
     cdal = ConversationDataAccessLayer(conv_id)
     if cdal.get_max_step_index() == 0:
         return [], []

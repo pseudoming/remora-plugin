@@ -4,7 +4,7 @@ import functools
 import time
 import os
 from datetime import datetime
-from .profiler import HookProfiler
+from adapter.bridge.profiler import HookProfiler
 
 _active_profiler = None
 
@@ -30,7 +30,7 @@ def hook_entrypoint(fallback_result=None):
                 t1 = time.perf_counter()
                 log_content = f"=== [{hook_name}] Stdin Read Failed at {datetime.now().isoformat()} (Elapsed: {(t1-t0)*1000.0:.2f} ms) (Error: {str(e)}) ===\n\n"
                 try:
-                    from .paths import HOOKS_PROFILE_LOG
+                    from adapter.bridge.paths import HOOKS_PROFILE_LOG
                     with open(HOOKS_PROFILE_LOG, "a", encoding="utf-8") as f:
                         f.write(log_content)
                 except Exception:
@@ -43,7 +43,7 @@ def hook_entrypoint(fallback_result=None):
                 _active_profiler.step("stdin_read")
                 
                 transcript_path = input_data.get('transcriptPath', '')
-                from .progress import ProgressSentinel
+                from adapter.bridge.progress import ProgressSentinel
                 
                 # 每次执行前，主动更新快照状态为 running
                 ProgressSentinel.update(transcript_path, "running", details=f"Starting hook: {hook_name}")
