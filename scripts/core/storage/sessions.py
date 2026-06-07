@@ -1,4 +1,4 @@
-import logging
+from core.logger import error as log_error
 from typing import Optional, Tuple
 
 from core.storage.connection import _get_conn, closing
@@ -12,7 +12,7 @@ def read_mode(session_id: str, default: str = "standard") -> str:
                     return row[0]
                 return default
     except Exception as e:
-        logging.error(f"Error in read_mode: {e}")
+        log_error(f"Error in read_mode: {e}")
         return default
 
 def write_mode(session_id: str, mode: str) -> None:
@@ -31,7 +31,7 @@ def get_latest_session() -> Optional[Tuple[str, int]]:
             with conn:
                 return conn.execute("SELECT session_id, is_cold_start FROM session_state ORDER BY updated_at DESC LIMIT 1").fetchone()
     except Exception as e:
-        logging.error(f"Error in get_latest_session: {e}")
+        log_error(f"Error in get_latest_session: {e}")
         return None
 
 def update_cold_start(session_id: str, is_cold_start: int) -> None:

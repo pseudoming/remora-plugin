@@ -1,4 +1,4 @@
-import logging
+from core.logger import error as log_error
 from typing import List, Dict
 
 from core.storage.connection import _get_conn, closing
@@ -23,7 +23,7 @@ def get_files_by_topic(project_uuid: str, topic_id: str) -> List[str]:
                 ).fetchall()
                 return [row[0] for row in rows]
     except Exception as e:
-        logging.error(f"Error in get_files_by_topic: {e}")
+        log_error(f"Error in get_files_by_topic: {e}")
         return []
 
 def get_decisions_by_file(project_uuid: str, file_name: str) -> List[Dict]:
@@ -40,5 +40,5 @@ def get_decisions_by_file(project_uuid: str, file_name: str) -> List[Dict]:
                 ).fetchall()
                 return [{"decision": r[0], "rationale": r[1]} for r in rows]
     except Exception as e:
-        logging.error(f"Error in get_decisions_by_file: {e}")
+        log_error(f"Error in get_decisions_by_file: {e}")
         return []

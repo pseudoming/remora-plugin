@@ -5,6 +5,7 @@ import time
 import os
 from datetime import datetime
 from adapter.bridge.profiler import HookProfiler
+from core.logger import warn, error
 
 _active_profiler = None
 
@@ -93,7 +94,7 @@ def hook_entrypoint(fallback_result=None):
                 else:
                     _active_profiler.step(f"func_sys_exit: {se.code}")
                     import traceback
-                    print(f"[Remora Hook SystemExit] {se.code}", file=sys.stderr)
+                    error(f"Hook SystemExit code {se.code}")
                     traceback.print_exc(file=sys.stderr)
                     ProgressSentinel.update(transcript_path, "blocked", details=f"Hook SystemExit {se.code}")
                     if is_tool_use or is_stop_hook:
@@ -108,7 +109,7 @@ def hook_entrypoint(fallback_result=None):
                 if "decision" in safe_fallback:
                     safe_fallback["decision_reason"] = f"Remora Fallback (Error: {str(e)})"
                 import traceback
-                print(f"[Remora Hook Error] {str(e)}", file=sys.stderr)
+                error(f"Hook Error: {str(e)}")
                 traceback.print_exc(file=sys.stderr)
                 ProgressSentinel.update(transcript_path, "blocked", details=f"Hook Exception: {str(e)}")
                 if is_tool_use or is_stop_hook:
@@ -120,7 +121,7 @@ def hook_entrypoint(fallback_result=None):
                 is_stop_hook = (input_data and isinstance(input_data, dict) and input_data.get('executionNum') is not None)
                 _active_profiler.step(f"func_fatal_error: {type(e).__name__}: {str(e)}")
                 import traceback
-                print(f"[Remora Hook Fatal Error] {type(e).__name__}: {str(e)}", file=sys.stderr)
+                error(f"Hook Fatal: {type(e).__name__}: {str(e)}")
                 traceback.print_exc(file=sys.stderr)
                 ProgressSentinel.update(transcript_path, "blocked", details=f"Hook Fatal BaseException: {type(e).__name__}")
                 if is_tool_use or is_stop_hook:

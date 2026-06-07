@@ -14,6 +14,7 @@ if scripts_dir not in sys.path:
 
 from adapter.bridge import paths
 from lib import dao
+from core.logger import warn
 
 def parse_sqlite_timestamp(ts_val) -> float:
     """将 SQLite 中不同格式的 timestamp 转换为 unix 时间戳"""
@@ -66,7 +67,7 @@ def run_audit(conv_id: str, parent_conv_id: str = None) -> dict:
             with open(progress_path, "r", encoding="utf-8") as f:
                 progress_data = json.load(f)
         except Exception as e:
-            print(f"Warning: Failed to read progress file: {str(e)}", file=sys.stderr)
+            warn(f"Failed to read progress file: {str(e)}")
             
     # 2. 读取 sqlite 数据库中的 messages 表
     db_path = paths.get_db_path()
@@ -111,7 +112,7 @@ def run_audit(conv_id: str, parent_conv_id: str = None) -> dict:
                         break
             conn.close()
         except Exception as e:
-            print(f"Warning: Failed to query database: {str(e)}", file=sys.stderr)
+            warn(f"Failed to query database: {str(e)}")
 
     # 3. 判定逻辑
     status = progress_data.get("status")
@@ -269,7 +270,7 @@ def run_as_hook(input_data):
         except Exception as db_err:
             # 中文翻译：警告：获取 project_uuid 或活动话题信息失败
             # Warning: Failed to fetch project_uuid or active topic info
-            print(f"Warning: Failed to fetch project_uuid or active topic info: {str(db_err)}", file=sys.stderr)
+            warn(f"Failed to fetch project_uuid or active topic info: {str(db_err)}")
 
         # 2. 时序范围截断：提取最后 20 条日志范围或当前活动话题的步骤
         # Temporal range truncation: extract steps within the last 20 logs or active topic timeframe
@@ -324,7 +325,7 @@ def run_as_hook(input_data):
             except Exception as db_err:
                 # 中文翻译：警告：在水印关联过滤期间失败
                 # Warning: Failed during watermarks correlation filter
-                print(f"Warning: Failed during watermarks correlation filter: {str(db_err)}", file=sys.stderr)
+                warn(f"Failed during watermarks correlation filter: {str(db_err)}")
                 subagent_ids = list(candidate_subagent_ids)
         else:
             subagent_ids = list(candidate_subagent_ids)

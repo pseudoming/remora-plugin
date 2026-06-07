@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.paths import extract_conv_id
 from lib import dao
+from core.logger import warn, error
 
 MAX_CHARS = 750  # 粗略控制 300 tokens 预算上限
 
@@ -223,7 +224,7 @@ def main(context):
             return _handle_pre_tool_use(context, conv_id, current_turn_idx)
     except Exception as e:
         import traceback
-        print(f"[Remora Error] cognitive-push failed: {e}", file=sys.stderr)
+        error(f"cognitive-push failed: {e}")
         traceback.print_exc()
             
     return {"injectSteps": []}

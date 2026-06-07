@@ -3,6 +3,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.session import read_mode
+from core.logger import warn, error
 
 import json, re
 

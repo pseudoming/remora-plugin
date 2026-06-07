@@ -6,6 +6,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from adapter.bridge.paths import HOOKS_PROFILE_LOG
 from adapter.bridge.context import hook_entrypoint
+from core.logger import warn, error
 
 def log_duration(elapsed, exit_code=0):
     try:
@@ -132,8 +133,7 @@ def main(context):
                     continue
                 
                 # ZOMBIE DETECTED!
-                sys.stderr.write(f"\n[!] WARNING: UNMANAGED BACKGROUND PROCESS DETECTED.\n")
-                sys.stderr.write(f"SUSPECT: {cmdline} (UPTIME: {int(elapsed_seconds)}s, PID: {pid})\n\n")
+                warn(f"[!] UNMANAGED BACKGROUND PROCESS DETECTED.\nSUSPECT: {cmdline} (UPTIME: {int(elapsed_seconds)}s, PID: {pid})")
                 
                 log_duration((time.perf_counter() - t0) * 1000.0, 0)
                 

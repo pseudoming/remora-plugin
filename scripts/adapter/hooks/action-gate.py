@@ -11,6 +11,7 @@ from adapter.bridge.context import hook_entrypoint, get_profiler
 from lib.filesystem import get_snapshot, get_active_files
 from adapter.bridge.paths import extract_conv_id
 from adapter.bridge.session import read_mode
+from core.logger import warn, error
 
 # ##########################################################
 # AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)

@@ -11,6 +11,7 @@ Remora Topic Controller Script
 用于手动控制话题状态修改 (new/switch/close) 以及手动打标确认决策 (confirm)
 """
 from lib import dao
+from core.logger import error, warn, info
 
 def _force_cold_start():
     # 强置 is_cold_start 信号位以实现冷启动与 Topic 切换同步
@@ -34,19 +35,19 @@ def main():
 
     project_uuid = args.uuid or os.environ.get("ANTIGRAVITY_PROJECT_ID")
     if not project_uuid:
-        print("Error: Project UUID is required. Please specify via -u/--uuid or ANTIGRAVITY_PROJECT_ID env var.", file=sys.stderr)
+        error("Project UUID is required. Please specify via -u/--uuid or ANTIGRAVITY_PROJECT_ID env var.")
         sys.exit(1)
 
     # dao operations encapsulate DB connection, so we don't need conn directly.
     # except for testing DB presence:
     if not dao.check_db_exists():
-        print(f"Error: Database file not found.", file=sys.stderr)
+        error(f"Database file not found.")
         sys.exit(1)
 
     try:
         if args.action == "new":
             if not args.name:
-                print("Error: Topic name (-n/--name) is required for new action.", file=sys.stderr)
+                error("Topic name (-n/--name) is required for new action.")
                 sys.exit(1)
             dao.create_or_update_topic(project_uuid, args.name, summary="", source="manual")
             _force_cold_start()
@@ -54,7 +55,7 @@ def main():
 
         elif args.action == "switch":
             if not args.name:
-                print("Error: Topic name (-n/--name) is required for switch action.", file=sys.stderr)
+                error("Topic name (-n/--name) is required for switch action.")
                 sys.exit(1)
             # 切换当前项目下的活跃话题，将其他话题设为 closed，当前话题设为 open
             dao.switch_topic(project_uuid, args.name)
@@ -63,7 +64,7 @@ def main():
 
         elif args.action == "close":
             if not args.name:
-                print("Error: Topic name (-n/--name) is required for close action.", file=sys.stderr)
+                error("Topic name (-n/--name) is required for close action.")
                 sys.exit(1)
             # 关闭指定话题，物理晋升为 manual 防止 GC 清理
             dao.close_topic(project_uuid, args.name)
@@ -71,12 +72,12 @@ def main():
 
         elif args.action == "confirm":
             if args.decision_id is None:
-                print("Error: Decision ID (-d/--decision-id) is required for confirm action.", file=sys.stderr)
+                error("Decision ID (-d/--decision-id) is required for confirm action.")
                 sys.exit(1)
             # 手动打标确认决策
             success = dao.confirm_decision(project_uuid, args.decision_id)
             if not success:
-                print(f"Warning: No decision found with ID {args.decision_id} in project {project_uuid}.", file=sys.stderr)
+                warn(f"No decision found with ID {args.decision_id} in project {project_uuid}.")
             else:
                 print(f"Decision {args.decision_id} confirmed in project {project_uuid}.")
                 
@@ -86,7 +87,7 @@ def main():
                     dao.touch_topic_source_manual(project_uuid, t_id)
 
                 # 方案 B: 隐式沙箱自动合并并捕获物理文件列表
-                print("Checking for isolated subagent sandboxes to merge...", file=sys.stderr)
+                info("Checking for isolated subagent sandboxes to merge...")
                 try:
                     import glob, subprocess, json
                     worktrees = glob.glob(os.path.expanduser("~/.gemini/antigravity/brain/*/.system_generated/worktrees/subagent-*"))
@@ -95,7 +96,7 @@ def main():
                         worktrees.sort(key=os.path.getmtime, reverse=True)
                         latest_worktree = worktrees[0]
                         wt_name = os.path.basename(latest_worktree)
-                        print(f"Found latest subagent sandbox: {wt_name}", file=sys.stderr)
+                        info(f"Found latest subagent sandbox: {wt_name}")
                         
                         merge_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sandbox", "sandbox-merge.py")
                         res = subprocess.run([sys.executable, merge_script, wt_name, "--target-cwd", os.getcwd()], capture_output=True, text=True, check=True)
@@ -114,12 +115,12 @@ def main():
                                 dao.insert_file_change(project_uuid, wt_name, pf, "sandbox")
                             print(f"[Remora] Integrated {len(physical_files)} physical changed files from sandbox.")
                     else:
-                        print("No active sandbox worktree found. Nothing to merge.", file=sys.stderr)
+                        info("No active sandbox worktree found. Nothing to merge.")
                 except Exception as e:
-                    print(f"Sandbox automatic merge failed: {str(e)}", file=sys.stderr)
+                    error(f"Sandbox automatic merge failed: {str(e)}")
 
     except Exception as e:
-        print(f"Execution Error: {str(e)}", file=sys.stderr)
+        error(f"Execution Error: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.stats import cleanup, get_stats
+from core.logger import warn, error
 
 import json, re, subprocess
 from adapter.bridge.subagent import get_subagent_type, AGENTAPI_BIN
@@ -77,7 +78,7 @@ def main(context):
         pass
     
     # 动态读取 keywords.json 获取触发词
-    keywords_config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'rules', 'keywords.json')
+    keywords_config_path = os.path.join(os.path.dirname(__file__), 'keywords.json')
     hard_kws = []
     soft_kws = []
     try:

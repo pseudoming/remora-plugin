@@ -1,5 +1,5 @@
 import json
-import logging
+from core.logger import error as log_error
 from typing import List
 
 from core.storage.connection import _get_conn, closing
@@ -25,7 +25,7 @@ def recall_fts5_logs(project_uuid: str, conv_id: str, keyword: str, limit: int =
                 """, (project_uuid, conv_id, conv_id, f'"{safe_keyword}"', limit))
                 return [row[0] for row in cursor.fetchall()]
     except Exception as e:
-        logging.error(f"Error in recall_fts5_logs: {e}")
+        log_error(f"Error in recall_fts5_logs: {e}")
         return []
 
 def recall_decisions_by_fts5_topic(project_uuid: str, conv_id: str, keyword: str) -> List[str]:
@@ -69,7 +69,7 @@ def recall_decisions_by_fts5_topic(project_uuid: str, conv_id: str, keyword: str
                     results.append(f"[{topic_id}] {decision} (原因: {rationale}){evidence_str}")
                 return results
     except Exception as e:
-        logging.error(f"Error in recall_decisions_by_fts5_topic: {e}")
+        log_error(f"Error in recall_decisions_by_fts5_topic: {e}")
         return []
 
 def recall_decisions_by_like(project_uuid: str, conv_id: str, keyword: str, limit: int = 5) -> List[str]:
@@ -105,7 +105,7 @@ def recall_decisions_by_like(project_uuid: str, conv_id: str, keyword: str, limi
                     results.append(f"[{topic_id}] {decision} (原因: {rationale}){evidence_str}")
                 return results
     except Exception as e:
-        logging.error(f"Error in recall_decisions_by_like: {e}")
+        log_error(f"Error in recall_decisions_by_like: {e}")
         return []
 
 def touch_topics_accessed_by_recall(project_uuid: str, conv_id: str, keyword: str) -> None:

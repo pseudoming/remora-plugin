@@ -1,4 +1,4 @@
-import logging
+from core.logger import error as log_error
 from typing import Optional
 
 from core.storage.connection import _get_conn, closing
@@ -13,7 +13,7 @@ def get_runtime_hook_value(session_id: str, turn_idx: int, key: str) -> Optional
                 ).fetchone()
                 return row[0] if row else None
     except Exception as e:
-        logging.error(f"Error in get_runtime_hook_value: {e}")
+        log_error(f"Error in get_runtime_hook_value: {e}")
         return None
 
 def set_runtime_hook_value(session_id: str, turn_idx: int, key: str, value: str) -> None:
@@ -27,7 +27,7 @@ def set_runtime_hook_value(session_id: str, turn_idx: int, key: str, value: str)
                     (session_id, turn_idx, key, value)
                 )
     except Exception as e:
-        logging.error(f"Error in set_runtime_hook_value: {e}")
+        log_error(f"Error in set_runtime_hook_value: {e}")
 
 def delete_runtime_hook_value(session_id: str, turn_idx: int, key: str) -> None:
     try:
@@ -39,7 +39,7 @@ def delete_runtime_hook_value(session_id: str, turn_idx: int, key: str) -> None:
                     (session_id, turn_idx, key)
                 )
     except Exception as e:
-        logging.error(f"Error in delete_runtime_hook_value: {e}")
+        log_error(f"Error in delete_runtime_hook_value: {e}")
 
 def trim_runtime_hook_states(session_id: str, current_turn_idx: int) -> None:
     try:
@@ -51,7 +51,7 @@ def trim_runtime_hook_states(session_id: str, current_turn_idx: int) -> None:
                     (session_id, current_turn_idx)
                 )
     except Exception as e:
-        logging.error(f"Error in trim_runtime_hook_states: {e}")
+        log_error(f"Error in trim_runtime_hook_states: {e}")
 
 def get_hook_state(session_id: str, turn_idx: int, key: str) -> Optional[str]:
     return get_runtime_hook_value(session_id, turn_idx, key)

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'rules'))
 from adapter.bridge.paths import get_data_dir
 from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.session import read_mode
 from adapter.bridge.stats import accumulate
+from core.logger import warn, error
 
 # 引入抽离出的核心算法模块
-from safety_rules import inspect_command
+from core.rules.inspector import inspect_command
 from adapter.bridge.subagent import get_subagent_type
 
 import json

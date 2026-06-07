@@ -3,19 +3,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from .paths import HOOKS_PROFILE_LOG
-
-def write_log_with_limit(log_path, log_content, max_bytes=1024*1024):
-    try:
-        path = Path(log_path)
-        # 超过限制大小时直接清空并重写，防止撑爆磁盘
-        if path.exists() and path.stat().st_size > max_bytes:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(f"=== Log Rotated at {datetime.now().isoformat()} ===\n")
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(log_content)
-    except Exception:
-        pass
+from core.logger import profile as log_profile
 
 class HookProfiler:
     def __init__(self, hook_name: str, context: dict = None):
@@ -53,7 +41,7 @@ class HookProfiler:
         log_content = "\n".join(log_lines) + "\n"
         
         # 1. 写入全局日志
-        write_log_with_limit(HOOKS_PROFILE_LOG, log_content)
+        log_profile(log_content)
             
         # 2. 顺着 transcriptPath 解析并写入 scratch 目录，彻底避免对 HOME 环境变量的猜测与依赖
         transcript_path = self.context.get('transcriptPath', '')
@@ -61,6 +49,6 @@ class HookProfiler:
             try:
                 scratch_dir = Path(transcript_path).parent.parent.parent / "scratch"
                 scratch_dir.mkdir(parents=True, exist_ok=True)
-                write_log_with_limit(scratch_dir / "hooks_profile.log", log_content)
+                log_profile(log_content, str(scratch_dir / "hooks_profile.log"))
             except Exception:
                 pass

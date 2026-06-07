@@ -633,7 +633,7 @@ def test_session_guardian_success(tmp_path, capsys):
     (runtime_dir / "installed.flag").touch()
     
     # Write mock keywords.json
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": ["strict_kw"], "soft_keywords": ["relax_kw"]}, f)
 
@@ -759,7 +759,7 @@ def test_session_guardian_subagent_warning(tmp_path):
     (runtime_dir / "installed.flag").touch()
     
     # Write mock keywords.json
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
 
@@ -1018,7 +1018,7 @@ def test_remora_topic_confirm_failure(capsys):
         with patch("sys.argv", ["remora-topic.py", "confirm", "-u", "proj_1", "-d", "99"]):
             remora_topic.main()
             captured = capsys.readouterr()
-            assert "Warning: No decision found" in captured.err
+            assert "No decision found with ID 99" in captured.err
 
 def test_remora_topic_force_cold_start_file_error(capsys):
     with patch("lib.dao.check_db_exists", return_value=True), \
@@ -1283,7 +1283,7 @@ def test_session_guardian_subagent_warning_history_fallback(tmp_path):
     (runtime_dir / "installed.flag").touch()
     
     # Write mock keywords.json
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
 
@@ -1418,7 +1418,7 @@ def test_session_guardian_main_syspath_insert(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1443,7 +1443,7 @@ def test_session_guardian_env_write_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1464,7 +1464,7 @@ def test_session_guardian_transcript_no_match(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1485,7 +1485,7 @@ def test_session_guardian_should_write_false(tmp_path):
     (runtime_dir / "installed.flag").touch()
     main_id_file = runtime_dir / "remora_main_conv_id.txt"
     main_id_file.write_text("existing_conv")
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     # Mock subprocess.run so get_subagent_type works and returns None
@@ -1514,7 +1514,7 @@ def test_session_guardian_exception_writing_main_id(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1542,7 +1542,7 @@ def test_session_guardian_all_skip_types_loop_exhaust(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1569,7 +1569,7 @@ def test_session_guardian_non_user_input_break(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1594,7 +1594,7 @@ def test_session_guardian_step_parsing_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1643,7 +1643,7 @@ def test_session_guardian_no_heartbeat_steps(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1662,7 +1662,7 @@ def test_session_guardian_schedule_no_subagent_monitor(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1688,7 +1688,7 @@ def test_session_guardian_uuid_already_set(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1719,7 +1719,7 @@ def test_session_guardian_uuid_matches_conv(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1759,7 +1759,7 @@ def test_session_guardian_manage_subagents_kill(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1786,7 +1786,7 @@ def test_session_guardian_system_confirm_kill(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1812,7 +1812,7 @@ def test_session_guardian_terminated_subagent_confirm(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1842,7 +1842,7 @@ def test_session_guardian_pass2_no_activity_match(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1868,7 +1868,7 @@ def test_session_guardian_pass2_history_type_skip(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1896,7 +1896,7 @@ def test_session_guardian_retry_cleanup_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1928,7 +1928,7 @@ def test_session_guardian_role_name_cache_exception(tmp_path):
     (runtime_dir / "installed.flag").touch()
     env_file = runtime_dir / "remora_agent_env.json"
     env_file.write_text("{corrupt}")
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1963,7 +1963,7 @@ def test_session_guardian_role_name_history_fallback_type_on_args(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1995,7 +1995,7 @@ def test_session_guardian_role_name_no_subagents_list(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2028,7 +2028,7 @@ def test_session_guardian_role_name_history_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2062,7 +2062,7 @@ def test_session_guardian_hard_keyword_override(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": ["override_kw"], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2088,7 +2088,7 @@ def test_session_guardian_is_new_turn_cleanup(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2113,7 +2113,7 @@ def test_session_guardian_stats_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(session_guardian.__file__))), "rules", "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("adapter.bridge.paths.get_data_dir", return_value=str(tmp_path)), \

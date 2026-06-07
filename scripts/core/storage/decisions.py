@@ -1,5 +1,5 @@
 import json
-import logging
+from core.logger import error as log_error
 from typing import Optional, List, Dict
 
 from core.storage.connection import _get_conn, closing
@@ -26,7 +26,7 @@ def get_confirmed_decisions(project_uuid: str, topic_id: str) -> List[Dict]:
                                 if msg_row:
                                     evidence_texts.append(msg_row[0])
                         except Exception as e:
-                            logging.error(f"Error parsing evidence_msg_ids JSON: {e}")
+                            log_error(f"Error parsing evidence_msg_ids JSON: {e}")
                             
                     decisions.append({
                         "text": f"{d_text} (原因: {rationale})",
@@ -35,7 +35,7 @@ def get_confirmed_decisions(project_uuid: str, topic_id: str) -> List[Dict]:
                     })
                 return decisions
     except Exception as e:
-        logging.error(f"Error in get_confirmed_decisions: {e}")
+        log_error(f"Error in get_confirmed_decisions: {e}")
         return []
 
 def confirm_decision(project_uuid: str, decision_id: int) -> bool:
@@ -54,5 +54,5 @@ def get_topic_id_by_decision(decision_id: int) -> Optional[str]:
                 row = conn.execute("SELECT topic_id FROM topic_decisions WHERE id=?", (decision_id,)).fetchone()
                 return row[0] if row else None
     except Exception as e:
-        logging.error(f"Error in get_topic_id_by_decision: {e}")
+        log_error(f"Error in get_topic_id_by_decision: {e}")
         return None

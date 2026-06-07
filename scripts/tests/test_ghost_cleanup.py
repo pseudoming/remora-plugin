@@ -51,11 +51,10 @@ def test_fix_db_no_ghost_records(test_db, capsys):
         conn.execute("INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 1, 'user', 'hello')")
         conn.commit()
 
-    with patch.object(paths, 'get_db_path', return_value=test_db):
+    with patch.object(paths, 'get_db_path', return_value=test_db), \
+         patch("cleanup_ghost_records.info") as mock_info:
         cleanup_ghost_records.fix_db()
-
-    captured = capsys.readouterr()
-    assert "No ghost records to clean up." in captured.out
+        mock_info.assert_any_call("No ghost records to clean up.")
 
     with sqlite3.connect(test_db) as conn:
         rows = conn.execute("SELECT * FROM messages").fetchall()
@@ -71,11 +70,10 @@ def test_fix_db_with_ghost_records(test_db, capsys):
         conn.execute("INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 5, 'assistant', '')")
         conn.commit()
 
-    with patch.object(paths, 'get_db_path', return_value=test_db):
+    with patch.object(paths, 'get_db_path', return_value=test_db), \
+         patch("cleanup_ghost_records.info") as mock_info:
         cleanup_ghost_records.fix_db()
-
-    captured = capsys.readouterr()
-    assert "Deleted 4 ghost records" in captured.out
+        mock_info.assert_any_call("Deleted 4 ghost records. FTS index rebuilt.")
 
     with sqlite3.connect(test_db) as conn:
         rows = conn.execute("SELECT id FROM messages").fetchall()

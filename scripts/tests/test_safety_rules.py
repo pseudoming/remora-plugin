@@ -13,8 +13,7 @@ scripts_dir = os.path.join(root_dir, "scripts")
 if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
-sys.path.insert(0, os.path.join(root_dir, "scripts", "rules"))
-import safety_rules
+from core.rules import inspector as safety_rules
 
 
 class TestDecodeBase64Token(unittest.TestCase):

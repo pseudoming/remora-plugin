@@ -1,4 +1,4 @@
-import logging
+from core.logger import error as log_error
 from typing import Optional
 
 from core.storage.connection import _get_conn, closing
@@ -10,7 +10,7 @@ def get_project_uuid_by_conv(session_id: str) -> Optional[str]:
                 row = conn.execute("SELECT project_uuid FROM watermarks WHERE conversation_id=? LIMIT 1", (session_id,)).fetchone()
                 return row[0] if row else None
     except Exception as e:
-        logging.error(f"Error in get_project_uuid_by_conv: {e}")
+        log_error(f"Error in get_project_uuid_by_conv: {e}")
         return None
 
 def watermark_exists(project_uuid: str, conversation_id: str) -> bool:
@@ -23,7 +23,7 @@ def watermark_exists(project_uuid: str, conversation_id: str) -> bool:
                 ).fetchone()
                 return row is not None
     except Exception as e:
-        logging.error(f"Error in watermark_exists: {e}")
+        log_error(f"Error in watermark_exists: {e}")
         return False
 
 def get_active_topic_created_at(project_uuid: str) -> Optional[str]:
@@ -36,5 +36,5 @@ def get_active_topic_created_at(project_uuid: str) -> Optional[str]:
                 ).fetchone()
                 return row[0] if row else None
     except Exception as e:
-        logging.error(f"Error in get_active_topic_created_at: {e}")
+        log_error(f"Error in get_active_topic_created_at: {e}")
         return None
