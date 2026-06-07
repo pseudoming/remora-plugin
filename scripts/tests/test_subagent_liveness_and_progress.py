@@ -16,7 +16,7 @@ if scripts_dir not in sys.path:
 
 from adapter.bridge.progress import ProgressSentinel
 import adapter.bridge.paths as paths
-import lib.dao as dao  # noqa: F401
+from adapter.bridge.paths import get_db_path
 
 # Dynamically import hyphenated script: check-subagents-liveness.py
 liveness_script_path = os.path.join(scripts_dir, "adapter", "sandbox", "check-subagents-liveness.py")

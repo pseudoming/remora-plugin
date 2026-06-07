@@ -7,7 +7,7 @@ import json
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'sidecars', 'memory-compactor')))
 
-import lib.dao as dao
+from adapter.bridge.paths import get_db_path
 import adapter.bridge.paths as paths
 
 TEST_DB_PATH = "/tmp/test_remora_db_sync.db"

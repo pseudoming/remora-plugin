@@ -7,7 +7,8 @@ from unittest.mock import patch
 # Ensure scripts dir is on PATH
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import lib.dao as dao
+from adapter.bridge.paths import get_db_path
+from core.storage.maintenance import prune_expired_watermarks, run_topic_garbage_collection
 import adapter.bridge.paths as paths
 
 @pytest.fixture
@@ -73,7 +74,7 @@ def test_run_topic_garbage_collection_lock_contention(temp_db, monkeypatch):
     
     # Attempting to run GC should face contention, raise sqlite3.OperationalError and sys.exit(1)
     with pytest.raises(SystemExit) as excinfo:
-        dao.run_topic_garbage_collection()
+        run_topic_garbage_collection()
         
     assert excinfo.value.code == 1
     
@@ -103,7 +104,7 @@ def test_prune_expired_watermarks_lock_contention(temp_db, monkeypatch, tmp_path
     
     # Prune should run, attempt delete with exclusive transaction, fail, and exit(1)
     with pytest.raises(SystemExit) as excinfo:
-        dao.prune_expired_watermarks(str(brain_dir))
+        prune_expired_watermarks(str(brain_dir))
         
     assert excinfo.value.code == 1
     

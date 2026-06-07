@@ -9,7 +9,7 @@ from unittest.mock import patch
 # Ensure scripts dir is on PATH
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import lib.filesystem as filesystem
+import core.filesystem as filesystem
 import adapter.bridge.stats as stats
 
 @pytest.fixture

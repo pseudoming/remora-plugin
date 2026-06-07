@@ -3,7 +3,7 @@ import json
 import sqlite3
 from typing import Optional, List, Dict, Any, Generator
 
-from lib.proto_decoder import extract_step_payload
+from core.proto_decoder import extract_step_payload
 
 class ConversationDataAccessLayer:
     """

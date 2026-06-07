@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
-from lib.filesystem import get_snapshot
+from core.filesystem import get_snapshot
 from adapter.bridge.context import hook_entrypoint
 
 @hook_entrypoint(fallback_result={"injectSteps": []})

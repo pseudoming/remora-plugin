@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 
 from adapter.bridge.context import hook_entrypoint, get_profiler
-from lib.filesystem import get_snapshot, get_active_files
+from core.filesystem import get_snapshot, get_active_files
 from adapter.bridge.paths import extract_conv_id
 from adapter.bridge.session import read_mode
 from core.logger import warn, error, debug

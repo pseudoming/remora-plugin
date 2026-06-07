@@ -96,7 +96,7 @@ def test_proto_role_parsing(tmp_path, monkeypatch):
     import sys
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'scripts')))
     from adapter.bridge.conversation import ConversationDataAccessLayer
-    from lib.proto_decoder import extract_step_payload
+    from core.proto_decoder import extract_step_payload
 
     # Test raw decoding function directly first
     # 1. User role: tag 5 -> tag 3 -> 4
