@@ -5,7 +5,7 @@ from core.logger import debug
 
 _DB_PATH = os.environ.get(
     "REMORA_DB_PATH",
-    os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", "remora", "remora_memory.db")
+    os.path.join(os.path.expanduser("~"), ".remora", "data", "remora_memory.db")
 )
 
 def get_db_path():
