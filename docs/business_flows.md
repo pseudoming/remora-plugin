@@ -66,7 +66,7 @@ sequenceDiagram
      * 校验全局累积读取限制（Source 400KB，Data 150KB），超限则拒绝。
   5. **若调用 `run_command`**：
      * 拦截直接拉取敏感日志的 `cat`, `grep`, `jq`, `awk` 等命令。
-     * 调用 `safety_rules.py` 递归解构 nested shell，进行 Base64 解密和环境变量展开校验。
+      * 调用 `inspector.py`（核心规则引擎）递归解构 nested shell，进行 Base64 解密和环境变量展开校验。
      * 对编译（`build`）和测试（`test`）等繁重物理行为强制委派至 `Remora_Deep_Diver`，主特工环境拒绝执行。
   6. **若调用 `grep_search`**：
      * 阻止直接扫描特工专属元数据目录或巨型 JSONL 日志路径。

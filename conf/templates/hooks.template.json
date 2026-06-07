@@ -28,7 +28,7 @@
       },
       {
         "type": "command",
-        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/check-subagents-liveness.py",
+        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/adapter/sandbox/check-subagents-liveness.py",
         "timeout": 30
       }
     ],
@@ -79,12 +79,12 @@
       },
       {
         "type": "command",
-        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/clean-session-stats.py",
+        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/adapter/maintenance/clean-session-stats.py",
         "timeout": 15
       },
       {
         "type": "command",
-        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/check-subagents-liveness.py",
+        "command": "{PYTHON} {PLUGIN_ROOT}/scripts/adapter/sandbox/check-subagents-liveness.py",
         "timeout": 30
       }
     ]
