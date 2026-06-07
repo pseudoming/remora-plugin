@@ -4,6 +4,7 @@ import json
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from adapter.bridge.paths import get_data_dir
+from core.liveness import HEAVY_TOOLS, judge_zombie
 import subprocess
 from datetime import datetime, timezone
 
@@ -66,14 +67,7 @@ def main():
     now = datetime.now(timezone.utc)
     idle_seconds = int((now - last_update).total_seconds())
     
-    # 重型耗时指令白名单，包含物理执行和大规模只读搜索，覆盖 ReadOnly 等子代理的需求
-    heavy_tools = {"run_command", "grep_search"}
-    is_heavy = last_tool_name in heavy_tools
-    
-    # 调整阈值：重型物理操作放宽至 180s。考虑到长上下文 Agent 推理思考耗时长，普通 API 查询/思考判定阈值提升至 60s
-    limit = 180 if is_heavy else 60
-    
-    is_zombie = idle_seconds > limit
+    is_zombie, limit = judge_zombie(idle_seconds, last_tool_name)
     status = "zombie" if is_zombie else "active"
     
     # 物理维护自愈重试计数 (绑定 parent_conv_id)

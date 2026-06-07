@@ -1,0 +1,73 @@
+import re
+from datetime import datetime, timezone
+from typing import List, Optional, Set, Tuple, Union
+
+HARD_KEYWORDS: List[str] = []
+SOFT_KEYWORDS: List[str] = []
+
+RELAX_PATTERN = r'(草稿|想法|设计|讨论|讨论下|建议|draft|brainstorm|design|suggest|discuss)'
+
+HEAVY_TOOLS: Set[str] = {"run_command", "grep_search"}
+
+
+def clean_system_reminders(text: str) -> str:
+    return re.sub(r'<system-reminder>.*?</system-reminder>', '', text, flags=re.DOTALL)
+
+
+def detect_mode(clean_msg: str, hard_keywords: Optional[List[str]] = None, soft_keywords: Optional[List[str]] = None) -> str:
+    mode = "strict"
+    if re.search(RELAX_PATTERN, clean_msg, re.IGNORECASE):
+        mode = "relax"
+    if hard_keywords and re.search(r'(' + '|'.join(hard_keywords) + r')', clean_msg, re.IGNORECASE):
+        mode = "strict"
+    return mode
+
+
+def parse_sqlite_timestamp(ts_val) -> float:
+    if ts_val is None:
+        return 0.0
+    if isinstance(ts_val, (int, float)):
+        return float(ts_val)
+
+    ts_str = str(ts_val).strip()
+    try:
+        return float(ts_str)
+    except ValueError:
+        pass
+
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            clean_str = ts_str.split('+')[0].split('Z')[0]
+            dt = datetime.strptime(clean_str, fmt)
+            return dt.replace(tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+
+    return 0.0
+
+
+def find_all_uuids(val, parent_id):
+    uuids = set()
+    if isinstance(val, str):
+        matches = re.findall(r'\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b', val)
+        for m in matches:
+            if m != parent_id:
+                uuids.add(m)
+    elif isinstance(val, dict):
+        for k, v in val.items():
+            if k in ("conversationId", "conversation_id") and isinstance(v, str):
+                if v != parent_id:
+                    uuids.add(v)
+            else:
+                uuids.update(find_all_uuids(v, parent_id))
+    elif isinstance(val, (list, tuple)):
+        for item in val:
+            uuids.update(find_all_uuids(item, parent_id))
+    return uuids
+
+
+def judge_zombie(idle_seconds: int, tool_name: str) -> Tuple[bool, int]:
+    is_heavy = tool_name in HEAVY_TOOLS
+    limit = 180 if is_heavy else 60
+    is_zombie = idle_seconds > limit
+    return (is_zombie, limit)

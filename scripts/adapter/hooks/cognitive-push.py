@@ -9,8 +9,7 @@ from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.paths import extract_conv_id
 from lib import dao
 from core.logger import warn, error, debug
-
-MAX_CHARS = 750  # 粗略控制 300 tokens 预算上限
+from core.injector import truncate_decisions
 
 def _get_active_topic_and_decisions(uuid):
     topic_id = dao.get_active_topic(uuid)
@@ -19,19 +18,6 @@ def _get_active_topic_and_decisions(uuid):
     
     decisions = dao.get_confirmed_decisions(uuid, topic_id)
     return topic_id, decisions
-
-def _truncate_decisions(decisions):
-    # 控制 300 Tokens 内预算截断
-    texts = []
-    current_len = 0
-    for d in decisions:
-        text = d["text"]
-        if current_len + len(text) > MAX_CHARS:
-            texts.append(text[:(MAX_CHARS - current_len)] + "...")
-            break
-        texts.append(text)
-        current_len += len(text)
-    return "\n- ".join(texts)
 
 def _handle_pre_invocation(context, conv_id, current_turn_idx):
     # 检查同回合内是否已经注入过会话重载提示
@@ -74,7 +60,7 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
     topic_id, decisions = _get_active_topic_and_decisions(uuid)
     
     if decisions:
-        decision_text = _truncate_decisions(decisions)
+        decision_text = truncate_decisions(decisions)
         debug(f"session resumed: {conv_id}, injecting {len(decisions)} decisions")
         # 中文翻译：
         # ⚠️ REMORA 会话恢复警告：

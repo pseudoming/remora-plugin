@@ -15,31 +15,7 @@ if scripts_dir not in sys.path:
 from adapter.bridge import paths
 from lib import dao
 from core.logger import warn, debug
-
-def parse_sqlite_timestamp(ts_val) -> float:
-    """将 SQLite 中不同格式的 timestamp 转换为 unix 时间戳"""
-    if ts_val is None:
-        return 0.0
-    if isinstance(ts_val, (int, float)):
-        return float(ts_val)
-    
-    ts_str = str(ts_val).strip()
-    try:
-        return float(ts_str)
-    except ValueError:
-        pass
-        
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
-        try:
-            # 强制统一作为 UTC 时间戳处理。
-            # 因为底层的 warm_storage_sync.py 在入库时物理暴力移除了 'Z'，使得库内时间虽然无后缀，但实则为 UTC。
-            clean_str = ts_str.split('+')[0].split('Z')[0]
-            dt = datetime.strptime(clean_str, fmt)
-            return dt.replace(tzinfo=timezone.utc).timestamp()
-        except ValueError:
-            continue
-    
-    return 0.0
+from core.liveness import parse_sqlite_timestamp, find_all_uuids
 
 def run_audit(conv_id: str, parent_conv_id: str = None) -> dict:
     # 1. 物理读取 progress.json
@@ -294,26 +270,6 @@ def run_as_hook(input_data):
                         is_in_active_topic = True
             if is_in_last_20 or is_in_active_topic:
                 filtered_steps.append(step)
-
-        def find_all_uuids(val, parent_id):
-            uuids = set()
-            import re
-            if isinstance(val, str):
-                matches = re.findall(r'\b[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\b', val)
-                for m in matches:
-                    if m != parent_id:
-                        uuids.add(m)
-            elif isinstance(val, dict):
-                for k, v in val.items():
-                    if k in ("conversationId", "conversation_id") and isinstance(v, str):
-                        if v != parent_id:
-                            uuids.add(v)
-                    else:
-                        uuids.update(find_all_uuids(v, parent_id))
-            elif isinstance(val, (list, tuple)):
-                for item in val:
-                    uuids.update(find_all_uuids(item, parent_id))
-            return uuids
 
         candidate_subagent_ids = set()
         for step in filtered_steps:

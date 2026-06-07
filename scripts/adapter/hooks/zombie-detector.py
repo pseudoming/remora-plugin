@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from adapter.bridge.paths import HOOKS_PROFILE_LOG
 from adapter.bridge.context import hook_entrypoint
 from core.logger import warn, error
+from core.zombie import get_sys_uptime, clean_whitelist, INFRASTRUCTURE_KEYWORDS
 
 def log_duration(elapsed, exit_code=0):
     try:
@@ -19,40 +20,6 @@ def log_duration(elapsed, exit_code=0):
     except Exception:
         pass
 
-def get_sys_uptime():
-    try:
-        with open('/proc/uptime', 'r') as f:
-            return float(f.read().split()[0])
-    except Exception:
-        return 0.0
-
-def clean_whitelist(whitelist_path):
-    if not os.path.exists(whitelist_path):
-        return set()
-        
-    valid_pids = set()
-    dirty = False
-    
-    try:
-        with open(whitelist_path, 'r') as f:
-            for line in f:
-                pid = line.strip()
-                if not pid: continue
-                if os.path.exists(f"/proc/{pid}"):
-                    valid_pids.add(pid)
-                else:
-                    dirty = True
-                    
-        if dirty:
-            os.makedirs(os.path.dirname(whitelist_path), exist_ok=True)
-            with open(whitelist_path, 'w') as f:
-                for pid in valid_pids:
-                    f.write(f"{pid}\n")
-    except Exception:
-        pass
-        
-    return valid_pids
-
 @hook_entrypoint(fallback_result={"decision": "allow"})
 def main(context):
     t0 = time.perf_counter()
@@ -64,12 +31,8 @@ def main(context):
     whitelist_path = os.path.expanduser("~/.remora/zombie_whitelist")
     whitelisted_pids = clean_whitelist(whitelist_path)
     
-    infrastructure_keywords = {
-        "compactor.py", "safety-check.py", "zombie-detector.py", 
-        "cognitive-push.py", "snapshot-git.py", "session-guardian.py", 
-        "tone-injector.py", "clean-session-stats.py", "action-gate.py",
-        "shellIntegration-bash.sh"
-    }
+    # 基础设施进程白名单，防止僵尸检测器误杀自身
+    infrastructure_keywords = INFRASTRUCTURE_KEYWORDS
 
     is_tool_use = (context and isinstance(context, dict) and context.get('toolCall') is not None)
 

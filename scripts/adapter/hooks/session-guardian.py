@@ -7,6 +7,7 @@ from core.logger import warn, error
 
 import json, re, subprocess
 from adapter.bridge.subagent import get_subagent_type, AGENTAPI_BIN
+from core.liveness import clean_system_reminders, detect_mode, HARD_KEYWORDS, SOFT_KEYWORDS
 
 @hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Session Guardian 发生异常。状态同步防线已降级，但不影响正常对话。</system-reminder>"}]})
 def main(context):
@@ -265,16 +266,10 @@ def main(context):
 
     # 意图探测逻辑
     # 剥离前置注入的系统提醒，防止其携带的关键字（例如提醒中包含的路径/remora/）引发无限自反馈死循环
-    clean_msg = re.sub(r'<system-reminder>.*?</system-reminder>', '', last_msg, flags=re.DOTALL)
+    clean_msg = clean_system_reminders(last_msg)
 
     # 模式检测自适应：若包含探讨发散性关键词（草稿、想法、设计、讨论、讨论下、建议），设定为 relax，否则 strict
-    mode = "strict"
-    relax_pattern = r'(草稿|想法|设计|讨论|讨论下|建议|draft|brainstorm|design|suggest|discuss)'
-    if re.search(relax_pattern, clean_msg, re.IGNORECASE):
-        mode = "relax"
-    # 强拦截词强制覆写为 strict 确保高危防御不逃逸
-    if hard_kws and re.search(r'(' + '|'.join(hard_kws) + r')', clean_msg, re.IGNORECASE):
-        mode = "strict"
+    mode = detect_mode(clean_msg, hard_keywords=hard_kws, soft_keywords=soft_kws)
         
     # 跨进程状态机同步 (写入 SQLite session_state 同步表，支持多拦截器 IPC)
     # 首次插入 is_cold_start = 1，更新时保持原有 is_cold_start，将其消费职责留给 Phase 26

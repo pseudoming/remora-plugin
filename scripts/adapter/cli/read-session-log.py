@@ -5,6 +5,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from adapter.bridge.conversation import ConversationDataAccessLayer
+from core.reader import filter_user_ai_rounds
 
 def read_last_user_ai_rounds(conv_id, rounds=10):
     cdal = ConversationDataAccessLayer(conv_id)
@@ -13,22 +14,9 @@ def read_last_user_ai_rounds(conv_id, rounds=10):
         print(f"Error: db path not found for ID: {conv_id}")
         sys.exit(1)
         
-    rounds_data = []
     try:
         limit = rounds * 50
-        for step in cdal.stream_steps_reverse(limit=limit):
-            step_type = step.get('type')
-            content = step.get('content', '')
-            if not content:
-                continue
-                
-            if step_type in ('USER_INPUT', 'PLANNER_RESPONSE'):
-                rounds_data.append({
-                    "role": "user" if step_type == 'USER_INPUT' else "assistant",
-                    "content": content[:1000] # Limit output to avoid context explosion
-                })
-                if len(rounds_data) >= rounds * 2:
-                    break
+        rounds_data = filter_user_ai_rounds(cdal.stream_steps_reverse(limit=limit), rounds=rounds)
     except Exception as e:
         print(f"Error reading db: {e}")
         sys.exit(1)

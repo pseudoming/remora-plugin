@@ -9,6 +9,7 @@ from pathlib import Path
 
 from adapter.bridge.context import hook_entrypoint, get_profiler
 from core.filesystem import get_snapshot, get_active_files
+from core.phantom import normalize_filepath, ACTION_PATTERNS
 from adapter.bridge.paths import extract_conv_id
 from adapter.bridge.session import read_mode
 from core.logger import warn, error, debug
@@ -88,18 +89,6 @@ def get_physical_modifications(cwd, transcript_path):
         return modified_files
     except Exception:
         return set()
-
-def normalize_filepath(arguments_dict):
-    """标准化提取同义路径键名，带类型防护"""
-    if not isinstance(arguments_dict, dict):
-        return ""
-    aliases = ["TargetFile", "AbsolutePath", "FilePath", "Target"]
-    for alias in aliases:
-        val = arguments_dict.get(alias)
-        if val and isinstance(val, str):
-            val = val.strip('\'"')
-            return os.path.basename(val)
-    return ""
 
 from adapter.bridge.conversation import ConversationDataAccessLayer
 
@@ -232,32 +221,9 @@ def main(context):
     if mode == "relax":
         return {"injectSteps": [], "terminationBehavior": ""}
 
-    action_patterns = [
-        # 1. 匹配 Markdown 链接中被声明修改的文件名
-        r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*\[([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)\]\(file:///[^\)]+\)''',
-        
-        # 2. 匹配已在...中 [修改/更新/...] 的模式
-        r'''(?:已|成功)在\s*\[([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)\]\(file:///[^\)]+\)\s*中\s*(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?''',
-        
-        # 3. 匹配中文已在 <file> 中 [修改/更新/...] 的模式
-        r'''(?:已|成功)在\s*[`'"?]?([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"?]?\s*中\s*(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?''',
-        
-        # 4. 匹配中文动词 + 有引号的文件名 (要求完成时态)
-        r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*[`'"?](([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+))[`'"?]?''',
-        
-        # 5. 匹配中文动词 + 无引号的文件名 (要求完成时态)
-        r'''(?:(?:已|成功)(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了?|(?:修改|更新|覆写|写入|创建|修正|调整|重写|添加)了)(?:文件)?\s*\b([a-zA-Z0-9_\-\.\/]+\.(?:py|md|json|sql|js|ts|sh|xml|txt|jsonl|log))\b''',
-        
-        # 6. 匹配英文动词 + 有引号的文件名
-        r'''(?:updated|modified|written|created|overwritten|adjusted|rewritten)\s*(?:file)?\s*[`'"?]([a-zA-Z0-9_\-\.\/]+\.[a-zA-Z0-9]+)[`'"?]?''',
-        
-        # 7. 匹配英文动词 + 无引号的文件名
-        r'''(?:updated|modified|written|created|overwritten|adjusted|rewritten)\s*(?:file)?\s*\b([a-zA-Z0-9_\-\.\/]+\.(?:py|md|json|sql|js|ts|sh|xml|txt|jsonl|log))\b'''
-    ]
-    
     declared_files = set()
-    for pattern in action_patterns:
-        matches = re.findall(pattern, planner_text, re.IGNORECASE)
+    for pattern in ACTION_PATTERNS:
+        matches = pattern.findall(planner_text)
         for path in matches:
             if isinstance(path, tuple):
                 path = [x for x in path if x][0]
