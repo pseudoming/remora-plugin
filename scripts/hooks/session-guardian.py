@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import sys, os
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.context import hook_entrypoint
 from lib.stats import cleanup, get_stats
 
@@ -10,8 +10,9 @@ from lib.subagent import get_subagent_type
 @hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Session Guardian 发生异常。状态同步防线已降级，但不影响正常对话。</system-reminder>"}]})
 def main(context):
     # 0. Fail-Fast 探测环境是否已被 install.py 初始化
-    if os.path.dirname(__file__) not in sys.path:
-        sys.path.insert(0, os.path.dirname(__file__))
+    scripts_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
     from lib.paths import get_data_dir
     initialized_file = os.path.join(get_data_dir(), ".runtime", "installed.flag")
     if not os.path.exists(initialized_file):
@@ -76,7 +77,7 @@ def main(context):
         pass
     
     # 动态读取 keywords.json 获取触发词
-    keywords_config_path = os.path.join(os.path.dirname(__file__), 'keywords.json')
+    keywords_config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'rules', 'keywords.json')
     hard_kws = []
     soft_kws = []
     try:

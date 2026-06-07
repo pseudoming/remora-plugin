@@ -138,7 +138,7 @@ def main():
     if os.path.exists(init_script):
         os.remove(init_script)
 
-    schema_script = os.path.join(plugin_root, "scripts", "schema_init.py")
+    schema_script = os.path.join(plugin_root, "scripts", "schema", "schema_init.py")
     if os.path.exists(schema_script):
         print("Initializing SQLite Database Schema...")
         subprocess.check_call([sys.executable, schema_script])
@@ -185,8 +185,8 @@ def main():
     # 6. 赋予执行权限
 
         
-    for pattern in ["scripts/*.py", "scripts/*.sh", "sidecars/memory-compactor/*.py", "install.py", "mcp_config.json"]:
-        for file_path in glob.glob(os.path.join(plugin_root, pattern)):
+    for pattern in ["scripts/**/*.py", "scripts/**/*.sh", "sidecars/memory-compactor/*.py", "install.py", "mcp_config.json"]:
+        for file_path in glob.glob(os.path.join(plugin_root, pattern), recursive=True):
             if os.path.exists(file_path):
                 st = os.stat(file_path)
                 os.chmod(file_path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

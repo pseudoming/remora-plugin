@@ -7,7 +7,7 @@ import sqlite3
 import subprocess
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
-from schema_init import DB_PATH, DATA_DIR
+from schema.schema_init import DB_PATH, DATA_DIR
 
 from scan_sessions import (
     get_active_conversations,

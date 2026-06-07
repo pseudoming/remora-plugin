@@ -10,7 +10,7 @@ import sys
 import argparse
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
-from schema_init import DB_PATH, DATA_DIR, init_db
+from schema.schema_init import DB_PATH, DATA_DIR, init_db
 from session_gc import prune_expired_watermarks
 from topic_gc import run_garbage_collection
 

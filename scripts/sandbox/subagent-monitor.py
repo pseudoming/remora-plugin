@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-from lib.paths import get_data_dir
 import sys
 import json
 import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from lib.paths import get_data_dir
 import subprocess
 from datetime import datetime, timezone
 

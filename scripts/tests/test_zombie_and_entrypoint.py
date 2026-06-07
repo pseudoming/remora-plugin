@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 # Dynamically import hyphenated script
 spec = importlib.util.spec_from_file_location(
     "zombie_detector", 
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "zombie-detector.py"))
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "hooks", "zombie-detector.py"))
 )
 zombie_detector = importlib.util.module_from_spec(spec)
 sys.modules["zombie_detector"] = zombie_detector

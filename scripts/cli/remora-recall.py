@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys, os, re
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def main():
     if len(sys.argv) < 2:
         print("Usage: remora-recall.py <keyword> [project_uuid]")

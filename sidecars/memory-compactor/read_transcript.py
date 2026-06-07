@@ -6,7 +6,7 @@ import sqlite3
 import re
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
-from schema_init import DB_PATH
+from schema.schema_init import DB_PATH
 
 from scan_sessions import is_subagent_session
 from lib.conversation import ConversationDataAccessLayer

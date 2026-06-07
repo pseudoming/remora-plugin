@@ -12,6 +12,10 @@ if scripts_dir not in sys.path:
     sys.path.insert(0, scripts_dir)
 
 import importlib
+# safety-check now lives in hooks/, add it to path for module import
+_hooks_dir = os.path.join(scripts_dir, 'hooks')
+if _hooks_dir not in sys.path:
+    sys.path.insert(0, _hooks_dir)
 safety_check = importlib.import_module("safety-check")
 
 orig_exists = os.path.exists

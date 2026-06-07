@@ -5,6 +5,8 @@ import pytest
 
 # Ensure scripts dir is on PATH
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# cleanup_ghost_records now lives in maintenance/, add it to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'maintenance')))
 
 import cleanup_ghost_records
 

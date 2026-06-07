@@ -9,7 +9,8 @@ root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-from scripts import safety_rules
+sys.path.insert(0, os.path.join(root_dir, "scripts", "rules"))
+import safety_rules
 
 
 class TestDecodeBase64Token(unittest.TestCase):
@@ -112,7 +113,7 @@ class TestBase64Audit(unittest.TestCase):
     def test_base64_whitelisted_token_skipped(self):
         dangerous_cmd = "echo 1 ; pytest xyz"
         b64_token = base64.b64encode(dangerous_cmd.encode()).decode()
-        with patch("scripts.safety_rules.BASE64_WHITELIST", [b64_token]):
+        with patch("safety_rules.BASE64_WHITELIST", [b64_token]):
             self.assertEqual(
                 safety_rules.inspect_command(f"echo {b64_token}"),
                 ("allow", ""),
@@ -121,7 +122,7 @@ class TestBase64Audit(unittest.TestCase):
     def test_base64_decoded_in_whitelist_skips_inspection(self):
         dangerous_cmd = "echo 1 ; pytest xyz"
         b64_token = base64.b64encode(dangerous_cmd.encode()).decode()
-        with patch("scripts.safety_rules.BASE64_WHITELIST", [dangerous_cmd]):
+        with patch("safety_rules.BASE64_WHITELIST", [dangerous_cmd]):
             self.assertEqual(
                 safety_rules.inspect_command(f"echo {b64_token}"),
                 ("allow", ""),

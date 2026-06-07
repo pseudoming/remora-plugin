@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'rules'))
 from lib.paths import get_data_dir
-sys.path.insert(0, os.path.dirname(__file__))
 from lib.context import hook_entrypoint
 from lib.session import read_mode
 from lib.stats import accumulate

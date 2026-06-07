@@ -20,20 +20,20 @@ def load_module(module_name, file_name):
     spec.loader.exec_module(module)
     return module
 
-session_gc = load_module("session_gc", "session_gc.py")
-topic_gc = load_module("topic_gc", "topic_gc.py")
-clean_session_stats = load_module("clean_session_stats", "clean-session-stats.py")
+session_gc = load_module("session_gc", "maintenance/session_gc.py")
+topic_gc = load_module("topic_gc", "maintenance/topic_gc.py")
+clean_session_stats = load_module("clean_session_stats", "maintenance/clean-session-stats.py")
 tone_injector = load_module("tone_injector", "tone-injector.py")
-remora_init = load_module("remora_init", "remora_init.py")
-read_session_log = load_module("read_session_log", "read-session-log.py")
-remora_recall = load_module("remora_recall", "remora-recall.py")
-remora_topic = load_module("remora_topic", "remora-topic.py")
-sandbox_merge = load_module("sandbox_merge", "sandbox-merge.py")
-schema_init = load_module("schema_init", "schema_init.py")
+remora_init = load_module("remora_init", "cli/remora_init.py")
+read_session_log = load_module("read_session_log", "cli/read-session-log.py")
+remora_recall = load_module("remora_recall", "cli/remora-recall.py")
+remora_topic = load_module("remora_topic", "cli/remora-topic.py")
+sandbox_merge = load_module("sandbox_merge", "sandbox/sandbox-merge.py")
+schema_init = load_module("schema_init", "schema/schema_init.py")
 snapshot_git = load_module("snapshot_git", "snapshot-git.py")
-cognitive_push = load_module("cognitive_push", "cognitive-push.py")
-session_guardian = load_module("session_guardian", "session-guardian.py")
-subagent_monitor = load_module("subagent_monitor", "subagent-monitor.py")
+cognitive_push = load_module("cognitive_push", "hooks/cognitive-push.py")
+session_guardian = load_module("session_guardian", "hooks/session-guardian.py")
+subagent_monitor = load_module("subagent_monitor", "sandbox/subagent-monitor.py")
 
 
 # 1. session_gc.py
@@ -106,7 +106,7 @@ def test_remora_init_already_initialized(tmp_path):
         }
     }))
     
-    init_py_path = str(plugin_dir / "scripts" / "remora_init.py")
+    init_py_path = str(plugin_dir / "scripts" / "cli" / "remora_init.py")
     with patch("remora_init.__file__", init_py_path):
         initialized = remora_init.init_environment()
         assert not initialized
@@ -119,7 +119,7 @@ def test_remora_init_new_installation(tmp_path):
     config_file = tmp_path / "config.json"
     config_file.write_text(json.dumps({}))
     
-    init_py_path = str(plugin_dir / "scripts" / "remora_init.py")
+    init_py_path = str(plugin_dir / "scripts" / "cli" / "remora_init.py")
     with patch("remora_init.__file__", init_py_path), \
          patch("glob.glob", return_value=["dummy_script.py"]), \
          patch("os.stat"), \
@@ -309,12 +309,12 @@ def test_gc_scripts_main_execution():
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     
     # 1. session_gc
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "session_gc.py")], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "maintenance", "session_gc.py")], capture_output=True)
     # Since default brain dir may or may not exist, we just check that it runs and exits
     assert res.returncode in [0, 1]
 
     # 2. topic_gc
-    res2 = subprocess.run([sys.executable, os.path.join(scripts_dir, "topic_gc.py")], capture_output=True)
+    res2 = subprocess.run([sys.executable, os.path.join(scripts_dir, "maintenance", "topic_gc.py")], capture_output=True)
     assert res2.returncode in [0, 1]
 
 
@@ -343,9 +343,9 @@ def test_session_gc_main_block():
     import types
     mod = types.ModuleType("session_gc_maintest")
     mod.__dict__["__name__"] = "__main__"
-    mod.__dict__["__file__"] = os.path.join(scripts_dir, "session_gc.py")
+    mod.__dict__["__file__"] = os.path.join(scripts_dir, "maintenance", "session_gc.py")
     with patch("lib.dao.prune_expired_watermarks") as mock_prune:
-        filepath = os.path.join(scripts_dir, "session_gc.py")
+        filepath = os.path.join(scripts_dir, "maintenance", "session_gc.py")
         with open(filepath) as f:
             source = f.read()
         code = compile(source, filepath, 'exec')
@@ -361,7 +361,7 @@ def test_session_gc_syspath_insert_coverage():
         sys.path.remove(scripts_dir_norm)
         removed.append(scripts_dir_norm)
     try:
-        filepath = os.path.join(scripts_dir, "session_gc.py")
+        filepath = os.path.join(scripts_dir, "maintenance", "session_gc.py")
         spec = importlib.util.spec_from_file_location("session_gc_cov_test", filepath)
         mod = importlib.util.module_from_spec(spec)
         sys.modules["session_gc_cov_test"] = mod
@@ -376,9 +376,9 @@ def test_topic_gc_main_block():
     import types
     mod = types.ModuleType("topic_gc_maintest")
     mod.__dict__["__name__"] = "__main__"
-    mod.__dict__["__file__"] = os.path.join(scripts_dir, "topic_gc.py")
+    mod.__dict__["__file__"] = os.path.join(scripts_dir, "maintenance", "topic_gc.py")
     with patch("lib.dao.run_topic_garbage_collection") as mock_gc:
-        filepath = os.path.join(scripts_dir, "topic_gc.py")
+        filepath = os.path.join(scripts_dir, "maintenance", "topic_gc.py")
         with open(filepath) as f:
             source = f.read()
         code = compile(source, filepath, 'exec')
@@ -394,7 +394,7 @@ def test_topic_gc_syspath_insert_coverage():
         sys.path.remove(scripts_dir_norm)
         removed.append(scripts_dir_norm)
     try:
-        filepath = os.path.join(scripts_dir, "topic_gc.py")
+        filepath = os.path.join(scripts_dir, "maintenance", "topic_gc.py")
         spec = importlib.util.spec_from_file_location("topic_gc_cov_test", filepath)
         mod = importlib.util.module_from_spec(spec)
         sys.modules["topic_gc_cov_test"] = mod
@@ -409,9 +409,9 @@ def test_schema_init_main_block(tmp_path):
     import types
     mod = types.ModuleType("schema_init_maintest")
     mod.__dict__["__name__"] = "__main__"
-    mod.__dict__["__file__"] = os.path.join(scripts_dir, "schema_init.py")
+    mod.__dict__["__file__"] = os.path.join(scripts_dir, "schema", "schema_init.py")
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)):
-        filepath = os.path.join(scripts_dir, "schema_init.py")
+        filepath = os.path.join(scripts_dir, "schema", "schema_init.py")
         with open(filepath) as f:
             source = f.read()
         code = compile(source, filepath, 'exec')
@@ -424,9 +424,9 @@ def test_topic_gc_main_block():
     import types
     mod = types.ModuleType("topic_gc_maintest")
     mod.__dict__["__name__"] = "__main__"
-    mod.__dict__["__file__"] = os.path.join(scripts_dir, "topic_gc.py")
+    mod.__dict__["__file__"] = os.path.join(scripts_dir, "maintenance", "topic_gc.py")
     with patch("lib.dao.run_topic_garbage_collection") as mock_gc:
-        source = open(os.path.join(scripts_dir, "topic_gc.py")).read()
+        source = open(os.path.join(scripts_dir, "maintenance", "topic_gc.py")).read()
         exec(source, mod.__dict__)
         mock_gc.assert_called_once()
 
@@ -436,11 +436,11 @@ def test_schema_init_main_block(tmp_path):
     import types
     mod = types.ModuleType("schema_init_maintest")
     mod.__dict__["__name__"] = "__main__"
-    mod.__dict__["__file__"] = os.path.join(scripts_dir, "schema_init.py")
+    mod.__dict__["__file__"] = os.path.join(scripts_dir, "schema", "schema_init.py")
     # Redirect DB_PATH to a temp location to avoid side effects
     fake_db = tmp_path / "fake_memory.db"
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)):
-        source = open(os.path.join(scripts_dir, "schema_init.py")).read()
+        source = open(os.path.join(scripts_dir, "schema", "schema_init.py")).read()
         exec(source, mod.__dict__)
 def test_snapshot_git(tmp_path):
     # Prepare mock transcriptPath and directories
@@ -633,7 +633,7 @@ def test_session_guardian_success(tmp_path, capsys):
     (runtime_dir / "installed.flag").touch()
     
     # Write mock keywords.json
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": ["strict_kw"], "soft_keywords": ["relax_kw"]}, f)
 
@@ -759,7 +759,7 @@ def test_session_guardian_subagent_warning(tmp_path):
     (runtime_dir / "installed.flag").touch()
     
     # Write mock keywords.json
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
 
@@ -879,10 +879,10 @@ def test_read_session_log_main_block_no_args():
     import types
     mod = types.ModuleType("read_session_log_maintest")
     mod.__dict__["__name__"] = "__main__"
-    mod.__dict__["__file__"] = os.path.join(scripts_dir, "read-session-log.py")
+    mod.__dict__["__file__"] = os.path.join(scripts_dir, "cli", "read-session-log.py")
     with patch("sys.argv", ["read-session-log.py"]), \
          patch.object(sys, "exit", side_effect=SystemExit) as mock_exit:
-        filepath = os.path.join(scripts_dir, "read-session-log.py")
+        filepath = os.path.join(scripts_dir, "cli", "read-session-log.py")
         with open(filepath) as f:
             source = f.read()
         code = compile(source, filepath, 'exec')
@@ -898,7 +898,7 @@ def test_read_session_log_main_block_with_args(capsys):
     import types
     mod = types.ModuleType("read_session_log_maintest2")
     mod.__dict__["__name__"] = "__main__"
-    mod.__dict__["__file__"] = os.path.join(scripts_dir, "read-session-log.py")
+    mod.__dict__["__file__"] = os.path.join(scripts_dir, "cli", "read-session-log.py")
     with patch("sys.argv", ["read-session-log.py", "conv_id_1", "5"]), \
          patch.object(sys, "exit", side_effect=SystemExit), \
          patch("os.path.exists", return_value=True), \
@@ -909,7 +909,7 @@ def test_read_session_log_main_block_with_args(capsys):
             {"type": "PLANNER_RESPONSE", "content": "resp1"},
         ]
         mock_cdal_cls.return_value = mock_cdal
-        filepath = os.path.join(scripts_dir, "read-session-log.py")
+        filepath = os.path.join(scripts_dir, "cli", "read-session-log.py")
         with open(filepath) as f:
             source = f.read()
         code = compile(source, filepath, 'exec')
@@ -927,7 +927,7 @@ def test_read_session_log_main_block_path_arg(capsys):
     import types
     mod = types.ModuleType("read_session_log_maintest3")
     mod.__dict__["__name__"] = "__main__"
-    mod.__dict__["__file__"] = os.path.join(scripts_dir, "read-session-log.py")
+    mod.__dict__["__file__"] = os.path.join(scripts_dir, "cli", "read-session-log.py")
     with patch("sys.argv", ["read-session-log.py", "/brain/conv_abc/transcript.jsonl"]), \
          patch.object(sys, "exit", side_effect=SystemExit), \
          patch("os.path.exists", return_value=True), \
@@ -937,7 +937,7 @@ def test_read_session_log_main_block_path_arg(capsys):
             {"type": "USER_INPUT", "content": "extracted"},
         ]
         mock_cdal_cls.return_value = mock_cdal
-        filepath = os.path.join(scripts_dir, "read-session-log.py")
+        filepath = os.path.join(scripts_dir, "cli", "read-session-log.py")
         with open(filepath) as f:
             source = f.read()
         code = compile(source, filepath, 'exec')
@@ -976,13 +976,13 @@ def test_read_session_log_limit_break(capsys):
 
 def test_read_session_log_cli_no_args():
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "read-session-log.py")], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "cli", "read-session-log.py")], capture_output=True)
     assert res.returncode == 1
     assert b"Usage:" in res.stdout
 
 def test_read_session_log_cli_path_arg():
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "read-session-log.py"), "/brain/conv_12345/transcript"], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "cli", "read-session-log.py"), "/brain/conv_12345/transcript"], capture_output=True)
     assert res.returncode == 1
     assert b"db path not found" in res.stdout
 
@@ -1033,7 +1033,7 @@ def test_remora_topic_force_cold_start_file_error(capsys):
 
 def test_remora_topic_main_execution():
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "remora-topic.py")], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "cli", "remora-topic.py")], capture_output=True)
     assert res.returncode == 2
 
 # === Edge case coverage for subagent-monitor.py ===
@@ -1165,18 +1165,18 @@ def test_read_session_log_rounds_break(capsys):
 
 def test_read_session_log_cli_main():
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "read-session-log.py")], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "cli", "read-session-log.py")], capture_output=True)
     assert res.returncode == 1
     assert b"Usage:" in res.stdout
 
 def test_sandbox_merge_main_execution():
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "sandbox-merge.py")], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "sandbox", "sandbox-merge.py")], capture_output=True)
     assert res.returncode == 1
 
 def test_subagent_monitor_main_execution():
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "subagent-monitor.py")], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "sandbox", "subagent-monitor.py")], capture_output=True)
     assert res.returncode == 1
 
 def test_remora_topic_confirm_sandbox_merge(capsys):
@@ -1212,7 +1212,7 @@ def test_remora_topic_confirm_no_worktrees(capsys):
 
 def test_remora_topic_main_execution():
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "remora-topic.py")], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "cli", "remora-topic.py")], capture_output=True)
     assert res.returncode == 2
 
 def test_subagent_monitor_planner_tool_calls(capsys):
@@ -1283,7 +1283,7 @@ def test_session_guardian_subagent_warning_history_fallback(tmp_path):
     (runtime_dir / "installed.flag").touch()
     
     # Write mock keywords.json
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
 
@@ -1418,7 +1418,7 @@ def test_session_guardian_main_syspath_insert(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1443,7 +1443,7 @@ def test_session_guardian_env_write_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1464,7 +1464,7 @@ def test_session_guardian_transcript_no_match(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1485,7 +1485,7 @@ def test_session_guardian_should_write_false(tmp_path):
     (runtime_dir / "installed.flag").touch()
     main_id_file = runtime_dir / "remora_main_conv_id.txt"
     main_id_file.write_text("existing_conv")
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     # Mock subprocess.run so get_subagent_type works and returns None
@@ -1514,7 +1514,7 @@ def test_session_guardian_exception_writing_main_id(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1542,7 +1542,7 @@ def test_session_guardian_all_skip_types_loop_exhaust(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1569,7 +1569,7 @@ def test_session_guardian_non_user_input_break(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1594,7 +1594,7 @@ def test_session_guardian_step_parsing_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1643,7 +1643,7 @@ def test_session_guardian_no_heartbeat_steps(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1662,7 +1662,7 @@ def test_session_guardian_schedule_no_subagent_monitor(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1688,7 +1688,7 @@ def test_session_guardian_uuid_already_set(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1719,7 +1719,7 @@ def test_session_guardian_uuid_matches_conv(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1759,7 +1759,7 @@ def test_session_guardian_manage_subagents_kill(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1786,7 +1786,7 @@ def test_session_guardian_system_confirm_kill(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1812,7 +1812,7 @@ def test_session_guardian_terminated_subagent_confirm(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1842,7 +1842,7 @@ def test_session_guardian_pass2_no_activity_match(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1868,7 +1868,7 @@ def test_session_guardian_pass2_history_type_skip(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1896,7 +1896,7 @@ def test_session_guardian_retry_cleanup_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1928,7 +1928,7 @@ def test_session_guardian_role_name_cache_exception(tmp_path):
     (runtime_dir / "installed.flag").touch()
     env_file = runtime_dir / "remora_agent_env.json"
     env_file.write_text("{corrupt}")
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1963,7 +1963,7 @@ def test_session_guardian_role_name_history_fallback_type_on_args(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -1995,7 +1995,7 @@ def test_session_guardian_role_name_no_subagents_list(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2028,7 +2028,7 @@ def test_session_guardian_role_name_history_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2062,7 +2062,7 @@ def test_session_guardian_hard_keyword_override(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": ["override_kw"], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2088,7 +2088,7 @@ def test_session_guardian_is_new_turn_cleanup(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2113,7 +2113,7 @@ def test_session_guardian_stats_exception(tmp_path):
     runtime_dir = tmp_path / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "installed.flag").touch()
-    keywords_path = os.path.join(os.path.dirname(session_guardian.__file__), "keywords.json")
+    keywords_path = os.path.join(os.path.dirname(os.path.dirname(session_guardian.__file__)), "rules", "keywords.json")
     with open(keywords_path, 'w') as f:
         json.dump({"hard_keywords": [], "soft_keywords": []}, f)
     with patch("lib.paths.get_data_dir", return_value=str(tmp_path)), \
@@ -2134,7 +2134,7 @@ def test_session_guardian_stats_exception(tmp_path):
 
 def test_session_guardian_main_execution(capsys):
     scripts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "session-guardian.py")], capture_output=True)
+    res = subprocess.run([sys.executable, os.path.join(scripts_dir, "hooks", "session-guardian.py")], capture_output=True)
     assert res.returncode == 0
 
 

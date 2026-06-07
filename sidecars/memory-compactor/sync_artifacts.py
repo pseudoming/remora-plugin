@@ -5,7 +5,7 @@ import hashlib
 import sqlite3
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "scripts")))
-from schema_init import DB_PATH
+from schema.schema_init import DB_PATH
 
 def calculate_md5(file_path):
     """计算制品的 MD5 哈希以做增量变更过滤"""

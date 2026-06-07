@@ -9,6 +9,7 @@ import base64
 PLUGIN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(PLUGIN_DIR, "sidecars", "memory-compactor"))
 sys.path.insert(0, os.path.join(PLUGIN_DIR, "scripts"))
+sys.path.insert(0, os.path.join(PLUGIN_DIR, "scripts", "rules"))
 
 # 导入要测试的模块
 from safety_rules import inspect_command, decode_base64_token

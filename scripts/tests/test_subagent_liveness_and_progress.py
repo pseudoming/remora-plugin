@@ -18,7 +18,7 @@ from lib.progress import ProgressSentinel
 import lib.paths as paths
 
 # Dynamically import hyphenated script: check-subagents-liveness.py
-liveness_script_path = os.path.join(scripts_dir, "check-subagents-liveness.py")
+liveness_script_path = os.path.join(scripts_dir, "sandbox", "check-subagents-liveness.py")
 spec = importlib.util.spec_from_file_location("liveness_checker", liveness_script_path)
 liveness_checker = importlib.util.module_from_spec(spec)
 sys.modules["liveness_checker"] = liveness_checker

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import argparse
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.paths import get_data_dir
 """
 Remora Topic Controller Script
 用于手动控制话题状态修改 (new/switch/close) 以及手动打标确认决策 (confirm)
 """
-import argparse
-import os
-import sys
-
-sys.path.insert(0, os.path.dirname(__file__))
 from lib import dao
 
 def _force_cold_start():
@@ -97,7 +97,7 @@ def main():
                         wt_name = os.path.basename(latest_worktree)
                         print(f"Found latest subagent sandbox: {wt_name}", file=sys.stderr)
                         
-                        merge_script = os.path.join(os.path.dirname(__file__), "sandbox-merge.py")
+                        merge_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sandbox", "sandbox-merge.py")
                         res = subprocess.run([sys.executable, merge_script, wt_name, "--target-cwd", os.getcwd()], capture_output=True, text=True, check=True)
                         
                         # 解析 stdout 中的物理变更文件列表

@@ -1,5 +1,7 @@
 import os
+import sys
 import sqlite3
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from lib.paths import get_data_dir
 
 DB_PATH = os.path.join(get_data_dir(), "remora_memory.db")
