@@ -31,14 +31,15 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
     mode = dao.read_mode(conv_id, "strict")
     if mode == "relax":
         # 中文翻译：[行为纪律] 您当前处于需求研讨与规划阶段。
-        # 禁止使用任何工具修改规划制品（/artifacts/）之外的物理代码文件。
-        # 若在此期间发现任何明显 Bug，严禁立即动手修复。您必须先将其写入实施计划中，并显式获得用户批准！
+        # 除非用户明确指定了具体文件名，否则禁止修改核心代码文件。
+        # /artifacts/ 下的规划制品可自由编辑。
+        # 若在此期间发现任何未经用户明确要求的 Bug 或代码异味，严禁立即动手。先写入实施计划，获得用户批准！
         ephemeral_msg = (
             "<system-discipline>\n"
             "COORDINATOR BEHAVIORAL DISCIPLINE:\n"
             "1. YOU ARE CURRENTLY IN THE REQUIREMENT DISCUSSION AND PLANNING PHASE.\n"
-            "2. DURING THIS PHASE, YOU ARE STRICTLY PROHIBITED FROM INVOKING ANY TOOLS (e.g., write_to_file, replace_file_content, run_command) THAT MODIFY CORE CODE FILES. YOU MAY ONLY MODIFY PLANNING ARTIFACTS IN THE `/artifacts/` SUBDIRECTORY.\n"
-            "3. IF YOU SPOT ANY OBVIOUS BUG OR CODE SMELL, DO NOT FIX IT IMMEDIATELY. YOU MUST DOCUMENT IT IN THE IMPLEMENTATION PLAN AND SEEK EXPLICIT USER APPROVAL BEFORE RUNNING ANY WRITES.\n"
+            "2. UNLESS THE USER EXPLICITLY NAMES A SPECIFIC FILE TO MODIFY, DO NOT INVOKE ANY TOOLS (e.g., write_to_file, replace_file_content, run_command) THAT CHANGE CORE CODE FILES. YOU MAY FREELY EDIT PLANNING ARTIFACTS UNDER /artifacts/.\n"
+            "3. IF YOU SPOT A BUG OR CODE SMELL NOT EXPLICITLY REQUESTED BY THE USER, DOCUMENT IT IN THE IMPLEMENTATION PLAN INSTEAD OF FIXING IT. SEEK USER APPROVAL BEFORE ANY WRITES.\n"
             "</system-discipline>"
         )
         inject_steps.append({"ephemeralMessage": ephemeral_msg})
@@ -55,7 +56,7 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
     uuid = dao.get_project_uuid_by_conv(session_id)
     if not uuid:
         dao.set_hook_state(conv_id, current_turn_idx, "resume_injected", "1")
-        return {"injectSteps": []}
+        return {"injectSteps": inject_steps}
         
     topic_id, decisions = _get_active_topic_and_decisions(uuid)
     
@@ -128,7 +129,25 @@ def _handle_pre_tool_use(context, conv_id, current_turn_idx):
             # 第二次尝试，清除状态直接放行 (allow)
             dao.set_hook_state(conv_id, current_turn_idx, state_key, "0")
             dao.insert_file_change(uuid, conv_id, os.path.basename(target_file), "write_tool")
-            return {"decision": "allow", "injectSteps": []}
+            inject_steps = []
+            file_name = os.path.basename(target_file)
+            decisions = dao.get_decisions_by_file(uuid, file_name)
+            if decisions:
+                dedup_key = f"file_decisions_injected:{file_name}"
+                if not dao.get_hook_state(conv_id, current_turn_idx, dedup_key):
+                    lines = []
+                    for i, d in enumerate(decisions[:3], 1):
+                        lines.append(f"  {i}. {d['decision'][:150]}")
+                    msg = (
+                        f"<system-reminder>\n"
+                        f"⚠️ {file_name} 关联 {len(decisions)} 条历史决策:\n"
+                        f"{chr(10).join(lines)}\n"
+                        f"写入前请确认不与上述决策冲突。\n"
+                        f"</system-reminder>"
+                    )
+                    inject_steps.append({"ephemeralMessage": msg})
+                    dao.set_hook_state(conv_id, current_turn_idx, dedup_key, "1")
+            return {"decision": "allow", "injectSteps": inject_steps}
         else:
             # 第一次尝试，记录状态为 "1"，并返回 deny 与 prompt 注入
             dao.set_hook_state(conv_id, current_turn_idx, state_key, "1")

@@ -258,6 +258,12 @@ If no significant topics, output: {{"topics": []}}
                 validate_id_inheritance(conn, session['project_uuid'], data.get("topics", []))
 
                 for t in data.get("topics", []):
+                    decisions = t.get("decisions", [])
+                    if not decisions:
+                        continue
+                    supersede_unconfirmed(conn, session['project_uuid'], t.get('topic_id', ''))
+
+                for t in data.get("topics", []):
                     conn.execute(
                         """INSERT INTO project_topics (uuid, topic_id, summary, compression_confidence, source)
                            VALUES (?, ?, ?, ?, 'auto')
@@ -269,8 +275,6 @@ If no significant topics, output: {{"topics": []}}
                     topic_id = t.get('topic_id', '')
                     if not decisions:
                         continue
-
-                    supersede_unconfirmed(conn, session['project_uuid'], topic_id)
                     for d in decisions:
                         decision_text = d.get('decision', '')
                         if decision_exists(conn, session['project_uuid'], topic_id, decision_text):

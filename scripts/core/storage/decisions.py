@@ -71,3 +71,23 @@ def supersede_unconfirmed(conn, project_uuid: str, topic_id: str) -> None:
         "DELETE FROM topic_decisions WHERE project_uuid=? AND topic_id=? AND user_confirmed=0",
         (project_uuid, topic_id)
     )
+
+def get_pending_decisions(conn, project_uuid: str, limit: int = 30) -> list:
+    """Returns list of unconfirmed decisions for event consumption."""
+    cursor = conn.execute(
+        "SELECT id, decision, rationale FROM topic_decisions WHERE project_uuid=? AND user_confirmed=0 ORDER BY id DESC LIMIT ?",
+        (project_uuid, limit))
+    return [{"id": r[0], "decision": r[1], "rationale": r[2]} for r in cursor.fetchall()]
+
+def confirm_decisions_by_ids(conn, decision_ids: list, project_uuid: str) -> None:
+    """Batch-confirm decisions by their IDs."""
+    for d_id in decision_ids:
+        conn.execute(
+            "UPDATE topic_decisions SET user_confirmed=1 WHERE id=? AND project_uuid=?",
+            (d_id, project_uuid))
+
+def update_watermark(conn, project_uuid: str, conversation_id: str, msg_id: int) -> None:
+    """Update conversation watermark to latest processed msg_id."""
+    conn.execute(
+        "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
+        (msg_id, project_uuid, conversation_id))

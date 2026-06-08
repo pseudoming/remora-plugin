@@ -618,6 +618,39 @@ def test_cognitive_push_pre_tool_use():
             res = cognitive_push.main.__wrapped__(ctx_artifact)
             assert res == {"injectSteps": []}
 
+        # 7. File-touch injection: allow path with file history
+        with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
+             patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+             patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
+             patch("cognitive_push.dao.get_decisions_by_file", return_value=[
+                 {"decision": "Use JWT auth", "rationale": "stateless"},
+                 {"decision": "Refresh token 7d rotation", "rationale": "security"}
+             ]), \
+             patch("cognitive_push.dao.insert_file_change"), \
+             patch("lib.dao.get_hook_state", side_effect=lambda sid, tid, key: "1" if key.startswith("first_write_deny:") else None), \
+             patch("lib.dao.set_hook_state") as mock_set_hs:
+            res = cognitive_push.main.__wrapped__(ctx_protect)
+            assert res["decision"] == "allow"
+            recall_msgs = [s for s in res["injectSteps"] if "历史决策" in s.get("ephemeralMessage", "")]
+            assert len(recall_msgs) == 1
+            assert "my_file.py 关联 2 条历史决策" in recall_msgs[0]["ephemeralMessage"]
+            assert "Use JWT auth" in recall_msgs[0]["ephemeralMessage"]
+            mock_set_hs.assert_any_call("c1", 0, "file_decisions_injected:my_file.py", "1")
+
+        # 8. File-touch injection: dedup same file same turn
+        with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
+             patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+             patch("cognitive_push.dao.get_active_topic", return_value="t1"), \
+             patch("cognitive_push.dao.get_decisions_by_file", return_value=[
+                 {"decision": "Use JWT auth", "rationale": "stateless"}
+             ]), \
+             patch("cognitive_push.dao.insert_file_change"), \
+             patch("lib.dao.get_hook_state", return_value="1"), \
+             patch("lib.dao.set_hook_state") as mock_set_hs:
+            res = cognitive_push.main.__wrapped__(ctx_protect)
+            assert res["decision"] == "allow"
+            recall_msgs = [s for s in res["injectSteps"] if "历史决策" in s.get("ephemeralMessage", "")]
+            assert len(recall_msgs) == 0
 
 
 # 14. session-guardian.py

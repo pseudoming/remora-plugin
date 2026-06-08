@@ -494,7 +494,8 @@ class TestScanAndIngestArtifacts:
 
     def test_no_artifact_dir_returns_early(self, artifacts_db):
         context = {'artifactDirectoryPath': ''}
-        with patch.object(sync_artifacts, 'DB_PATH', artifacts_db), \
+        import sqlite3
+        with patch.object(sync_artifacts, 'get_conn', return_value=sqlite3.connect(artifacts_db)), \
              patch.dict('os.environ', {'ANTIGRAVITY_PROJECT_ID': 'proj-1'}):
             sync_artifacts.scan_and_ingest_artifacts(context)
 
@@ -514,7 +515,7 @@ class TestScanAndIngestArtifacts:
 
         context = {'artifactDirectoryPath': str(artifact_dir)}
 
-        with patch.object(sync_artifacts, 'DB_PATH', artifacts_db), \
+        with patch.object(sync_artifacts, 'get_conn', return_value=sqlite3.connect(artifacts_db)), \
              patch.dict('os.environ', {'ANTIGRAVITY_PROJECT_ID': 'proj-1'}):
             sync_artifacts.scan_and_ingest_artifacts(context)
 
@@ -544,7 +545,7 @@ class TestScanAndIngestArtifacts:
             'transcriptPath': '/some/path/brain/conv-uuid-test/something'
         }
 
-        with patch.object(sync_artifacts, 'DB_PATH', artifacts_db), \
+        with patch.object(sync_artifacts, 'get_conn', return_value=sqlite3.connect(artifacts_db)), \
              patch.dict('os.environ', {'ANTIGRAVITY_PROJECT_ID': 'proj-1'}), \
              patch.object(sync_artifacts, 'extract_conv_id', return_value='conv-uuid-test'), \
              patch.object(sync_artifacts, 'insert_file_change') as mock_insert_fc:
@@ -576,7 +577,7 @@ class TestScanAndIngestArtifacts:
             'transcriptPath': ''
         }
 
-        with patch.object(sync_artifacts, 'DB_PATH', artifacts_db), \
+        with patch.object(sync_artifacts, 'get_conn', return_value=sqlite3.connect(artifacts_db)), \
              patch.dict('os.environ', {'ANTIGRAVITY_PROJECT_ID': 'proj-1'}), \
              patch.object(sync_artifacts, 'insert_file_change'):
 

@@ -105,4 +105,42 @@ Every time a phase or task is completed and before submitting your changes, you 
 ### 7. Environment Hygiene & Stale Script Cleanup (环境卫生与临时脚本清理)
 You **MUST ALWAYS** actively delete any temporary files, diagnostic scripts, test compilation caches, or hack scripts created in the `scratch/` directory or project tree immediately after diagnosing and fixing the root cause. Do not leave trailing debug scrap behind to pollute the codebase.
 
+## KNOWN TECHNICAL DEBT (Phase 51 Audit)
 
+### Dead Code — Functions with ZERO production callers (only tests invoke them)
+
+| Function | File | Line |
+|----------|------|------|
+| `get_files_by_topic()` | `core/storage/file_changes.py` | :14 |
+| `delete_session()` | `core/storage/sessions.py` | :42 |
+| `get_topic_associated_files()` | `core/storage/topics.py` | :55 |
+| `update_topic_associated_files()` | `core/storage/topics.py` | :65 |
+| `delete_hook_state()` | `core/storage/runtime_state.py` | :62 |
+| `write_mode()` (bridge) | `adapter/bridge/session.py` | :6 |
+
+All six are re-exported via `lib/dao.py` but never called from production code. Safe to remove, low priority.
+
+### Confirmed Bugs
+
+| Severity | Bug | Location | Status |
+|----------|-----|----------|--------|
+| 🔴 | **Data loss risk**: `supersede_unconfirmed()` DELETEs old uc=0 decisions BEFORE the LLM result is validated. | `extract_decisions.py:273→236` | ✅ Fixed Phase 51 — supersede moved after LLM success |
+| 🟡 | **Discipline message dropped**: In `_handle_pre_invocation` (relax mode), if `get_project_uuid_by_conv()` returns None, `inject_steps` containing the behavioral discipline message is discarded and empty list returned instead. | `cognitive-push.py:44→58` | ✅ Fixed Phase 51 — `[]` → `inject_steps` |
+
+### Architecture Violation — Sidecar has raw SQL in adapter layer
+
+`adapter/sidecar/compactor/` files use `sqlite3.connect(DB_PATH)` + raw `conn.execute()` calls. These should go through `core/storage/` → `lib/dao.py`. The compactor pattern passes external `conn` for transaction consistency, so new DAO functions should accept `conn` parameter (like `decision_exists(conn, ...)`).
+
+| File | SQL operations | Scope |
+|------|---------------|-------|
+| `warm_storage_sync.py` | INSERT/DELETE messages, watermarks, event_queue | ~100 lines |
+| `extract_decisions.py` | INSERT/UPSERT project_topics, topic_decisions, watermarks | ~60 lines |
+| `consume_events.py` | SELECT/UPDATE topic_decisions, event_queue | ~30 lines |
+| `check_approval.py` | SELECT artifact_hashes, messages; INSERT event_queue | ~30 lines |
+| `sync_artifacts.py` | INSERT/DELETE messages, INSERT event_queue, project_topics | ~40 lines |
+| `scan_sessions.py` | SELECT watermarks | ~5 lines |
+
+### Phase 52 — File-touch injection (CODED, uncommitted)
+
+cognitive-push PreToolUse calls `get_decisions_by_file()` on write gate allow path.
++2 test cases (#7 inject, #8 dedup).
