@@ -39,11 +39,6 @@ def update_cold_start(session_id: str, is_cold_start: int) -> None:
         with conn:
             conn.execute("UPDATE session_state SET is_cold_start = ? WHERE session_id=?", (is_cold_start, session_id))
 
-def delete_session(session_id: str) -> None:
-    with closing(get_conn()) as conn:
-        with conn:
-            conn.execute("DELETE FROM session_state WHERE session_id=?", (session_id,))
-
 def force_cold_start_latest_session(main_conv_id: Optional[str] = None) -> None:
     with closing(get_conn()) as conn:
         with conn:

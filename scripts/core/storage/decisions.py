@@ -86,8 +86,11 @@ def confirm_decisions_by_ids(conn, decision_ids: list, project_uuid: str) -> Non
             "UPDATE topic_decisions SET user_confirmed=1 WHERE id=? AND project_uuid=?",
             (d_id, project_uuid))
 
-def update_watermark(conn, project_uuid: str, conversation_id: str, msg_id: int) -> None:
-    """Update conversation watermark to latest processed msg_id."""
+def insert_decision(conn, project_uuid: str, topic_id: str, conversation_id: str,
+                    decision: str, rationale: str, evidence_msg_ids: str,
+                    user_confirmed: int, decision_type: str) -> None:
     conn.execute(
-        "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-        (msg_id, project_uuid, conversation_id))
+        """INSERT INTO topic_decisions
+           (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, decision_type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, decision_type))

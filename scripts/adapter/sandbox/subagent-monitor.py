@@ -4,7 +4,7 @@ import json
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from adapter.bridge.paths import get_data_dir
-from core.liveness import HEAVY_TOOLS, judge_zombie
+from core.liveness import HEAVY_TOOLS, judge_zombie, suggest_zombie_action
 import subprocess
 from datetime import datetime, timezone
 
@@ -98,7 +98,7 @@ def main():
             
     # 行动建议判定：前两次判定卡死均尝试自动 Kill 强杀并 Retry 重试，第 2 次后依然失败则汇报人类
     if status == "zombie":
-        action_suggestion = "kill_and_retry" if retry_count < 2 else "escalate_to_human"
+        action_suggestion = suggest_zombie_action(retry_count)
     else:
         action_suggestion = "continue_monitoring"
     

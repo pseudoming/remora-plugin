@@ -8,8 +8,8 @@ from core.storage.file_changes import get_decisions_by_file, get_files_by_topic,
 from core.storage.maintenance import prune_expired_watermarks, run_topic_garbage_collection
 from core.storage.recall import recall_decisions_by_fts5_topic, recall_decisions_by_like, recall_fts5_logs, touch_topics_accessed_by_recall
 from core.storage.runtime_state import delete_hook_state, delete_runtime_hook_value, get_hook_state, get_runtime_hook_value, set_hook_state, set_runtime_hook_value, trim_hook_states, trim_runtime_hook_states
-from core.storage.sessions import delete_session, force_cold_start_latest_session, get_latest_session, read_mode, update_cold_start, write_mode
-from core.storage.topics import close_topic, create_or_update_topic, get_active_topic, get_topic_associated_files, get_topics_by_uuid, merge_physical_files_to_topic, switch_topic, touch_topic_source_manual, update_topic_associated_files
+from core.storage.sessions import force_cold_start_latest_session, get_latest_session, read_mode, update_cold_start, write_mode
+from core.storage.topics import close_topic, create_or_update_topic, get_active_topic, get_topics_by_uuid, merge_physical_files_to_topic, switch_topic, touch_topic_source_manual
 from core.storage.watermarks import get_project_uuid_by_conv
 import core.storage.connection as conn_module
 
@@ -110,10 +110,6 @@ def test_session_state_operations():
     update_cold_start("session_1", 0)
     latest = get_latest_session()
     assert latest[1] == 0
-    
-    # Test delete
-    delete_session("session_1")
-    assert get_latest_session() is None
 
 def test_watermark_operations():
     assert get_project_uuid_by_conv("conv_1") is None
@@ -326,14 +322,6 @@ def test_switch_topic():
     assert get_active_topic("proj_1") == "topic_A"
 
 
-def test_topic_associated_files():
-    assert get_topic_associated_files("proj_1", "topic_A") == "[]"
-    create_or_update_topic("proj_1", "topic_A")
-    assert get_topic_associated_files("proj_1", "topic_A") == "[]"
-    update_topic_associated_files("proj_1", "topic_A", '[{"file": "test.py"}]')
-    assert get_topic_associated_files("proj_1", "topic_A") == '[{"file": "test.py"}]'
-
-
 def test_force_cold_start_latest_session():
     from contextlib import closing
     write_mode("session_1", "standard")
@@ -428,21 +416,39 @@ def test_merge_physical_files_to_topic():
         with conn:
             conn.execute("UPDATE project_topics SET associated_files='not-valid-json' WHERE uuid='proj_1' AND topic_id='topic_A'")
     merge_physical_files_to_topic("proj_1", "topic_A", ["/path/to/fallback.py"])
-    data = json.loads(get_topic_associated_files("proj_1", "topic_A"))
+    with closing(sqlite3.connect(TEST_DB_PATH, timeout=15)) as conn:
+        with conn:
+            row = conn.execute("SELECT associated_files FROM project_topics WHERE uuid='proj_1' AND topic_id='topic_A'").fetchone()
+            data = json.loads(row[0])
     assert len(data) == 1
     assert data[0]["file"] == "/path/to/fallback.py"
     merge_physical_files_to_topic("proj_1", "topic_A", ["/path/to/file1.py", "/path/to/file2.py"])
-    data = json.loads(get_topic_associated_files("proj_1", "topic_A"))
+    with closing(sqlite3.connect(TEST_DB_PATH, timeout=15)) as conn:
+        with conn:
+            row = conn.execute("SELECT associated_files FROM project_topics WHERE uuid='proj_1' AND topic_id='topic_A'").fetchone()
+            data = json.loads(row[0])
     assert len(data) == 3
     merge_physical_files_to_topic("proj_1", "topic_A", ["/path/to/file1.py"])
-    data = json.loads(get_topic_associated_files("proj_1", "topic_A"))
+    with closing(sqlite3.connect(TEST_DB_PATH, timeout=15)) as conn:
+        with conn:
+            row = conn.execute("SELECT associated_files FROM project_topics WHERE uuid='proj_1' AND topic_id='topic_A'").fetchone()
+            data = json.loads(row[0])
     assert len(data) == 3
     merge_physical_files_to_topic("proj_1", "topic_A", ["/path/to/file3.py"])
-    data = json.loads(get_topic_associated_files("proj_1", "topic_A"))
+    with closing(sqlite3.connect(TEST_DB_PATH, timeout=15)) as conn:
+        with conn:
+            row = conn.execute("SELECT associated_files FROM project_topics WHERE uuid='proj_1' AND topic_id='topic_A'").fetchone()
+            data = json.loads(row[0])
     assert len(data) == 4
-    update_topic_associated_files("proj_1", "topic_A", json.dumps([{"file": "/path/to/file1.py", "source": "auto"}]))
+    with closing(sqlite3.connect(TEST_DB_PATH, timeout=15)) as conn:
+        with conn:
+            conn.execute("UPDATE project_topics SET associated_files=? WHERE uuid='proj_1' AND topic_id='topic_A'",
+                        (json.dumps([{"file": "/path/to/file1.py", "source": "auto"}]),))
     merge_physical_files_to_topic("proj_1", "topic_A", ["/path/to/file1.py"])
-    data = json.loads(get_topic_associated_files("proj_1", "topic_A"))
+    with closing(sqlite3.connect(TEST_DB_PATH, timeout=15)) as conn:
+        with conn:
+            row = conn.execute("SELECT associated_files FROM project_topics WHERE uuid='proj_1' AND topic_id='topic_A'").fetchone()
+            data = json.loads(row[0])
     file1 = [item for item in data if item["file"] == "/path/to/file1.py"][0]
     assert "physical" in file1["source"]
 
@@ -479,7 +485,6 @@ def test_common_exceptions(monkeypatch):
     assert get_topics_by_uuid("test") == []
     assert get_confirmed_decisions("test", "test") == []
     assert get_topic_id_by_decision(999) is None
-    assert get_topic_associated_files("test", "test") == "[]"
     assert recall_fts5_logs("test", "test", "test") == []
     assert recall_decisions_by_fts5_topic("test", "test", "test") == []
     assert recall_decisions_by_like("test", "test", "test") == []

@@ -112,35 +112,45 @@ You **MUST ALWAYS** actively delete any temporary files, diagnostic scripts, tes
 | Function | File | Line |
 |----------|------|------|
 | `get_files_by_topic()` | `core/storage/file_changes.py` | :14 |
-| `delete_session()` | `core/storage/sessions.py` | :42 |
-| `get_topic_associated_files()` | `core/storage/topics.py` | :55 |
-| `update_topic_associated_files()` | `core/storage/topics.py` | :65 |
 | `delete_hook_state()` | `core/storage/runtime_state.py` | :62 |
-| `write_mode()` (bridge) | `adapter/bridge/session.py` | :6 |
 
-All six are re-exported via `lib/dao.py` but never called from production code. Safe to remove, low priority.
+Remaining two: `get_files_by_topic` is forward-looking symmetric design with `get_decisions_by_file` (Phase 43, possible future topic-context injection). `delete_hook_state` had a real caller in Phase 39-40 Git Commit Gate, orphaned when gate was removed. Both safe to remove or keep.
 
 ### Confirmed Bugs
 
-| Severity | Bug | Location | Status |
-|----------|-----|----------|--------|
-| 🔴 | **Data loss risk**: `supersede_unconfirmed()` DELETEs old uc=0 decisions BEFORE the LLM result is validated. | `extract_decisions.py:273→236` | ✅ Fixed Phase 51 — supersede moved after LLM success |
-| 🟡 | **Discipline message dropped**: In `_handle_pre_invocation` (relax mode), if `get_project_uuid_by_conv()` returns None, `inject_steps` containing the behavioral discipline message is discarded and empty list returned instead. | `cognitive-push.py:44→58` | ✅ Fixed Phase 51 — `[]` → `inject_steps` |
+*No outstanding confirmed bugs.*
 
-### Architecture Violation — Sidecar has raw SQL in adapter layer
+### Architecture Violation — Sidecar has raw SQL in adapter layer (✅ RESOLVED Phase 52)
 
-`adapter/sidecar/compactor/` files use `sqlite3.connect(DB_PATH)` + raw `conn.execute()` calls. These should go through `core/storage/` → `lib/dao.py`. The compactor pattern passes external `conn` for transaction consistency, so new DAO functions should accept `conn` parameter (like `decision_exists(conn, ...)`).
+All `adapter/sidecar/compactor/` files now route through `core/storage/` → `lib/dao.py`. New DAO functions accept external `conn` parameter for transaction consistency.
 
-| File | SQL operations | Scope |
-|------|---------------|-------|
-| `warm_storage_sync.py` | INSERT/DELETE messages, watermarks, event_queue | ~100 lines |
-| `extract_decisions.py` | INSERT/UPSERT project_topics, topic_decisions, watermarks | ~60 lines |
-| `consume_events.py` | SELECT/UPDATE topic_decisions, event_queue | ~30 lines |
-| `check_approval.py` | SELECT artifact_hashes, messages; INSERT event_queue | ~30 lines |
-| `sync_artifacts.py` | INSERT/DELETE messages, INSERT event_queue, project_topics | ~40 lines |
-| `scan_sessions.py` | SELECT watermarks | ~5 lines |
+| File | SQL operations | Status |
+|------|---------------|--------|
+| `warm_storage_sync.py` | INSERT/DELETE messages, watermarks, event_queue | ✅ All moved to `core/storage/messages.py` |
+| `extract_decisions.py` | INSERT/UPSERT project_topics, topic_decisions, watermarks | ✅ All moved to `core/storage/topics.py`/`decisions.py`/`messages.py` |
+| `consume_events.py` | SELECT/UPDATE topic_decisions, event_queue | ✅ All moved to `core/storage/decisions.py`/`artifacts.py` |
+| `check_approval.py` | SELECT artifact_hashes, messages; INSERT event_queue | ✅ All moved to `core/storage/artifacts.py` |
+| `sync_artifacts.py` | INSERT/DELETE messages, INSERT event_queue, project_topics | ✅ All moved to `core/storage/artifacts.py` |
+| `scan_sessions.py` | SELECT watermarks | ✅ No raw SQL remaining |
+| `compactor.py` | SELECT DISTINCT project_topics | ✅ Moved to `core/storage/topics.py` |
 
-### Phase 52 — File-touch injection (CODED, uncommitted)
+New core modules: `core/storage/messages.py`, `core/storage/artifacts.py`, `core/text_analysis.py`
+
+### Platform-Agnostic Extraction (Phase 52)
+
+| Function | Source | Destination |
+|----------|--------|-------------|
+| `scan_approval_signals()` | `check_approval.py` | `core/text_analysis.py` |
+| `suggest_zombie_action()` | `subagent-monitor.py` | `core/liveness.py` |
+| Approval config (keywords, negation prefixes) | hardcoded in check_approval.py | `conf/approval.json` |
+
+### Phase 52 — File-touch injection (COMPLETED, uncommitted)
 
 cognitive-push PreToolUse calls `get_decisions_by_file()` on write gate allow path.
 +2 test cases (#7 inject, #8 dedup).
+
+### Architecture Cleanup (Phase 52)
+
+- `update_watermark` merged: decisions.py copy removed, messages.py version is canonical
+- `get_open_topic(conn, ...)` separated from existing `get_active_topic(project_uuid)` to avoid signature collision
+- `get_all_project_uuids(conn)` added to `topics.py` for compactor dispatch loop

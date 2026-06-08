@@ -83,6 +83,11 @@ def judge_zombie(idle_seconds: int, tool_name: str) -> Tuple[bool, int]:
     return (is_zombie, limit)
 
 
+def suggest_zombie_action(retry_count: int) -> str:
+    """Return action suggestion based on retry exhaustion threshold."""
+    return "kill_and_retry" if retry_count < 2 else "escalate_to_human"
+
+
 def format_timestamp(ts_str):
     if not ts_str:
         import time

@@ -52,21 +52,6 @@ def get_topics_by_uuid(project_uuid: str) -> List[Tuple[str, str, str]]:
         log_warn(f"get_topics_by_uuid: {e}")
         return []
 
-def get_topic_associated_files(project_uuid: str, topic_id: str) -> str:
-    try:
-        with closing(get_conn()) as conn:
-            with conn:
-                row = conn.execute("SELECT associated_files FROM project_topics WHERE uuid=? AND topic_id=?", (project_uuid, topic_id)).fetchone()
-                return row[0] if (row and row[0]) else "[]"
-    except Exception as e:
-        log_warn(f"get_topic_associated_files: {e}")
-        return "[]"
-
-def update_topic_associated_files(project_uuid: str, topic_id: str, files_json: str) -> None:
-    with closing(get_conn()) as conn:
-        with conn:
-            conn.execute("UPDATE project_topics SET associated_files=? WHERE uuid=? AND topic_id=?", (files_json, project_uuid, topic_id))
-
 def touch_topic_source_manual(project_uuid: str, topic_id: str) -> None:
     with closing(get_conn()) as conn:
         with conn:
@@ -95,3 +80,35 @@ def merge_physical_files_to_topic(project_uuid: str, topic_id: str, physical_fil
                     assoc_dict[pf]["source"] = assoc_dict[pf]["source"] + ", physical"
                     
             conn.execute("UPDATE project_topics SET associated_files=? WHERE uuid=? AND topic_id=?", (json.dumps(list(assoc_dict.values())), project_uuid, topic_id))
+
+def get_open_topic(conn, project_uuid: str):
+    """Returns topic_id of the currently open topic for this project, or None."""
+    cursor = conn.execute(
+        "SELECT topic_id FROM project_topics WHERE uuid=? AND status='open' ORDER BY updated_at DESC LIMIT 1",
+        (project_uuid,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+def get_topic_files(conn, project_uuid: str, topic_id: str):
+    """Returns (associated_files_json, referenced_files_json) for a topic."""
+    cursor = conn.execute(
+        "SELECT associated_files, referenced_files FROM project_topics WHERE uuid=? AND topic_id=?",
+        (project_uuid, topic_id))
+    row = cursor.fetchone()
+    return (row[0] if row else None, row[1] if row else None)
+
+def update_topic_files(conn, project_uuid: str, topic_id: str, associated_files: str, referenced_files: str) -> None:
+    conn.execute(
+        "UPDATE project_topics SET associated_files=?, referenced_files=?, last_accessed_at=CURRENT_TIMESTAMP WHERE uuid=? AND topic_id=?",
+        (associated_files, referenced_files, project_uuid, topic_id))
+
+def upsert_topic(conn, project_uuid: str, topic_id: str, summary: str, confidence: float) -> None:
+    conn.execute(
+        """INSERT INTO project_topics (uuid, topic_id, summary, compression_confidence, source)
+           VALUES (?, ?, ?, ?, 'auto')
+           ON CONFLICT(uuid, topic_id) DO UPDATE SET summary=?, compression_confidence=?""",
+        (project_uuid, topic_id, summary, confidence, summary, confidence))
+
+def get_all_project_uuids(conn) -> list:
+    cursor = conn.execute("SELECT DISTINCT uuid FROM project_topics")
+    return [row[0] for row in cursor.fetchall()]

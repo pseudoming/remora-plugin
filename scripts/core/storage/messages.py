@@ -82,10 +82,22 @@ def delete_pending_events(conn, project_uuid: str) -> None:
 
 def update_watermark(conn, project_uuid: str, conversation_id: str, msg_id: int) -> None:
     conn.execute(
-        "UPDATE watermarks SET last_msg_id=? WHERE project_uuid=? AND conversation_id=?",
+        "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
         (msg_id, project_uuid, conversation_id))
 
 def ensure_watermark(conn, project_uuid: str, conversation_id: str) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO watermarks (project_uuid, conversation_id, last_msg_id) VALUES (?, ?, 0)",
         (project_uuid, conversation_id))
+
+def backfill_message_topic_ids(conn, topic_id: str, message_ids: set) -> None:
+    """Update messages.topic_id JSON array for evidence message backfill."""
+    for mid in message_ids:
+        conn.execute(
+            """UPDATE messages SET topic_id =
+               CASE
+                   WHEN topic_id IS NULL THEN json_array(?)
+                   ELSE json_insert(topic_id, '$[#]', ?)
+               END
+               WHERE id = ?""",
+            (topic_id, topic_id, mid))

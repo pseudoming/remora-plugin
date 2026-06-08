@@ -1,18 +1,21 @@
 from core.storage.sessions import (
     read_mode, write_mode, get_latest_session, update_cold_start,
-    delete_session, force_cold_start_latest_session
+    force_cold_start_latest_session
 )
 from core.storage.messages import (
     get_watermark, get_max_line_number, insert_message, get_max_message_id,
     get_max_message_id_up_to_line, delete_messages_above_line,
     get_decisions_by_conversation, delete_topic_decision, get_message_timestamp,
     delete_decisions_by_conversation_after, delete_pending_events,
-    update_watermark, ensure_watermark
+    update_watermark, ensure_watermark,
+    backfill_message_topic_ids
 )
 from core.storage.topics import (
     get_active_topic, create_or_update_topic, switch_topic, close_topic,
-    get_topics_by_uuid, get_topic_associated_files, update_topic_associated_files,
-    touch_topic_source_manual, merge_physical_files_to_topic
+    get_topics_by_uuid,
+    touch_topic_source_manual, merge_physical_files_to_topic,
+    get_open_topic, get_topic_files, update_topic_files, upsert_topic,
+    get_all_project_uuids
 )
 from core.storage.artifacts import (
     get_plan_change_time, get_user_messages_after, get_plan_content,
@@ -23,7 +26,8 @@ from core.storage.artifacts import (
 from core.storage.decisions import (
     get_confirmed_decisions, confirm_decision, get_topic_id_by_decision,
     decision_exists, supersede_unconfirmed,
-    get_pending_decisions, confirm_decisions_by_ids, update_watermark
+    get_pending_decisions, confirm_decisions_by_ids,
+    insert_decision
 )
 from core.storage.recall import (
     recall_fts5_logs, recall_decisions_by_fts5_topic,

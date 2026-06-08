@@ -20,7 +20,9 @@ from scan_sessions import (
 from warm_storage_sync import read_incremental_logs
 from adapter.bridge.agentapi import send_message, create_conversation
 from core.coverage import calculate_factual_confidence, validate_id_inheritance
-from core.storage.decisions import decision_exists, supersede_unconfirmed
+from core.storage.decisions import insert_decision, decision_exists, supersede_unconfirmed
+from core.storage.topics import get_open_topic, get_topic_files, update_topic_files, upsert_topic
+from core.storage.messages import backfill_message_topic_ids, update_watermark
 
 CONV_MARKER_FILE = os.path.join(DATA_DIR, "compactor_conversation_id.txt")
 BRAIN_DIR = os.path.expanduser("~/.gemini/antigravity/brain")
@@ -133,12 +135,7 @@ def extract_factual_baseline(conv_id, start_line):
 
 def _get_active_topic(conn, project_uuid):
     try:
-        cursor = conn.execute(
-            "SELECT topic_id FROM project_topics WHERE uuid = ? AND status = 'open' ORDER BY updated_at DESC LIMIT 1",
-            (project_uuid,)
-        )
-        row = cursor.fetchone()
-        return row[0] if row else None
+        return get_open_topic(conn, project_uuid)
     except Exception as te:
         print(f"Error querying active topic: {str(te)}", file=sys.stderr)
         return None
@@ -159,10 +156,9 @@ def process_sessions(start_time):
                 if changed or referenced:
                     active_topic = _get_active_topic(conn, session['project_uuid'])
                     if active_topic:
-                        cursor = conn.execute("SELECT associated_files, referenced_files FROM project_topics WHERE uuid=? AND topic_id=?", (session['project_uuid'], active_topic))
-                        row = cursor.fetchone()
-                        existing_assoc = json.loads(row[0]) if row and row[0] else []
-                        existing_ref = json.loads(row[1]) if row and row[1] else []
+                        assoc_json, ref_json = get_topic_files(conn, session['project_uuid'], active_topic)
+                        existing_assoc = json.loads(assoc_json) if assoc_json else []
+                        existing_ref = json.loads(ref_json) if ref_json else []
                         assoc_dict = {item['file']: item for item in existing_assoc if 'file' in item}
                         ref_dict = {item['file']: item for item in existing_ref if 'file' in item}
                         for f in changed:
@@ -171,18 +167,15 @@ def process_sessions(start_time):
                         for f in referenced:
                             fb = os.path.basename(f)
                             ref_dict[fb] = {"file": fb, "source": "agent"}
-                        conn.execute("UPDATE project_topics SET associated_files=?, referenced_files=?, last_accessed_at=CURRENT_TIMESTAMP WHERE uuid=? AND topic_id=?",
-                                     (json.dumps(list(assoc_dict.values())), json.dumps(list(ref_dict.values())), session['project_uuid'], active_topic))
-                conn.execute(
-                    "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_msg_id, session['project_uuid'], session['conversation_id']))
+                        update_topic_files(conn, session['project_uuid'], active_topic,
+                                          json.dumps(list(assoc_dict.values())),
+                                          json.dumps(list(ref_dict.values())))
+                update_watermark(conn, session['project_uuid'], session['conversation_id'], current_msg_id)
                 conn.commit()
                 continue
 
             if not key_content.strip():
-                conn.execute(
-                    "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_msg_id, session['project_uuid'], session['conversation_id']))
+                update_watermark(conn, session['project_uuid'], session['conversation_id'], current_msg_id)
                 conn.commit()
                 continue
 
@@ -235,9 +228,7 @@ If no significant topics, output: {{"topics": []}}
 
             llm_output = get_or_create_conversation(prompt)
             if not llm_output:
-                conn.execute(
-                    "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                    (current_msg_id, session['project_uuid'], session['conversation_id']))
+                update_watermark(conn, session['project_uuid'], session['conversation_id'], current_msg_id)
                 conn.commit()
                 continue
 
@@ -264,12 +255,8 @@ If no significant topics, output: {{"topics": []}}
                     supersede_unconfirmed(conn, session['project_uuid'], t.get('topic_id', ''))
 
                 for t in data.get("topics", []):
-                    conn.execute(
-                        """INSERT INTO project_topics (uuid, topic_id, summary, compression_confidence, source)
-                           VALUES (?, ?, ?, ?, 'auto')
-                           ON CONFLICT(uuid, topic_id) DO UPDATE SET summary=?, compression_confidence=?""",
-                        (session['project_uuid'], t.get('topic_id', ''),
-                          t.get('summary', ''), confidence, t.get('summary', ''), confidence))
+                    upsert_topic(conn, session['project_uuid'], t.get('topic_id', ''),
+                                t.get('summary', ''), confidence)
 
                     decisions = t.get("decisions", [])
                     topic_id = t.get('topic_id', '')
@@ -285,35 +272,19 @@ If no significant topics, output: {{"topics": []}}
                         evidence_msg_ids = d.get('evidence_msg_ids', [])
 
                         decision_type = d.get('decision_type', 'approved')
-                        conn.execute(
-                            """INSERT INTO topic_decisions
-                               (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, decision_type)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                            (session['project_uuid'], topic_id,
-                             session['conversation_id'], d.get('decision', ''),
-                             d.get('rationale', ''),
-                             json.dumps(evidence_msg_ids),
-                             user_confirmed_val,
-                             decision_type))
+                        insert_decision(conn, session['project_uuid'], topic_id,
+                                       session['conversation_id'], d.get('decision', ''),
+                                       d.get('rationale', ''), json.dumps(evidence_msg_ids),
+                                       user_confirmed_val, decision_type)
 
                     # Backfill messages.topic_id with JSON array (multi-topic support)
                     topic_evidence_ids = set()
                     for d in t.get("decisions", []):
                         for mid in d.get('evidence_msg_ids', []):
                             topic_evidence_ids.add(int(mid))
-                    for mid in topic_evidence_ids:
-                        conn.execute(
-                            """UPDATE messages SET topic_id =
-                               CASE
-                                   WHEN topic_id IS NULL THEN json_array(?)
-                                   ELSE json_insert(topic_id, '$[#]', ?)
-                               END
-                               WHERE id = ?""",
-                            (t.get('topic_id', ''), t.get('topic_id', ''), mid))
+                    backfill_message_topic_ids(conn, t.get('topic_id', ''), topic_evidence_ids)
             except json.JSONDecodeError:
                 pass
 
-            conn.execute(
-                "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?",
-                (current_msg_id, session['project_uuid'], session['conversation_id']))
+            update_watermark(conn, session['project_uuid'], session['conversation_id'], current_msg_id)
             conn.commit()

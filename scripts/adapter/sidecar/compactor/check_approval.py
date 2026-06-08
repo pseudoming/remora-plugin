@@ -3,11 +3,26 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
 import json
-import re
 
 from core.storage.artifacts import (
     get_plan_change_time, get_user_messages_after, get_plan_content, enqueue_event
 )
+from core.text_analysis import scan_approval_signals
+
+from schema.schema_init import DATA_DIR
+
+_CONF_PATH = os.path.join(os.path.dirname(DATA_DIR), "conf", "approval.json")
+_approval_config = None
+
+def _load_approval_config():
+    global _approval_config
+    if _approval_config is None:
+        try:
+            with open(_CONF_PATH, 'r') as f:
+                _approval_config = json.load(f)
+        except Exception:
+            _approval_config = {}
+    return _approval_config
 
 
 def check_plan_approval(conn, project_uuid):
@@ -26,13 +41,12 @@ def check_plan_approval(conn, project_uuid):
     user_messages = get_user_messages_after(conn, t_plan_change)
 
     # 3. 加权关键词扫描
-    approval_keywords = ["同意", "执行吧", "批准", "启动吧", "开始执行", "可以执行", "没问题", "approve", "confirm"]
-    has_approval = False
-    for msg in user_messages:
-        if any(kw in msg for kw in approval_keywords):
-            if not re.search(r'(不|拒绝|拒绝执行)\s*(' + '|'.join(approval_keywords) + ')', msg):
-                has_approval = True
-                break
+    config = _load_approval_config()
+    has_approval = scan_approval_signals(
+        user_messages,
+        keywords=config.get("approval_keywords"),
+        negation_prefixes=config.get("negation_prefixes")
+    )
 
     # 4. 生成 plan_approval_sync 事件，交付事件消费管线统一精准匹配
     if has_approval:
