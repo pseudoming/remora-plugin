@@ -24,3 +24,4 @@ ORIGINAL_REQUEST.md
 
 .pytest_cache/
 node_modules/
+**/coverage/

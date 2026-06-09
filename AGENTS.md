@@ -170,3 +170,41 @@ cognitive-push PreToolUse calls `get_decisions_by_file()` on write gate allow pa
 |---|------|--------|-------------|
 | A3 | **Binpack core**: Package `core/` as distributable binary/package for cross-platform reuse | PENDING | None — core is already clean |
 | A4 | **OpenCode adapter**: New adapter layer for opencode platform hooks | PENDING | A3 binpack |
+
+## Phase 59 JS/TS Migration — Lessons Learned
+
+### Subagent File Overwrite Hazard
+When running parallel subagents that edit the same test files, later subagents can overwrite earlier fixes. This happened repeatedly with `bun:test` → `vitest` import replacements and `mock` → `vi` API migrations. **Mitigation**: if files regress after a parallel subagent wave, run `git checkout -- <files>` to restore the committed versions, then re-apply needed edits sequentially.
+
+### TypeScript Test Framework
+- **Framework**: vitest (NOT bun test). Tests use `import { describe, it, expect, vi } from "vitest"`.
+- **Runner**: `npm test` (vitest) in `packages/core/`. `bun test` has been fully removed.
+- **Coverage**: `npm test -- --coverage` (requires `@vitest/coverage-v8`). Python: 94%, TS: 75.4%.
+- **Test count**: 304 pass, 23 skip (adapter-level), 0 fail. 17 test files.
+- **Package location**: `packages/core/` — this is the TS root, NOT `scripts/`.
+
+### SQLite: better-sqlite3
+- Works in Node.js (vitest). Does NOT work in Bun (issue #4290).
+- Do NOT import `bun:sqlite` — the codebase uses `better-sqlite3`.
+- Test files that use real databases import `Database from "better-sqlite3"`.
+- Files that mock connection.ts use `vi.mock("../src/storage/connection", ...)` with `vi.hoisted()`.
+- `vi.hoisted()` is vitest-specific — it runs factory before module imports. Use for mock functions that need to exist before the module-under-test is loaded.
+
+### Python ↔ TS 1:1 Translation Contract
+- Phase 59 is strict 1:1. NO optimizations, NO refactoring, NO signature changes.
+- Python `snake_case` → TS `camelCase`. File names: `snake_case.py` → `kebab-case.ts`.
+- Private Python functions (prefixed `_`) → TS non-exported functions or inlined.
+- Optimizations recorded to `scratch/phase98_optimizations.md`.
+
+### ESM Module Mocking Limits
+- `vi.spyOn()` does NOT work on ESM namespace imports (e.g., `node:child_process`, `node:fs`).
+- For these, use environment manipulation (e.g., `process.env.PATH = ""` to hide git) or filesystem tricks (e.g., `chmod 000` to simulate stat failure).
+
+### Phase Roadmap (Updated)
+| Phase | Content | Status |
+|-------|---------|--------|
+| 58 | Core extraction (Python hooks → core) | ✅ committed |
+| 59 | Core → TypeScript (25 modules + 17 tests) | ✅ committed |
+| 60 | Adapter rewrite (hooks/bridge/sidecar → TS) | PENDING |
+| 98 | Optimizations & SQLite strategy | PENDING |
+| 99 | OpenCode adapter | PENDING |
