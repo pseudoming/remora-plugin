@@ -47,6 +47,7 @@ def setup_db(monkeypatch):
                     source TEXT DEFAULT 'auto',
                     associated_files TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     last_accessed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY(uuid, topic_id)
                 );
@@ -60,6 +61,8 @@ def setup_db(monkeypatch):
                     evidence_msg_ids TEXT,
                     user_confirmed INTEGER DEFAULT 0,
                     decision_type TEXT DEFAULT 'approved',
+                    injected_count INTEGER DEFAULT 0,
+                    last_injected_at TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
@@ -595,3 +598,27 @@ def test_gate_dedup_and_clear():
 
     gate.mark_fired("conv_2", "test_dedup", "99")
     assert gate.is_duplicate("conv_2", "test_dedup", "42") == False
+
+def test_bump_injection_once():
+    from contextlib import closing
+    import sqlite3
+    from core.storage.decisions import bump_injection
+    with closing(sqlite3.connect(TEST_DB_PATH, timeout=15)) as conn:
+        with conn:
+            conn.execute("INSERT INTO topic_decisions (id, project_uuid, topic_id, decision, user_confirmed) VALUES (999, 'proj_1', 't1', 'test decision', 0)")
+            bump_injection(conn, 999)
+            row = conn.execute("SELECT injected_count, last_injected_at FROM topic_decisions WHERE id=999").fetchone()
+            assert row[0] == 1
+            assert row[1] is not None
+
+def test_bump_injection_multiple():
+    from contextlib import closing
+    import sqlite3
+    from core.storage.decisions import bump_injection
+    with closing(sqlite3.connect(TEST_DB_PATH, timeout=15)) as conn:
+        with conn:
+            conn.execute("INSERT INTO topic_decisions (id, project_uuid, topic_id, decision, user_confirmed) VALUES (998, 'proj_1', 't1', 'multi bump', 0)")
+            for _ in range(3):
+                bump_injection(conn, 998)
+            row = conn.execute("SELECT injected_count FROM topic_decisions WHERE id=998").fetchone()
+            assert row[0] == 3

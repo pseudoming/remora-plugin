@@ -31,14 +31,14 @@ def get_decisions_by_file(project_uuid: str, file_name: str) -> List[Dict]:
         with closing(get_conn()) as conn:
             with conn:
                 rows = conn.execute(
-                    """SELECT DISTINCT td.decision, td.rationale
+                    """SELECT DISTINCT td.id, td.decision, td.rationale
                        FROM topic_decisions td
                        JOIN file_changes fc ON fc.conversation_id = td.conversation_id
                        WHERE td.project_uuid = ? AND fc.file_name = ?
                        ORDER BY td.created_at DESC""",
                     (project_uuid, file_name)
                 ).fetchall()
-                return [{"decision": r[0], "rationale": r[1]} for r in rows]
+                return [{"id": r[0], "decision": r[1], "rationale": r[2]} for r in rows]
     except Exception as e:
         log_warn(f"get_decisions_by_file: {e}")
         return []

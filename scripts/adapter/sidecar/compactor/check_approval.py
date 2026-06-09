@@ -33,12 +33,12 @@ def check_plan_approval(conn, project_uuid):
     将其并入事件消费管线，通过 LLM 进行高精度的「审批消息 + Plan 原文 -> 待确认 Decisions」映射。
     """
     # 1. 查找 implementation_plan.md 最后哈希变更时间
-    t_plan_change = get_plan_change_time(conn)
+    t_plan_change = get_plan_change_time(conn, project_uuid)
     if not t_plan_change:
         return
 
     # 2. 拉取此时间点之后的全部用户输入消息
-    user_messages = get_user_messages_after(conn, t_plan_change)
+    user_messages = get_user_messages_after(conn, t_plan_change, project_uuid)
 
     # 3. 加权关键词扫描
     config = _load_approval_config()

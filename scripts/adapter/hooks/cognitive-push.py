@@ -96,6 +96,11 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
             f"</system-reminder>"
         )
         inject_steps.append({"ephemeralMessage": prompt})
+        from core.storage.connection import get_conn, closing
+        from core.storage.decisions import bump_injection
+        with closing(get_conn()) as conn:
+            for d in decisions:
+                bump_injection(conn, d.get("id", 0))
         
     # 恢复物理消费，仅在消费成功且执行 Line A 后置 0
     dao.update_cold_start(conv_id, 0)
@@ -236,6 +241,13 @@ def _run_line_c(context, conv_id, current_turn_idx):
 
     if has_any_conflict:
         mark_fired(conv_id, window_key, str(turn_interval))
+        from core.storage.connection import get_conn, closing
+        from core.storage.decisions import bump_injection
+        with closing(get_conn()) as conn:
+            for c in conflicts:
+                cid = c.get("decision_id")
+                if cid:
+                    bump_injection(conn, cid)
 
     return inject_steps
 
@@ -292,6 +304,11 @@ def _handle_pre_tool_use(context, conv_id, current_turn_idx):
                     )
                     inject_steps.append({"ephemeralMessage": msg})
                     mark_fired(conv_id, dedup_key, str(current_turn_idx))
+                    from core.storage.connection import get_conn, closing
+                    from core.storage.decisions import bump_injection
+                    with closing(get_conn()) as conn:
+                        for d in decisions:
+                            bump_injection(conn, d.get("id", 0))
             return {"decision": "allow", "injectSteps": inject_steps}
         else:
             # 第一次尝试，记录状态为 "1"，并返回 deny 与 prompt 注入

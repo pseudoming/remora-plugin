@@ -1,16 +1,21 @@
 import json
 
-def get_plan_change_time(conn):
-    """Returns last_updated of implementation_plan.md in artifact_hashes, or None."""
+def get_plan_change_time(conn, project_uuid: str):
+    """Returns last message timestamp of implementation_plan.md for this project, or None."""
     cursor = conn.execute(
-        "SELECT last_updated FROM artifact_hashes WHERE file_path LIKE '%implementation_plan.md' LIMIT 1")
+        "SELECT MAX(timestamp) FROM messages WHERE conversation_id=? AND role='implementation_plan.md'",
+        (f"artifact_sync_{project_uuid}",))
     row = cursor.fetchone()
-    return row[0] if row else None
+    return row[0] if row and row[0] else None
 
-def get_user_messages_after(conn, timestamp: str) -> list:
+def get_user_messages_after(conn, timestamp: str, project_uuid: str) -> list:
     cursor = conn.execute(
-        "SELECT content FROM messages WHERE timestamp > ? AND role IN ('USER', 'USER_INPUT', 'USER_EXPLICIT', 'user')",
-        (timestamp,))
+        """SELECT m.content FROM messages m
+           JOIN watermarks w ON m.conversation_id = w.conversation_id
+           WHERE m.timestamp > ?
+             AND m.role IN ('USER', 'USER_INPUT', 'USER_EXPLICIT', 'user')
+             AND w.project_uuid = ?""",
+        (timestamp, project_uuid))
     return [r[0] for r in cursor.fetchall()]
 
 def get_plan_content(conn, project_uuid: str):
@@ -56,6 +61,10 @@ def insert_artifact_message(conn, sync_conv_id: str, line_number: int, role: str
 
 def upsert_artifact_topic(conn, project_uuid: str, topic_id: str, summary: str) -> None:
     conn.execute(
-        """INSERT OR REPLACE INTO project_topics (uuid, topic_id, status, summary)
-           VALUES (?, ?, 'closed', ?)""",
+        """INSERT INTO project_topics (uuid, topic_id, status, summary, source)
+           VALUES (?, ?, 'closed', ?, 'auto')
+           ON CONFLICT(uuid, topic_id) DO UPDATE SET
+               status='closed',
+               summary=excluded.summary,
+               updated_at=CURRENT_TIMESTAMP""",
         (project_uuid, topic_id, summary))

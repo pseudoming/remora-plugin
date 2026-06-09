@@ -25,6 +25,14 @@ def init_db():
                 conn.execute("SELECT user_confirmed FROM topic_decisions LIMIT 1")
             except sqlite3.OperationalError:
                 conn.execute("ALTER TABLE topic_decisions ADD COLUMN user_confirmed INTEGER DEFAULT 0")
+            try:
+                conn.execute("SELECT injected_count FROM topic_decisions LIMIT 1")
+            except:
+                conn.execute("ALTER TABLE topic_decisions ADD COLUMN injected_count INTEGER DEFAULT 0")
+            try:
+                conn.execute("SELECT last_injected_at FROM topic_decisions LIMIT 1")
+            except:
+                conn.execute("ALTER TABLE topic_decisions ADD COLUMN last_injected_at TEXT")
 
             # Schema 动态迁移升级防线三：扩展 project_topics 列以支持 Phase 17 机制
             for col, col_def in [("source", "TEXT DEFAULT 'auto'"), 

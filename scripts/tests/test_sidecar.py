@@ -467,9 +467,13 @@ class TestCheckPlanApproval:
     @pytest.fixture
     def conn(self):
         c = sqlite3.connect(":memory:")
-        c.execute("CREATE TABLE artifact_hashes (file_path TEXT, hash TEXT, last_updated TIMESTAMP)")
         c.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, conversation_id TEXT, timestamp TIMESTAMP, role TEXT, content TEXT)")
         c.execute("CREATE TABLE remora_event_queue (id INTEGER PRIMARY KEY AUTOINCREMENT, project_uuid TEXT, event_type TEXT, payload TEXT, status TEXT)")
+        c.execute("""CREATE TABLE watermarks (
+            project_uuid TEXT NOT NULL, conversation_id TEXT NOT NULL,
+            last_msg_id INTEGER DEFAULT 0,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (project_uuid, conversation_id))""")
         return c
 
     def test_no_plan_hash_returns_early(self, conn):
@@ -477,31 +481,34 @@ class TestCheckPlanApproval:
         # No exception, no side effects
 
     def test_no_approval_keyword_in_messages(self, conn):
-        conn.execute("INSERT INTO artifact_hashes VALUES ('/artifacts/implementation_plan.md', 'abc', '2024-01-01')")
-        conn.execute("INSERT INTO messages VALUES (1, 'conv1', '2024-01-02', 'USER', 'just chatting')")
+        conn.execute("INSERT INTO messages VALUES (1, 'artifact_sync_p1', '2024-01-01', 'implementation_plan.md', '# Plan')")
+        conn.execute("INSERT INTO messages VALUES (2, 'conv1', '2024-01-02', 'USER', 'just chatting')")
+        conn.execute("INSERT INTO watermarks VALUES ('p1', 'conv1', 1, '2024-01-01')")
         check_approval.check_plan_approval(conn, 'p1')
         events = conn.execute("SELECT * FROM remora_event_queue").fetchall()
         assert events == []
 
     def test_approval_keyword_with_negation(self, conn):
-        conn.execute("INSERT INTO artifact_hashes VALUES ('/artifacts/implementation_plan.md', 'abc', '2024-01-01')")
-        conn.execute("INSERT INTO messages VALUES (1, 'conv1', '2024-01-02', 'USER', '我不同意执行这个方案')")
+        conn.execute("INSERT INTO messages VALUES (1, 'artifact_sync_p1', '2024-01-01', 'implementation_plan.md', '# Plan')")
+        conn.execute("INSERT INTO watermarks (project_uuid, conversation_id) VALUES ('p1', 'conv1')")
+        conn.execute("INSERT INTO messages VALUES (2, 'conv1', '2024-01-02', 'USER', '我不同意执行这个方案')")
         check_approval.check_plan_approval(conn, 'p1')
         events = conn.execute("SELECT * FROM remora_event_queue").fetchall()
         assert events == []
 
     def test_approval_triggers_event(self, conn):
-        conn.execute("INSERT INTO artifact_hashes VALUES ('/artifacts/implementation_plan.md', 'abc', '2024-01-01')")
-        conn.execute("INSERT INTO messages VALUES (1, 'conv1', '2024-01-02', 'USER', '同意，可以执行')")
-        conn.execute("INSERT INTO messages VALUES (2, 'artifact_sync_p1', '2024-01-01', 'implementation_plan.md', '# Plan Content\n## Step 1')")
+        conn.execute("INSERT INTO messages VALUES (1, 'artifact_sync_p1', '2024-01-01', 'implementation_plan.md', '# Plan Content\n## Step 1')")
+        conn.execute("INSERT INTO watermarks (project_uuid, conversation_id) VALUES ('p1', 'conv1')")
+        conn.execute("INSERT INTO messages VALUES (2, 'conv1', '2024-01-02', 'USER', '同意，可以执行')")
         check_approval.check_plan_approval(conn, 'p1')
         events = conn.execute("SELECT * FROM remora_event_queue").fetchall()
         assert len(events) == 1
         assert events[0][2] == 'plan_approval_sync'
 
     def test_english_approval_keyword(self, conn):
-        conn.execute("INSERT INTO artifact_hashes VALUES ('/artifacts/implementation_plan.md', 'abc', '2024-01-01')")
-        conn.execute("INSERT INTO messages VALUES (1, 'conv1', '2024-01-02', 'USER', 'I approve this plan')")
+        conn.execute("INSERT INTO messages VALUES (1, 'artifact_sync_p1', '2024-01-01', 'implementation_plan.md', '# Plan')")
+        conn.execute("INSERT INTO watermarks (project_uuid, conversation_id) VALUES ('p1', 'conv1')")
+        conn.execute("INSERT INTO messages VALUES (2, 'conv1', '2024-01-02', 'USER', 'I approve this plan')")
         check_approval.check_plan_approval(conn, 'p1')
         events = conn.execute("SELECT * FROM remora_event_queue").fetchall()
         assert len(events) == 1

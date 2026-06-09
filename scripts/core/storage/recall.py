@@ -63,6 +63,7 @@ def recall_decisions_by_fts5_topic(project_uuid: str, conv_id: str, keyword: str
                         )
                         AND fts.content MATCH ?
                     )
+                    ORDER BY created_at DESC
                 """, (project_uuid, conv_id, project_uuid, conv_id, conv_id, f'"{safe_keyword}"'))
                 
                 results = []
@@ -87,7 +88,7 @@ def recall_decisions_by_like(project_uuid: str, conv_id: str, keyword: str, limi
                     FROM topic_decisions
                     WHERE (project_uuid = ? OR conversation_id = ?)
                     AND (decision LIKE ? ESCAPE '\\' OR rationale LIKE ? ESCAPE '\\')
-                    LIMIT ?
+                    ORDER BY created_at DESC LIMIT ?
                 """, (project_uuid, conv_id, like_pattern, like_pattern, limit))
                 
                 results = []
@@ -108,7 +109,7 @@ def touch_topics_accessed_by_recall(project_uuid: str, conv_id: str, keyword: st
                 WHERE uuid = ? 
                 AND topic_id IN (
                     SELECT value FROM (
-                        SELECT DISTINCT j.value, m.id
+                        SELECT j.value
                         FROM messages m
                         JOIN messages_fts fts ON m.id = fts.rowid
                         JOIN json_each(COALESCE(m.topic_id, '[]')) j
@@ -125,7 +126,7 @@ def touch_topics_accessed_by_recall(project_uuid: str, conv_id: str, keyword: st
                         SELECT topic_id FROM topic_decisions
                         WHERE (project_uuid = ? OR conversation_id = ?)
                         AND (decision LIKE ? ESCAPE '\\' OR rationale LIKE ? ESCAPE '\\')
-                        LIMIT 5
+                        ORDER BY created_at DESC LIMIT 5
                     )
                 )
             """, (project_uuid, project_uuid, conv_id, conv_id, f'"{safe_keyword}"', project_uuid, conv_id, f"%{safe_keyword}%", f"%{safe_keyword}%"))

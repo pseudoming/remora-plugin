@@ -110,9 +110,9 @@ def get_confirmed_decision_ids(conn, project_uuid: str) -> set:
 def get_recent_decisions(conn, project_uuid: str, topic_id: str, limit: int = 5) -> list:
     """Returns recent decisions (both uc=0 and uc=1) sorted by created_at DESC."""
     cursor = conn.execute(
-        "SELECT decision, rationale, user_confirmed, created_at FROM topic_decisions WHERE project_uuid=? AND topic_id=? ORDER BY created_at DESC LIMIT ?",
+        "SELECT id, decision, rationale, user_confirmed, created_at FROM topic_decisions WHERE project_uuid=? AND topic_id=? ORDER BY created_at DESC LIMIT ?",
         (project_uuid, topic_id, limit))
-    return [{"decision": r[0], "rationale": r[1], "user_confirmed": r[2], "created_at": r[3]} for r in cursor.fetchall()]
+    return [{"id": r[0], "decision": r[1], "rationale": r[2], "user_confirmed": r[3], "created_at": r[4]} for r in cursor.fetchall()]
 
 def get_rejected_or_deferred_by_relevance(conn, project_uuid: str, query_text: str, limit: int = 12) -> list:
     """BM25-ranked rejected/deferred decisions matching the user query, with LIKE fallback."""
@@ -165,3 +165,8 @@ def get_rejected_or_deferred_by_relevance(conn, project_uuid: str, query_text: s
             pass
 
     return candidates
+
+def bump_injection(conn, decision_id: int) -> None:
+    conn.execute(
+        "UPDATE topic_decisions SET injected_count = injected_count + 1, last_injected_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (decision_id,))

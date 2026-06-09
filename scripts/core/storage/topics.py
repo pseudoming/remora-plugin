@@ -8,7 +8,7 @@ def get_active_topic(project_uuid: str) -> Optional[str]:
     try:
         with closing(get_conn()) as conn:
             with conn:
-                row = conn.execute("SELECT topic_id FROM project_topics WHERE uuid=? AND status='open' LIMIT 1", (project_uuid,)).fetchone()
+                row = conn.execute("SELECT topic_id FROM project_topics WHERE uuid=? AND status='open' ORDER BY updated_at DESC LIMIT 1", (project_uuid,)).fetchone()
                 return row[0] if row else None
     except Exception as e:
         log_warn(f"get_active_topic: {e}")
@@ -118,7 +118,7 @@ def get_active_topic_created_at(project_uuid: str) -> Optional[str]:
         with closing(get_conn()) as conn:
             with conn:
                 row = conn.execute(
-                    "SELECT created_at FROM project_topics WHERE uuid=? AND status='open' LIMIT 1",
+                    "SELECT created_at FROM project_topics WHERE uuid=? AND status='open' ORDER BY updated_at DESC LIMIT 1",
                     (project_uuid,)
                 ).fetchone()
                 return row[0] if row else None
