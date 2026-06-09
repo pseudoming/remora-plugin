@@ -1,7 +1,7 @@
 MAX_CONTENT_CHARS = 1000
 
 
-def filter_user_ai_rounds(steps_iter, rounds=10):
+def filter_user_ai_rounds(steps_iter, rounds=10, user_type="USER_INPUT", assistant_type="PLANNER_RESPONSE"):
     results = []
     limit = rounds * 2
     try:
@@ -11,9 +11,9 @@ def filter_user_ai_rounds(steps_iter, rounds=10):
             if not content:
                 continue
 
-            if step_type in ('USER_INPUT', 'PLANNER_RESPONSE'):
+            if step_type in (user_type, assistant_type):
                 results.append({
-                    "role": "user" if step_type == 'USER_INPUT' else "assistant",
+                    "role": "user" if step_type == user_type else "assistant",
                     "content": content[:MAX_CONTENT_CHARS]
                 })
                 if len(results) >= limit:

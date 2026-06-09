@@ -6,7 +6,8 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from adapter.bridge.context import hook_entrypoint
 from core.logger import warn, error, _HOOKS_PROFILE_LOG as HOOKS_PROFILE_LOG
-from core.zombie import get_sys_uptime, clean_whitelist, INFRASTRUCTURE_KEYWORDS, is_infrastructure_process, is_process_expired
+from core.zombie import INFRASTRUCTURE_KEYWORDS, is_infrastructure_process, is_process_expired
+from adapter.sandbox.zombie_linux import get_sys_uptime, clean_whitelist
 
 def log_duration(elapsed, exit_code=0):
     try:

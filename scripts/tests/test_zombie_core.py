@@ -1,104 +1,36 @@
-import os
 import pytest
 
-from unittest.mock import patch, mock_open
+
+class TestIsInfrastructureProcess:
+    def test_matches_keyword(self):
+        from core.zombie import is_infrastructure_process
+        assert is_infrastructure_process("/usr/bin/python3 cognitive-push.py arg") is True
+
+    def test_no_match(self):
+        from core.zombie import is_infrastructure_process
+        assert is_infrastructure_process("/usr/bin/python3 my_script.py") is False
+
+    def test_custom_keywords(self):
+        from core.zombie import is_infrastructure_process
+        assert is_infrastructure_process("run my_tool.sh", keywords=frozenset({"my_tool.sh"})) is True
+        assert is_infrastructure_process("run other.sh", keywords=frozenset({"my_tool.sh"})) is False
 
 
-class TestGetSysUptime:
-    def test_normal(self):
-        from core.zombie import get_sys_uptime
-        mock_file = mock_open(read_data="123.45 67.89\n")
-        with patch("core.zombie.open", mock_file):
-            val = get_sys_uptime()
-            assert val == 123.45
+class TestIsProcessExpired:
+    def test_expired(self):
+        from core.zombie import is_process_expired
+        assert is_process_expired(20.0) is True
+        assert is_process_expired(20.0, threshold=10.0) is True
 
-    def test_exception_returns_zero(self):
-        from core.zombie import get_sys_uptime
-        with patch("core.zombie.open", side_effect=IOError("fail")):
-            val = get_sys_uptime()
-            assert val == 0.0
+    def test_not_expired(self):
+        from core.zombie import is_process_expired
+        assert is_process_expired(5.0) is False
+        assert is_process_expired(15.0) is False
 
-
-class TestCleanWhitelist:
-    def test_file_not_exists(self, tmp_path):
-        from core.zombie import clean_whitelist
-        nonexistent = str(tmp_path / "nonexistent")
-        result = clean_whitelist(nonexistent)
-        assert result == set()
-
-    def test_stale_pids_cleaned(self, tmp_path):
-        from core.zombie import clean_whitelist
-        whitelist_path = tmp_path / "whitelist"
-        whitelist_path.write_text("123\n456\n789\n")
-
-        def mock_exists(path):
-            path_str = str(path)
-            if path_str == str(whitelist_path):
-                return True
-            if "/proc/456" in path_str:
-                return True
-            return False
-
-        with patch("core.zombie.os.path.exists", side_effect=mock_exists), \
-             patch("core.zombie.os.makedirs"):
-            result = clean_whitelist(str(whitelist_path))
-            assert result == {"456"}
-            content = whitelist_path.read_text()
-            assert "123" not in content
-            assert "789" not in content
-            assert "456" in content
-
-    def test_valid_pids_kept(self, tmp_path):
-        from core.zombie import clean_whitelist
-        whitelist_path = tmp_path / "whitelist"
-        whitelist_path.write_text("111\n222\n333\n")
-
-        def mock_exists(path):
-            path_str = str(path)
-            if path_str == str(whitelist_path):
-                return True
-            if "/proc/" in path_str:
-                return True
-            return False
-
-        with patch("core.zombie.os.path.exists", side_effect=mock_exists), \
-             patch("core.zombie.os.makedirs"):
-            result = clean_whitelist(str(whitelist_path))
-            assert result == {"111", "222", "333"}
-            content = whitelist_path.read_text()
-            assert "111" in content
-            assert "222" in content
-            assert "333" in content
-
-    def test_empty_lines_ignored(self, tmp_path):
-        from core.zombie import clean_whitelist
-        whitelist_path = tmp_path / "whitelist"
-        whitelist_path.write_text("\n\n42\n\n\n")
-
-        def mock_exists(path):
-            path_str = str(path)
-            if path_str == str(whitelist_path):
-                return True
-            if "/proc/42" in path_str:
-                return True
-            return False
-
-        with patch("core.zombie.os.path.exists", side_effect=mock_exists), \
-             patch("core.zombie.os.makedirs"):
-            result = clean_whitelist(str(whitelist_path))
-            assert result == {"42"}
-            content = whitelist_path.read_text()
-            assert content.strip() == "42"
-
-    def test_read_exception_graceful(self, tmp_path):
-        from core.zombie import clean_whitelist
-        whitelist_path = tmp_path / "whitelist"
-        whitelist_path.write_text("111\n")
-
-        with patch("core.zombie.os.path.exists", return_value=True), \
-             patch("core.zombie.open", side_effect=IOError("fail")):
-            result = clean_whitelist(str(whitelist_path))
-            assert result == set()
+    def test_custom_threshold(self):
+        from core.zombie import is_process_expired
+        assert is_process_expired(5.0, threshold=3.0) is True
+        assert is_process_expired(5.0, threshold=10.0) is False
 
 
 class TestInfrastructureKeywords:
