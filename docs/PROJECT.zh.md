@@ -13,7 +13,7 @@ scripts/
 ├── core/          ← 可移植核心（零 Antigravity 依赖）
 │   ├── storage/   ← SQLite DAO（sessions, topics, decisions, recall 等 10 模块）
 │   ├── rules/     ← 命令安全检查引擎（inspector）
-│   ├── liveness.py, phantom.py, injector.py, zombie.py, reader.py, coverage.py
+│   ├── liveness.py, phantom.py, injector.py, zombie.py, reader.py, coverage.py, gate.py, text_analysis.py
 │   ├── filesystem.py, logger.py
 ├── adapter/       ← Antigravity 绑定层
 │   ├── hooks/     ← 8 个生命周期拦截器
@@ -24,7 +24,7 @@ scripts/
 │   └── maintenance/ ← GC, 幽灵数据清理
 ├── lib/           ← DAO re-export facade（30 行）
 ├── schema/        ← DDL + 动态迁移
-├── tests/         ← 655 个测试
+├── tests/         ← 674 个测试
 └── debug/         ← tail, inspect, env
 ```
 
@@ -32,7 +32,7 @@ scripts/
 
 ```
 Antigravity Hook 触发
-    → adapter/hooks/ （拦截、模式判定、记忆重载、写门禁、安全检查）
+    → adapter/hooks/ （拦截、模式判定、记忆重载(uc=0 + uc=1 决策)、写门禁+文件触碰注入、安全检查）
     → adapter/sidecar/compactor/ （后台 LLM 增量提取决策）
     → core/storage/ ← lib/dao.py （统一 SQLite 读写）
 ```
@@ -46,12 +46,18 @@ Antigravity Hook 触发
 | 46 | install.py 重写（幂等、dry-run、uninstall）、README v2、DB 路径统一 | ✅ |
 | 47 | README v2 故事化改写、conf/ 目录规范化、tracking hygiene | ✅ |
 | 48 | Sidecar 重构：AgentAPI bridge、纯函数拆 core、搬家 adapter/sidecar/ | ✅ |
+| 49 | 双语文档重写 | ✅ |
+| 50 | 三层模式(放松/严格/警觉)、步距召回、关键词精简 | ✅ |
+| 51 | uc=0 快照系统、文件变更追踪、supersede_unconfirmed | ✅ |
+| 52 | 文件触碰注入、Sidecar DAO 下沉、死代码清理、平台提取 | ✅ |
+| 53 | 冷启动修复(uc=0+uc=1)、存活检测统一、core 层清理 | ✅ |
+| 54 | Line C 语义冲突检测(BM25 + flash-lite)、features.json 门禁、core/gate.py | ✅ |
 
 ## Quality Gates
 
 - `core/` 禁止 import `adapter/`（`test_architecture.py` 强制检查）
 - 所有 DB 读写过 `lib/dao.py`
-- 655 tests, `pytest scripts/tests/ -q`
+- 674 tests, `pytest scripts/tests/ -q`
 - 禁止裸 `sqlite3.connect()` 在 adapter/ 中
 
 ## Quick Start
@@ -61,5 +67,5 @@ git clone https://github.com/pseudoming/remora-antigravity-plugin.git \
   ~/.gemini/config/plugins/remora-plugin
 cd ~/.gemini/config/plugins/remora-plugin
 python3 install.py
-pytest scripts/tests/ -q  # 655 tests
+pytest scripts/tests/ -q  # 674 tests
 ```

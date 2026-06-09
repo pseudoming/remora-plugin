@@ -47,4 +47,5 @@ from core.storage.runtime_state import (
     get_runtime_hook_value, set_runtime_hook_value, delete_runtime_hook_value,
     trim_runtime_hook_states, get_hook_state, set_hook_state, delete_hook_state, trim_hook_states
 )
+from core.gate import should_fire, mark_fired, is_duplicate, clear_stale
 from core.storage.connection import check_db_exists

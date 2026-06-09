@@ -4,6 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.session import read_mode
 from core.logger import warn, error
+from core.gate import should_fire, mark_fired
 
 import json, re
 
@@ -66,9 +67,8 @@ def main(context):
     if mode in ("strict", "alert"):
         user_input_count = cdal.get_user_input_count()
         if user_input_count % 5 == 0:
-            injected_val = get_hook_state(conv_id, current_turn_idx, 'tone_injected')
-            if not injected_val:
-                set_hook_state(conv_id, current_turn_idx, 'tone_injected', '1')
+            if should_fire(conv_id, "tone_injected", str(current_turn_idx)):
+                mark_fired(conv_id, "tone_injected", str(current_turn_idx))
 
                 # 中文翻译：
                 # ⛔ REMORA 沟通风格限制 [严格语气]：

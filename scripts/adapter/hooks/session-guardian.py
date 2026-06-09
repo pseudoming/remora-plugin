@@ -10,6 +10,7 @@ from adapter.bridge.subagent import get_subagent_type
 from core.liveness import clean_system_reminders, detect_mode
 from adapter.bridge.paths import get_data_dir, extract_conv_id, find_plugin_root
 from lib import dao
+from core.gate import mark_fired
 
 @hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Session Guardian 发生异常。状态同步防线已降级，但不影响正常对话。</system-reminder>"}]})
 def main(context):
@@ -280,7 +281,7 @@ def main(context):
                 "📓 Before finalizing a new decision, cross-check with remora-recall.py. If a past decision conflicts with your current plan, discuss with the user before proceeding.\n"
                 "</system-reminder>"
             })
-            dao.set_hook_state(conv_id, -1, "last_recall_turn", str(current_turn_idx))
+            mark_fired(conv_id, "last_recall_turn", current_turn_idx)
 
     dao.write_mode(conv_id, mode)
 

@@ -4,7 +4,7 @@
 
 **[Trading Compute for Cognitive Safety] — Deterministic rules guard the probabilistic core, so AI Agents never forget**
 
-![Platform](https://img.shields.io/badge/platform-Antigravity-blue) ![Tests](https://img.shields.io/badge/tests-655%20passed-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
+![Platform](https://img.shields.io/badge/platform-Antigravity-blue) ![Tests](https://img.shields.io/badge/tests-674%20passed-brightgreen) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
@@ -54,10 +54,11 @@ Spending an extra 1M tokens on memory management (≈ $0.10) to avoid 1h of rewo
 
 ## What It Does
 
-- 📓 **Decision Memory Network** — Fully automatic extraction of architectural decisions from conversations. FTS5 trigram Chinese full-text index, three-channel hybrid recall. User-confirmed decisions are promoted to `manual` tier, permanently exempt from GC
+- 📓 **Decision Memory Network** — Fully automatic extraction of architectural decisions from conversations. FTS5 trigram Chinese full-text index, three-channel hybrid recall (keyword + vector + semantic), automatic step-distance recall every N turns in strict mode, and alert-keyword forced recall. User-confirmed decisions are promoted to `manual` tier, permanently exempt from GC
 - 🛡️ **Phantom File Detection** — 7 groups of Chinese/English regex matching model-claimed filenames, physical snapshot diff cross-validation. Phantom write detected → inject warning + `force_continue`
 - 💀 **Subagent Liveness Self-Healing** — Heartbeat probing (60s/180s tiered timeout). `completed` → alive, `blocked` → dead, `timeout` → kill_and_retry. After 2 retries → escalate to human
-- 🚧 **Global Write Gate** — First write to core code → deny + require explanation of intent. Second retry → allow. Relax mode adaptively permits safe writes
+- 🚧 **Global Write Gate** — First write to core code → deny + require explanation of intent. Second retry → allow. On write retry, also injects historical decisions associated with the target file for conflict awareness. Three-tier mode (strict/relax/alert) adaptively gates write access
+- 🔬 **Line C Semantic Conflict Detection** — Cross-reference historical architecture decisions against current file write targets to detect semantic drift before code lands
 - 🔒 **Safety Audit** — `run_command` / `view_file` / `grep_search` pre-interception. Recursive Base64 audit, log large-file read circuit breaker, test/compile mandatory delegation to subagent sandbox
 - 👻 **Zombie Process Cleanup** — Scans `/proc` for unmanaged background processes (>15s), matches Antigravity env vars + whitelist filtering, blocks tool execution on detection
 
@@ -119,26 +120,29 @@ python3 scripts/debug/env.py     # System environment info
 └───┬──────┬──────┬──────┬────────┬────────┬───────────────────────┘
     │      │      │      │        │        │
     ▼      ▼      ▼      ▼        ▼        ▼
-  ┌────────────────────────┐ ┌────────────┐ ┌──────────────────────┐
-  │   PreInvocation        │ │ PreToolUse │ │       Stop           │
-  │                        │ │            │ │                      │
-  │ session-guardian ────► │ │ safety-    │ │ compactor            │
-  │   (mode, decision)     │ │  check     │ │   (artifact MD5)     │
-  │                        │ │   (cmd     │ │                      │
-  │ action-gate ──────────►│ │   safety)  │ │ clean-session-stats  │
-  │   (phantom detection)  │ │            │ │                      │
-  │                        │ │ cognitive- │ │ check-subagents-     │
-  │ cognitive-push ───────►│ │  push      │ │  liveness            │
-  │   (decision injection) │ │   (write   │ │   (subagent probe)   │
-  │                        │ │   gate)    │ │                      │
-  │ zombie-detector ──────►│ │ zombie-    │ └──────────┬───────────┘
-  │   (process scan)       │ │  detector  │            │
-  │                        │ │   (pre-tool│            │
-  │ tone-injector          │ │   block)   │            │
-  │   (tone discipline)    │ └────────────┘            │
-  └───────────┬────────────┘                           │
-              │                                        │
-              ▼                                        ▼
+  ┌────────────────────┐ ┌────────────┐ ┌──────────────────┐ ┌──────────────────┐
+  │   PreInvocation    │ │ PreToolUse │ │      Stop        │ │  PostInvocation  │
+  │                    │ │            │ │                  │ │                  │
+  │ session-guardian ─►│ │ safety-    │ │ compactor        │ │ action-gate      │
+  │   (mode, decision) │ │  check     │ │   (artifact MD5) │ │   (phantom       │
+  │                    │ │   (cmd     │ │                  │ │    detection)    │
+  │ cognitive-push ───►│ │   safety)  │ │ clean-session-   │ └──────────────────┘
+  │   (decision        │ │            │ │  stats           │
+  │    injection)      │ │ cognitive- │ │                  │
+  │                    │ │  push      │ │ check-subagents- │
+  │ zombie-detector ─► │ │   (write   │ │  liveness        │
+  │   (process scan)   │ │   gate +   │ │   (subagent      │
+  │                    │ │   file-touch│ │    probe)        │
+  │ tone-injector      │ │   injection)│ └──────────┬───────┘
+  │   (tone discipline)│ │            │            │
+  │                    │ │ zombie-    │            │
+  │ snapshot-git       │ │  detector  │            │
+  │                    │ │   (pre-tool│            │
+  │ check-subagents-   │ │   block)   │            │
+  │  liveness          │ └────────────┘            │
+  └──────────┬─────────┘                           │
+             │                                     │
+             ▼                                     ▼
   ┌────────────────────────────────────────────────────────────────┐
   │                SQLite Warm Storage (remora_memory.db)          │
   │  messages · project_topics · topic_decisions · watermarks      │
@@ -164,7 +168,7 @@ scripts/
 ├── adapter/       ← Antigravity binding layer — hooks/, bridge/, cli/, sandbox/, maintenance/
 ├── lib/           ← DAO re-export facade
 ├── schema/        ← DDL + dynamic migration
-├── tests/         ← 655 tests
+├── tests/         ← 674 tests
 └── debug/         ← tail.py, inspect.py, env.py
 ```
 
@@ -174,7 +178,7 @@ scripts/
 
 ```bash
 # Run tests
-pytest scripts/tests/ -q                         # 655 tests
+pytest scripts/tests/ -q                         # 674 tests
 
 # Add a new Hook
 1. Write a script using the @hook_entrypoint decorator

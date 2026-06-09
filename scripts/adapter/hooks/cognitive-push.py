@@ -8,6 +8,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.paths import extract_conv_id
 from lib import dao
+from core.gate import should_fire, mark_fired, is_duplicate
+from core.storage.runtime_state import get_hook_state as _get
 from core.logger import warn, error, debug
 
 
@@ -24,8 +26,7 @@ def _get_active_topic_and_decisions(uuid):
 
 def _handle_pre_invocation(context, conv_id, current_turn_idx):
     # 检查同回合内是否已经注入过会话重载提示
-    resume_injected = dao.get_hook_state(conv_id, current_turn_idx, "resume_injected")
-    if resume_injected:
+    if is_duplicate(conv_id, "resume_injected", str(current_turn_idx)):
         return {"injectSteps": []}
 
     inject_steps = []
@@ -59,14 +60,14 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
     # 查找 session 判定冷启动
     session = dao.get_session(conv_id)
     if not session or session[2] == 0:  # session[2] = is_cold_start
-        dao.set_hook_state(conv_id, current_turn_idx, "resume_injected", "1")
+        mark_fired(conv_id, "resume_injected", str(current_turn_idx))
         return {"injectSteps": inject_steps}
 
 
         
     uuid = dao.get_project_uuid_by_conv(conv_id)
     if not uuid:
-        dao.set_hook_state(conv_id, current_turn_idx, "resume_injected", "1")
+        mark_fired(conv_id, "resume_injected", str(current_turn_idx))
         return {"injectSteps": inject_steps}
         
     topic_id, decisions = _get_active_topic_and_decisions(uuid)
@@ -98,7 +99,7 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
         
     # 恢复物理消费，仅在消费成功且执行 Line A 后置 0
     dao.update_cold_start(conv_id, 0)
-    dao.set_hook_state(conv_id, current_turn_idx, "resume_injected", "1")
+    mark_fired(conv_id, "resume_injected", str(current_turn_idx))
     
     return {"injectSteps": inject_steps}
 
@@ -127,7 +128,7 @@ def _run_line_c(context, conv_id, current_turn_idx):
         return []
 
     window_key = f"line_c_window:{turn_interval}"
-    if dao.get_hook_state(conv_id, -1, window_key):
+    if not should_fire(conv_id, window_key, str(turn_interval)):
         return []
 
     last_msg = context.get("last_msg", "")
@@ -157,7 +158,7 @@ def _run_line_c(context, conv_id, current_turn_idx):
         candidates = get_rejected_or_deferred_by_relevance(conn, uuid, clean_msg)
 
     if not candidates:
-        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        mark_fired(conv_id, window_key, str(turn_interval))
         return []
 
     prompt = build_conflict_detection_prompt(clean_msg, candidates)
@@ -172,25 +173,25 @@ def _run_line_c(context, conv_id, current_turn_idx):
             resp = create_conversation(prompt, timeout=15, model="flash_lite")
             llm_output = resp.get('response', {}).get('newConversation', {}).get('reply', '') or _json.dumps(resp)
         except Exception:
-            dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+            mark_fired(conv_id, window_key, str(turn_interval))
             return []
 
     import re
     json_match = re.search(r'({.*})', llm_output, re.DOTALL)
     if not json_match:
-        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        mark_fired(conv_id, window_key, str(turn_interval))
         return []
 
     try:
         import json
         result = json.loads(json_match.group(1).strip())
     except Exception:
-        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        mark_fired(conv_id, window_key, str(turn_interval))
         return []
 
     conflicts = result.get("conflicts", [])
     if not conflicts:
-        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        mark_fired(conv_id, window_key, str(turn_interval))
         return []
 
     candidate_map = {c["id"]: c for c in candidates}
@@ -205,15 +206,10 @@ def _run_line_c(context, conv_id, current_turn_idx):
 
         d = candidate_map[cid]
         conflict_key = f"line_c_conflict:{cid}"
-        previous_window = dao.get_hook_state(conv_id, -1, conflict_key)
-
-        if previous_window and str(previous_window) == str(turn_interval):
+        if is_duplicate(conv_id, conflict_key, str(turn_interval)):
             continue
 
-        if previous_window and str(previous_window) != str(turn_interval):
-            dao.delete_hook_state(conv_id, -1, conflict_key)
-
-        is_repeat = previous_window is not None
+        is_repeat = _get(conv_id, -1, conflict_key) is not None
         label = "REPEAT CONFLICT" if is_repeat else "SEMANTIC CONFLICT DETECTED"
         type_label = d["decision_type"].upper()
         date = d["created_at"][:10] if d.get("created_at") else ""
@@ -236,10 +232,10 @@ def _run_line_c(context, conv_id, current_turn_idx):
             f"</system-reminder>"
         )
         inject_steps.append({"ephemeralMessage": msg})
-        dao.set_hook_state(conv_id, -1, conflict_key, str(turn_interval))
+        mark_fired(conv_id, conflict_key, str(turn_interval))
 
     if has_any_conflict:
-        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        mark_fired(conv_id, window_key, str(turn_interval))
 
     return inject_steps
 
@@ -283,7 +279,7 @@ def _handle_pre_tool_use(context, conv_id, current_turn_idx):
             decisions = dao.get_decisions_by_file(uuid, file_name)
             if decisions:
                 dedup_key = f"file_decisions_injected:{file_name}"
-                if not dao.get_hook_state(conv_id, current_turn_idx, dedup_key):
+                if should_fire(conv_id, dedup_key, str(current_turn_idx)):
                     lines = []
                     for i, d in enumerate(decisions[:3], 1):
                         lines.append(f"  {i}. {d['decision'][:150]}")
@@ -295,7 +291,7 @@ def _handle_pre_tool_use(context, conv_id, current_turn_idx):
                         f"</system-reminder>"
                     )
                     inject_steps.append({"ephemeralMessage": msg})
-                    dao.set_hook_state(conv_id, current_turn_idx, dedup_key, "1")
+                    mark_fired(conv_id, dedup_key, str(current_turn_idx))
             return {"decision": "allow", "injectSteps": inject_steps}
         else:
             # 第一次尝试，记录状态为 "1"，并返回 deny 与 prompt 注入

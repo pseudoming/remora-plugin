@@ -9,8 +9,8 @@
 ## 一、 Hooks 拦截器流程 (Interception Flows)
 
 ### 1. PreInvocation 流程
-* **业务描述**：在 Agent 被输入唤醒并开始执行前，挂载的钩子被调用。用于拦截会话、判定当前的交互模式（`strict`/`relax`）并注入提示词上下文以引导大模型。
-* **底层脚本**：`{PLUGIN_ROOT}/adapter/hooks/session-guardian.py` 与 `{PLUGIN_ROOT}/adapter/hooks/action-gate.py`。
+* **业务描述**：在 Agent 被输入唤醒并开始执行前，挂载的钩子被调用。用于拦截会话、判定当前的交互模式（`strict`/`relax`/`alert`）并注入提示词上下文以引导大模型。
+* **底层脚本**：`{PLUGIN_ROOT}/adapter/hooks/session-guardian.py`、`{PLUGIN_ROOT}/adapter/hooks/action-gate.py` 与 `{PLUGIN_ROOT}/adapter/hooks/snapshot-git.py`。
 * **SQLite 交互**：
   * **表**：
     * `session_state`：读取和更新当前会话模式（`mode`）和冷启动标记（`is_cold_start`）。
@@ -25,9 +25,12 @@
   1. 拦截器被唤醒，验证 `{data_dir}/.runtime/installed.flag` 是否存在，若不存在则直接放行。
   2. 从 `stdin` 读取上下文 JSON，解析出当前 `conversationId` 和最近的对话历史。
   3. 查询 `watermarks` 获取会话对应的 `project_uuid`。
-  4. 读取 `{PLUGIN_ROOT}/conf/keywords.json` 中配置的模式词（如 `[strict]`、`[relax]`）。若用户发言中包含对应词，则更新 `session_state` 的 `mode` 列。
+  4. 读取 `{PLUGIN_ROOT}/conf/keywords.json` 中配置的模式词（如 `[strict]`、`[relax]`、`[alert]`）。若用户发言中包含对应词，则更新 `session_state` 的 `mode` 列。
   5. 审计子特工状态，如果子特工正在运行且对应的 `schedule` 计时器丢失，则向大模型注入引导使用 `schedule` 的 `injectSteps`。
-  6. 校验只读累积量，若超过阈值（Source 150KB，Data 50KB），注入超限软警告提示词。
+   6. 校验只读累积量，若超过阈值（Source 150KB，Data 50KB），注入超限软警告提示词。
+   7. **冷启动决策注入：** 若 `is_cold_start=1`，从当前项目活跃话题中注入 `uc=0`（未确认）和 `uc=1`（用户已确认）决策作为 `<system-reminder>` 上下文，确保大模型无需显式召回即可立即获得架构感知。
+   8. **步距召回注入：** 在 `strict` 模式下，每 N 轮对话自动注入一批来自 `topic_decisions` 的近期话题决策作为隐式召回提示词，在长会话中维持架构对齐。此功能由 `conf/features.json` 开关控制。
+   9. **警觉强制召回：** 当用户消息中检测到 Line C 警觉关键词（由 `conf/approval.json` 定义）时，强制注入 `topic_decisions` 中所有匹配决策及其证据摘录，覆盖正常召回门控逻辑。
 * **Mermaid 流程图**：
 ```mermaid
 sequenceDiagram
@@ -38,7 +41,7 @@ sequenceDiagram
     AGY->>SG: 触发 PreInvocation Hook (Context JSON)
     SG->>DB: 查询 project_uuid_by_conv()
     SG->>DB: 检索 messages 最新几步发言
-    SG->>SG: 匹配关键词 (strict/relax)
+     SG->>SG: 匹配关键词 (strict/relax/alert)
     SG->>DB: 更新 session_state 模式状态
     SG->>SG: 审计子代理存活与计时器注册
     SG->>SG: 校验只读累积量
@@ -77,7 +80,7 @@ sequenceDiagram
 flowchart TD
     A[大模型触发 Tool Call] --> B(PreToolUse Hook: safety-check.py)
     B --> C{读取 session_state 模式}
-    C -->|strict / relax| D[调用 agentapi 获取特工类型]
+     C -->|strict / relax / alert| D[调用 agentapi 获取特工类型]
     D --> E{工具类别判定}
     
     E -->|invoke_subagent| F{Prompt 长度 <= 1500 且 Diver 绑定隔离分支?}
@@ -90,10 +93,22 @@ flowchart TD
     
     E -->|run_command| H{未逃逸物理沙箱 且 测试/构建被委派至 Deep_Diver?}
     H -->|Yes| Allow
-    H -->|No| Deny
+     H -->|No| Deny
 ```
 
+### 2.1 cognitive-push PreToolUse 子流程
+* **业务描述**：一个次级 PreToolUse 拦截器，当写入操作发生时，为 LLM 上下文注入文件触碰和语义冲突感知。
+* **底层脚本**：`{PLUGIN_ROOT}/adapter/hooks/cognitive-push.py`。
+* **SQLite 交互**：
+  * **表**：`topic_decisions`（通过 `get_decisions_by_file` 读取决策）、`project_topics`、`artifacts`（用于语义冲突扫描）。
+  * **配置开关**：由 `{PLUGIN_ROOT}/conf/features.json` 控制。
+* **详细步骤**：
+  1. **写入门控（首次拒绝，二次允许）：** 首次执行带写入副作用的 `run_command` 时，拦截器拒绝执行并注入提醒提示词，列出与目标文件相关的过往决策。
+  2. **文件触碰注入：** 二次写入尝试（或首次 `view_file` 访问）时，调用 `get_decisions_by_file()` 将目标文件路径关联的决策注入 `<system-reminder>`，丰富 LLM 的架构推理上下文。
+  3. **Line C 语义冲突检测：** 扫描当前话题决策与 `artifacts` 表之间的语义冲突（如 plan 与 walkthrough 的不一致）。此功能由 `conf/features.json` 中的 `semantic_conflict_detection` 开关控制。检测到冲突时，在正常的文件触碰提示外额外发出 `AlertViolated` 注入步骤。
+
 ---
+
 
 ### 3. Stop 流程
 * **业务描述**：当 Agent 运行结束并退回离线状态时执行。用于异步搜刮制品，将新修改的 Markdown 文档增量导入温存储，并重置会话计数器。
@@ -115,7 +130,8 @@ flowchart TD
   4. 比对 `artifact_hashes` 中的记录。若无变化，直接退出；若发生变化，则触发增量导入：
   5. 物理删除旧的制品数据记录。
   6. 插入最新制品作为事实到 `messages`，指定 `topic_id='artifact_topic'`，行号为 `999900`（Plan）及 `999901`（Walkthrough）。
-  7. 除 Plan 审批走独立逻辑外，其他成功变更的制品会在 `remora_event_queue` 中插入一条 `walkthrough_sync` 事件，供后台异步消费。
+   7. 除 Plan 审批走独立逻辑外，其他成功变更的制品会在 `remora_event_queue` 中插入一条 `walkthrough_sync` 事件，供后台异步消费。
+   8. **淘汰未确认决策：** 当同一话题下产生 `user_confirmed=1` 的决策时，Compactor 调用 `supersede_unconfirmed` 将旧有的 `uc=0` 同级决策标记为已淘汰，防止温存储索引中积累过期的自动提取决策。
 * **Mermaid 流程图**：
 ```mermaid
 sequenceDiagram
@@ -143,7 +159,7 @@ sequenceDiagram
 
 ### 4. 子特工心跳/活体检测流程
 * **业务描述**：实时审计由主特工派生的子特工（Subagents）执行状态，当子特工卡死或超时未更新心跳时，进行拦截并提供自愈重试建议，防止主特工无响应超时。
-* **底层脚本**：`{PLUGIN_ROOT}/adapter/sandbox/check-subagents-liveness.py` 与 `{PLUGIN_ROOT}/adapter/sandbox/subagent-monitor.py`。
+* **底层脚本**：`{PLUGIN_ROOT}/adapter/sandbox/check-subagents-liveness.py`、`{PLUGIN_ROOT}/adapter/sandbox/subagent-monitor.py` 与 `{PLUGIN_ROOT}/core/liveness.py`（提供 `judge_zombie` 和 `suggest_zombie_action`）。
 * **SQLite 交互**：
   * **表**：`messages`（检测子特工和父特工之间的系统消息与错误输出）。
 * **API 交互逻辑**：
@@ -156,8 +172,8 @@ sequenceDiagram
      * 若 `status` 字段为 `completed`：判定存活且已成功结束。
      * 若 `status` 字段为 `blocked` 或日志中捕获到 `permission denied` 等错误：标记为 Blocked。
      * 计算 `progress.json` 更新时间与 SQLite 子会话最后消息写入时间的最小时间差 `idle_seconds`。
-     * 若正在执行 `run_command`，超时卡死阈值放宽至 180 秒，否则为 60 秒。若 `idle_seconds` 超过阈值，判定为 `Dead (Timeout)`。
-  4. **自愈建议**：
+     * 若正在执行 `run_command`，超时卡死阈值放宽至 180 秒，否则为 60 秒。若 `idle_seconds` 超过阈值，由 `core/liveness.py` 的 `judge_zombie()` 判定子代理为 `Dead (Timeout)`。
+   4. **自愈建议（通过 `core/liveness.py` 中的 `suggest_zombie_action()`）：**
      * 检查并累加 `{PLUGIN_ROOT}/data/.runtime/remora_subagent_retries/{parent_conv_id}.json` 中的重试次数。
      * 若累计重试次数 $< 2$：向父特工返回 `kill_and_retry` 建议，引导大模型强杀并重试。
      * 若累计重试次数 $\ge 2$：返回 `escalate_to_human` 建议，停止重试，直接上报用户。
@@ -328,8 +344,10 @@ flowchart TD
      * 以 FTS5 命中的消息的 `topic_id` 为目标，反向提取 `topic_decisions` 中与这些话题绑定的已存决策、合理性依据及引用的证据行原文片段。
   5. **召回通道 B（直接匹配架构决策）**：
      * 对 `topic_decisions` 的 `decision` 和 `rationale` 列执行 `LIKE` 模糊匹配。
-  6. **自愈加热触碰**：
-     * 若匹配数 $> 0$，将命中的所有话题的 `last_accessed_at` 时间戳更新为当前时间，避免其近期被 GC 垃圾清理回收。
+   6. **自愈加热触碰**：
+       * 若匹配数 $> 0$，将命中的所有话题的 `last_accessed_at` 时间戳更新为当前时间，避免其近期被 GC 垃圾清理回收。
+   7. **自动步距召回注入：** 在 `strict` 模式下，会话守护者每 N 轮对话自动触发 `remora-recall.py`（步距召回），将一批精选的近期话题决策作为 `<system-reminder>` 提示词注入 LLM 上下文，确保持续的架构对齐，无需 LLM 显式调用召回。
+   8. **警觉触发强制召回：** 当用户消息包含 Line C 警觉关键词（由 `conf/approval.json` 定义）时，拦截器绕过正常召回门控，强制立即全面召回所有匹配决策及其证据摘录，在提示词上下文中提高架构优先级。
 * **Mermaid 流程图**：
 ```mermaid
 flowchart TD

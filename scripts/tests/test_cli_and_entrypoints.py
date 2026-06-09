@@ -564,8 +564,8 @@ def test_cognitive_push_line_c():
          patch("cognitive_push.dao.read_mode", return_value="strict"), \
          patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
          patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
-         patch("cognitive_push.dao.get_hook_state", return_value=None), \
-         patch("cognitive_push.dao.set_hook_state"), \
+         patch("cognitive_push.is_duplicate", return_value=False), \
+         patch("cognitive_push.mark_fired"), \
          patch("cognitive_push.dao.update_cold_start"):
         res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
         conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
@@ -577,8 +577,10 @@ def test_cognitive_push_line_c():
          patch("cognitive_push.dao.read_mode", return_value="strict"), \
          patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
          patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
-         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
-         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.is_duplicate", return_value=False), \
+         patch("cognitive_push.should_fire", return_value=True), \
+         patch("cognitive_push._get", return_value=None), \
+         patch("cognitive_push.mark_fired") as mock_mark, \
          patch("cognitive_push.dao.update_cold_start"), \
          patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=[]), \
@@ -589,7 +591,7 @@ def test_cognitive_push_line_c():
         mock_cdal.stream_steps_reverse.return_value = [{"type": "USER_INPUT", "content": "hello world"}]
         mock_cdal_cls.return_value = mock_cdal
         res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
-        mock_set.assert_any_call("c1", -1, "line_c_window:2", "2")
+        mock_mark.assert_any_call("c1", "line_c_window:2", "2")
         conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
         assert len(conflict_msgs) == 0
 
@@ -602,8 +604,10 @@ def test_cognitive_push_line_c():
          patch("cognitive_push.dao.read_mode", return_value="strict"), \
          patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
          patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
-         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
-         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.is_duplicate", return_value=False), \
+         patch("cognitive_push.should_fire", return_value=True), \
+         patch("cognitive_push._get", return_value=None), \
+         patch("cognitive_push.mark_fired") as mock_mark, \
          patch("cognitive_push.dao.update_cold_start"), \
          patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
@@ -628,8 +632,10 @@ def test_cognitive_push_line_c():
          patch("cognitive_push.dao.read_mode", return_value="strict"), \
          patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
          patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
-         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
-         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.is_duplicate", return_value=False), \
+         patch("cognitive_push.should_fire", return_value=True), \
+         patch("cognitive_push._get", return_value=None), \
+         patch("cognitive_push.mark_fired") as mock_mark, \
          patch("cognitive_push.dao.update_cold_start"), \
          patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
@@ -652,8 +658,10 @@ def test_cognitive_push_line_c():
          patch("cognitive_push.dao.read_mode", return_value="strict"), \
          patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
          patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
-         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
-         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.is_duplicate", return_value=False), \
+         patch("cognitive_push.should_fire", return_value=True), \
+         patch("cognitive_push._get", return_value=None), \
+         patch("cognitive_push.mark_fired") as mock_mark, \
          patch("cognitive_push.dao.update_cold_start"), \
          patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
@@ -667,7 +675,7 @@ def test_cognitive_push_line_c():
         res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
         conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
         assert len(conflict_msgs) == 0
-        mock_set.assert_any_call("c1", -1, "line_c_window:2", "2")
+        mock_mark.assert_any_call("c1", "line_c_window:2", "2")
 
     # 6. LLM returns non-JSON → silent skip
     mock_extract.get_or_create_conversation.reset_mock()
@@ -678,8 +686,10 @@ def test_cognitive_push_line_c():
          patch("cognitive_push.dao.read_mode", return_value="strict"), \
          patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
          patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
-         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
-         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.is_duplicate", return_value=False), \
+         patch("cognitive_push.should_fire", return_value=True), \
+         patch("cognitive_push._get", return_value=None), \
+         patch("cognitive_push.mark_fired") as mock_mark, \
          patch("cognitive_push.dao.update_cold_start"), \
          patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
@@ -702,8 +712,10 @@ def test_cognitive_push_line_c():
          patch("cognitive_push.dao.read_mode", return_value="strict"), \
          patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
          patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
-         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: "2" if "line_c_conflict" in key else None), \
-         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.is_duplicate", side_effect=lambda cid, key, val: True if "line_c_conflict" in key else False), \
+         patch("cognitive_push.should_fire", return_value=True), \
+         patch("cognitive_push._get", return_value=None), \
+         patch("cognitive_push.mark_fired"), \
          patch("cognitive_push.dao.update_cold_start"), \
          patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
          patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
@@ -724,8 +736,8 @@ def test_cognitive_push_line_c():
          patch("cognitive_push.dao.read_mode", return_value="strict"), \
          patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
          patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
-         patch("cognitive_push.dao.get_hook_state", return_value=None), \
-         patch("cognitive_push.dao.set_hook_state"), \
+         patch("cognitive_push.is_duplicate", return_value=False), \
+         patch("cognitive_push.mark_fired"), \
          patch("cognitive_push.dao.update_cold_start"), \
          patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
         mock_cdal = MagicMock()
@@ -827,14 +839,16 @@ def test_cognitive_push_pre_tool_use():
              ]), \
              patch("cognitive_push.dao.insert_file_change"), \
              patch("lib.dao.get_hook_state", side_effect=lambda sid, tid, key: "1" if key.startswith("first_write_deny:") else None), \
-             patch("lib.dao.set_hook_state") as mock_set_hs:
+             patch("lib.dao.set_hook_state"), \
+             patch("cognitive_push.should_fire", return_value=True), \
+             patch("cognitive_push.mark_fired") as mock_mark:
             res = cognitive_push.main.__wrapped__(ctx_protect)
             assert res["decision"] == "allow"
             recall_msgs = [s for s in res["injectSteps"] if "历史决策" in s.get("ephemeralMessage", "")]
             assert len(recall_msgs) == 1
             assert "my_file.py 关联 2 条历史决策" in recall_msgs[0]["ephemeralMessage"]
             assert "Use JWT auth" in recall_msgs[0]["ephemeralMessage"]
-            mock_set_hs.assert_any_call("c1", 0, "file_decisions_injected:my_file.py", "1")
+            mock_mark.assert_any_call("c1", "file_decisions_injected:my_file.py", "0")
 
         # 8. File-touch injection: dedup same file same turn
         with patch("cognitive_push.dao.get_latest_session", return_value=("c1", 1)), \
@@ -847,7 +861,9 @@ def test_cognitive_push_pre_tool_use():
              ]), \
              patch("cognitive_push.dao.insert_file_change"), \
              patch("lib.dao.get_hook_state", return_value="1"), \
-             patch("lib.dao.set_hook_state") as mock_set_hs:
+             patch("lib.dao.set_hook_state"), \
+             patch("cognitive_push.should_fire", return_value=False), \
+             patch("cognitive_push.mark_fired"):
             res = cognitive_push.main.__wrapped__(ctx_protect)
             assert res["decision"] == "allow"
             recall_msgs = [s for s in res["injectSteps"] if "历史决策" in s.get("ephemeralMessage", "")]
@@ -2313,7 +2329,7 @@ def test_session_guardian_strict_suggests_recall(tmp_path):
          patch("session_guardian.get_stats", return_value={"accumulated_source_bytes": 0, "accumulated_data_bytes": 0}), \
          patch("lib.dao.write_mode") as mock_write_mode, \
          patch("lib.dao.get_hook_state", return_value=None) as mock_get_hs, \
-         patch("lib.dao.set_hook_state") as mock_set_hs:
+         patch("session_guardian.mark_fired") as mock_mark_fired:
         mock_cdal = MagicMock()
         mock_cdal.stream_steps_reverse.return_value = [
             {"type": "USER_INPUT", "content": "hello world"},
@@ -2324,7 +2340,7 @@ def test_session_guardian_strict_suggests_recall(tmp_path):
         mock_write_mode.assert_called_once_with("conv_1", "strict")
         recall_msgs = [s for s in res["injectSteps"] if "cross-check with remora-recall" in s.get("ephemeralMessage", "")]
         assert len(recall_msgs) >= 1
-        mock_set_hs.assert_called_with("conv_1", -1, "last_recall_turn", "5")
+        mock_mark_fired.assert_called_with("conv_1", "last_recall_turn", 5)
 
 
 def test_session_guardian_alert_overrides_relax(tmp_path):

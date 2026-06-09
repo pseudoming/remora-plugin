@@ -9,8 +9,8 @@ This document details the 10 core business flows of the Remora system, covering 
 ## 1. Hooks Interception Flows
 
 ### 1. PreInvocation Flow
-* **Business Description**: Before the Agent is awakened by input and begins execution, the mounted hook is invoked. It intercepts sessions, determines the current interaction mode (`strict`/`relax`), and injects prompt context to guide the LLM.
-* **Underlying Scripts**: `{PLUGIN_ROOT}/adapter/hooks/session-guardian.py` and `{PLUGIN_ROOT}/adapter/hooks/action-gate.py`.
+* **Business Description**: Before the Agent is awakened by input and begins execution, the mounted hook is invoked. It intercepts sessions, determines the current interaction mode (`strict`/`relax`/`alert`), and injects prompt context to guide the LLM.
+* **Underlying Scripts**: `{PLUGIN_ROOT}/adapter/hooks/session-guardian.py`, `{PLUGIN_ROOT}/adapter/hooks/action-gate.py`, and `{PLUGIN_ROOT}/adapter/hooks/snapshot-git.py`.
 * **SQLite Interaction**:
   * **Tables**:
     * `session_state`: Reads and updates the current session mode (`mode`) and cold-start flag (`is_cold_start`).
@@ -25,9 +25,12 @@ This document details the 10 core business flows of the Remora system, covering 
   1. The hook is awakened and verifies whether `{data_dir}/.runtime/installed.flag` exists; if not, it passes through directly.
   2. Reads the context JSON from `stdin`, parsing out the current `conversationId` and recent conversation history.
   3. Queries `watermarks` to get the `project_uuid` bound to the session.
-  4. Reads the mode keywords configured in `{PLUGIN_ROOT}/conf/keywords.json` (e.g., `[strict]`, `[relax]`). If the user's message contains a matching keyword, updates the `mode` column in `session_state`.
+  4. Reads the mode keywords configured in `{PLUGIN_ROOT}/conf/keywords.json` (e.g., `[strict]`, `[relax]`, `[alert]`). If the user's message contains a matching keyword, updates the `mode` column in `session_state`.
   5. Audits subagent state. If a subagent is running but its corresponding `schedule` timer is lost, injects `injectSteps` into the LLM guiding it to use `schedule`.
-  6. Validates the read-only accumulation counter. If it exceeds thresholds (Source 150KB, Data 50KB), injects a soft-limit warning prompt.
+   6. Validates the read-only accumulation counter. If it exceeds thresholds (Source 150KB, Data 50KB), injects a soft-limit warning prompt.
+   7. **Cold-start decision injection:** If `is_cold_start=1`, injects `uc=0` (unconfirmed) and `uc=1` (user-confirmed) decisions from the current project's active topic as `<system-reminder>` context, ensuring the LLM has immediate architectural awareness without explicit recall.
+    8. **Step-distance recall injection:** In `strict` mode, every N conversational turns, injects a batch of recent topic decisions from `topic_decisions` as implicit recall prompts, maintaining architectural alignment over long sessions. This feature is gated by `conf/features.json`.
+   9. **Alert-triggered forced recall:** When a Line C alert keyword (configured in `conf/approval.json`) is detected in the user message, forcibly injects all matched decisions from `topic_decisions` with their evidence excerpts, overriding the normal recall gating logic.
 * **Mermaid Flowchart**:
 ```mermaid
 sequenceDiagram
@@ -38,7 +41,7 @@ sequenceDiagram
     AGY->>SG: Triggers PreInvocation Hook (Context JSON)
     SG->>DB: Query project_uuid_by_conv()
     SG->>DB: Fetch recent messages
-    SG->>SG: Match keywords (strict/relax)
+    SG->>SG: Match keywords (strict/relax/alert)
     SG->>DB: Update session_state mode
     SG->>SG: Audit subagent liveness & schedule
     SG->>SG: Check read accumulation
@@ -77,7 +80,7 @@ sequenceDiagram
 flowchart TD
     A[Model triggers Tool Call] --> B(PreToolUse Hook: safety-check.py)
     B --> C{Read session_state mode}
-    C -->|strict / relax| D[Call agentapi for agent type]
+    C -->|strict / relax / alert| D[Call agentapi for agent type]
     D --> E{Classify tool type}
     
     E -->|invoke_subagent| F{Prompt <= 1500 & Diver bound to isolated branch?}
@@ -93,7 +96,19 @@ flowchart TD
     H -->|No| Deny
 ```
 
+### 2.1 cognitive-push PreToolUse Sub-Flow
+* **Business Description**: A secondary PreToolUse interceptor that augments LLM context with file-touch and semantic conflict awareness when write operations occur.
+* **Underlying Scripts**: `{PLUGIN_ROOT}/adapter/hooks/cognitive-push.py`.
+* **SQLite Interaction**:
+  * **Tables**: `topic_decisions` (reads decisions via `get_decisions_by_file`), `project_topics`, `artifacts` (for semantic conflict scan).
+  * **Configuration**: Gated by `{PLUGIN_ROOT}/conf/features.json`.
+* **Detailed Steps**:
+  1. **Write gate (first deny, second allow):** On the first `run_command` with a write-side effect, the hook denies execution and injects a reminder prompt listing relevant past decisions for the files being touched.
+  2. **File-touch injection:** On the second write attempt (or first `view_file` access), calls `get_decisions_by_file()` to inject decisions associated with the target file paths into `<system-reminder>`, enriching the LLM's context with prior architectural rationales.
+  3. **Line C semantic conflict detection:** Scans the current topic's decisions for semantic conflicts against the `artifacts` table (e.g., plan vs. walkthrough divergence). This feature is gated by `conf/features.json` under the `semantic_conflict_detection` flag. When a conflict is found, an additional `AlertViolated` inject step is emitted alongside the normal file-touch prompt.
+
 ---
+
 
 ### 3. Stop Flow
 * **Business Description**: Executed when the Agent finishes running and transitions to offline/stopped state. It asynchronously harvests artifacts, incrementally imports newly modified Markdown documents into warm storage, and resets the session counter.
@@ -115,7 +130,8 @@ flowchart TD
   4. Compares against records in `artifact_hashes`. If unchanged, exits directly; if changed, triggers incremental import:
   5. Physically deletes old artifact data records.
   6. Inserts the latest artifacts as facts into `messages`, specifying `topic_id='artifact_topic'`, with line numbers `999900` (Plan) and `999901` (Walkthrough).
-  7. Except for Plan approval which follows independent logic, other successfully changed artifacts trigger a `walkthrough_sync` event inserted into `remora_event_queue` for background asynchronous consumption.
+   7. Except for Plan approval which follows independent logic, other successfully changed artifacts trigger a `walkthrough_sync` event inserted into `remora_event_queue` for background asynchronous consumption.
+   8. **Supersede unconfirmed decisions:** When a `user_confirmed=1` decision is created for the same topic, the compactor invokes `supersede_unconfirmed` to mark older `uc=0` sibling decisions as superseded, preventing stale auto-extracted decisions from accumulating in the warm storage index.
 * **Mermaid Flowchart**:
 ```mermaid
 sequenceDiagram
@@ -143,7 +159,7 @@ sequenceDiagram
 
 ### 4. Subagent Heartbeat / Liveness Detection Flow
 * **Business Description**: Real-time auditing of subagent execution states spawned by the main agent. When a subagent is stuck or has timed out without updating its heartbeat, it intercepts and provides self-healing retry suggestions to prevent the main agent from timing out due to unresponsiveness.
-* **Underlying Scripts**: `{PLUGIN_ROOT}/adapter/sandbox/check-subagents-liveness.py` and `{PLUGIN_ROOT}/adapter/sandbox/subagent-monitor.py`.
+* **Underlying Scripts**: `{PLUGIN_ROOT}/adapter/sandbox/check-subagents-liveness.py`, `{PLUGIN_ROOT}/adapter/sandbox/subagent-monitor.py`, and `{PLUGIN_ROOT}/core/liveness.py` (providing `judge_zombie` and `suggest_zombie_action`).
 * **SQLite Interaction**:
   * **Tables**: `messages` (inspects system messages and error output between the subagent and parent agent).
 * **API Interaction Logic**:
@@ -156,8 +172,8 @@ sequenceDiagram
      * If `status` field is `completed`: classified as Alive & successfully completed.
      * If `status` field is `blocked` or logs contain errors like `permission denied`: classified as Blocked.
      * Computes the minimum time delta `idle_seconds` between the `progress.json` update time and the SQLite sub-session's last message write time.
-     * If currently executing `run_command`, the stuck timeout threshold is relaxed to 180 seconds; otherwise 60 seconds. If `idle_seconds` exceeds the threshold, classified as `Dead (Timeout)`.
-  4. **Self-Healing Suggestions**:
+     * If currently executing `run_command`, the stuck timeout threshold is relaxed to 180 seconds; otherwise 60 seconds. If `idle_seconds` exceeds the threshold, `judge_zombie()` from `core/liveness.py` classifies the subagent as `Dead (Timeout)`.
+   4. **Self-Healing Suggestions (via `suggest_zombie_action()` in `core/liveness.py`):**
      * Checks and increments the retry count in `{PLUGIN_ROOT}/data/.runtime/remora_subagent_retries/{parent_conv_id}.json`.
      * If cumulative retry count $< 2$: returns `kill_and_retry` suggestion, guiding the LLM to forcefully kill and retry.
      * If cumulative retry count $\ge 2$: returns `escalate_to_human` suggestion, stopping retries and directly reporting to the user.
@@ -328,8 +344,10 @@ flowchart TD
      * Using the `topic_id` of FTS5-matched messages, reverse-extracts bound decisions, rationales, and referenced evidence line fragments from `topic_decisions`.
   5. **Recall Channel B (Direct Architectural Decision Matching)**:
      * Performs `LIKE` fuzzy matching on the `decision` and `rationale` columns of `topic_decisions`.
-  6. **Self-Healing Touch Refresh**:
-     * If match count $> 0$, updates the `last_accessed_at` timestamp of all matched topics to the current time, preventing premature GC cleanup.
+   6. **Self-Healing Touch Refresh**:
+      * If match count $> 0$, updates the `last_accessed_at` timestamp of all matched topics to the current time, preventing premature GC cleanup.
+   7. **Automatic Step-Distance Recall Injection:** In `strict` mode, the session guardian automatically triggers `remora-recall.py` every N conversational turns (step-distance), injecting a curated batch of recent topic decisions into the LLM context as `<system-reminder>` prompts. This ensures ongoing architectural alignment without the LLM needing to explicitly invoke recall.
+   8. **Alert-Triggered Forced Recall:** When the user message contains a Line C alert keyword (as defined in `conf/approval.json`), the hook bypasses normal recall gating and forces an immediate full recall of all matched decisions with their evidence excerpts, raising architectural priority in the prompt context.
 * **Mermaid Flowchart**:
 ```mermaid
 flowchart TD

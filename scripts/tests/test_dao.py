@@ -11,6 +11,7 @@ from core.storage.runtime_state import delete_hook_state, delete_runtime_hook_va
 from core.storage.sessions import force_cold_start_latest_session, get_latest_session, read_mode, update_cold_start, write_mode
 from core.storage.topics import close_topic, create_or_update_topic, get_active_topic, get_topics_by_uuid, merge_physical_files_to_topic, switch_topic, touch_topic_source_manual
 from core.storage.watermarks import get_project_uuid_by_conv
+import core.gate as gate
 import core.storage.connection as conn_module
 
 TEST_DB_PATH = "/tmp/test_remora_dao.db"
@@ -571,3 +572,26 @@ def test_file_changes_insert_and_query():
     decisions = get_decisions_by_file("proj_1", "auth.py")
     assert len(decisions) == 1
     assert decisions[0]["decision"] == "Use python"
+
+
+def test_gate_should_fire_and_mark():
+    """Gate fires when no prior state, then marks fired."""
+    result = gate.should_fire("conv_1", "test_gate_key", "v1")
+    assert result == True
+
+    gate.mark_fired("conv_1", "test_gate_key", "v1")
+    result2 = gate.should_fire("conv_1", "test_gate_key", "v1")
+    assert result2 == False
+
+    result3 = gate.should_fire("conv_1", "test_gate_key", "v2")
+    assert result3 == True
+
+
+def test_gate_dedup_and_clear():
+    """Same value dedup, different value clears stale."""
+    gate.mark_fired("conv_2", "test_dedup", "42")
+    assert gate.is_duplicate("conv_2", "test_dedup", "42") == True
+    assert gate.is_duplicate("conv_2", "test_dedup", "99") == False
+
+    gate.mark_fired("conv_2", "test_dedup", "99")
+    assert gate.is_duplicate("conv_2", "test_dedup", "42") == False
