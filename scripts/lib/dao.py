@@ -28,7 +28,7 @@ from core.storage.decisions import (
     decision_exists, supersede_unconfirmed,
     get_pending_decisions, confirm_decisions_by_ids,
     insert_decision, get_decision_confirmed, get_confirmed_decision_ids,
-    get_recent_decisions
+    get_recent_decisions, get_rejected_or_deferred_by_relevance
 )
 from core.storage.recall import (
     recall_fts5_logs, recall_decisions_by_fts5_topic,

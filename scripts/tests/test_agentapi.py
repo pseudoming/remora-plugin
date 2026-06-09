@@ -70,7 +70,21 @@ class TestSendMessage:
 
 class TestCreateConversation:
     def test_returns_parsed_json(self):
-        with patch('adapter.bridge.agentapi._call') as mock_call:
-            mock_call.return_value = b'{"response": {"newConversation": {"conversationId": "new_conv"}}}'
+        with patch('adapter.bridge.agentapi.subprocess.check_output') as mock_co:
+            mock_co.return_value = b'{"response": {"newConversation": {"conversationId": "new_conv"}}}'
             result = agentapi.create_conversation("init prompt")
             assert result["response"]["newConversation"]["conversationId"] == "new_conv"
+
+    def test_model_flag_injected(self):
+        with patch('adapter.bridge.agentapi.subprocess.check_output') as mock_co:
+            mock_co.return_value = b'{"ok": true}'
+            agentapi.create_conversation("prompt", model="custom-model")
+            cmd = mock_co.call_args[0][0]
+            assert "--model=custom-model" in cmd
+
+    def test_no_model_flag_when_none(self):
+        with patch('adapter.bridge.agentapi.subprocess.check_output') as mock_co:
+            mock_co.return_value = b'{"ok": true}'
+            agentapi.create_conversation("prompt")
+            cmd = mock_co.call_args[0][0]
+            assert not any(arg.startswith("--model=") for arg in cmd)

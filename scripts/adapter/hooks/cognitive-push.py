@@ -47,6 +47,15 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
         )
         inject_steps.append({"ephemeralMessage": ephemeral_msg})
 
+    # Line C: semantic conflict detection (feature-gated)
+    if _check_line_c_enabled():
+        try:
+            line_c_injections = _run_line_c(context, conv_id, current_turn_idx)
+            if line_c_injections:
+                inject_steps.extend(line_c_injections)
+        except Exception:
+            pass  # Line C failure must never block the conversation
+
     # 查找 session 判定冷启动
     session = dao.get_session(conv_id)
     if not session or session[2] == 0:  # session[2] = is_cold_start
@@ -92,6 +101,148 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
     dao.set_hook_state(conv_id, current_turn_idx, "resume_injected", "1")
     
     return {"injectSteps": inject_steps}
+
+
+def _check_line_c_enabled():
+    import json
+    from adapter.bridge.paths import get_data_dir
+    config_path = os.path.join(os.path.dirname(get_data_dir()), "conf", "features.json")
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        return config.get("semantic_conflict_detection", {}).get("enabled", False)
+    except Exception:
+        return False
+
+
+def _run_line_c(context, conv_id, current_turn_idx):
+    """Returns list of inject step dicts, or []."""
+    from adapter.bridge.conversation import ConversationDataAccessLayer
+    cdal = ConversationDataAccessLayer(conv_id)
+    user_input_count = cdal.get_user_input_count()
+    if user_input_count is None:
+        return []
+    turn_interval = int(user_input_count) // 10
+    if turn_interval == 0:
+        return []
+
+    window_key = f"line_c_window:{turn_interval}"
+    if dao.get_hook_state(conv_id, -1, window_key):
+        return []
+
+    last_msg = context.get("last_msg", "")
+    if not last_msg:
+        steps = list(cdal.stream_steps_reverse(limit=50))
+        for step in steps:
+            if step.get("type") == "USER_INPUT":
+                last_msg = step.get("content", "")
+                break
+    if not last_msg:
+        return []
+
+    from core.liveness import clean_system_reminders
+    clean_msg = clean_system_reminders(last_msg)
+    if not clean_msg.strip():
+        return []
+
+    uuid = dao.get_project_uuid_by_conv(conv_id)
+    if not uuid:
+        return []
+
+    from core.storage.connection import get_conn, closing
+    from core.storage.decisions import get_rejected_or_deferred_by_relevance
+    from core.text_analysis import build_conflict_detection_prompt
+
+    with closing(get_conn()) as conn:
+        candidates = get_rejected_or_deferred_by_relevance(conn, uuid, clean_msg)
+
+    if not candidates:
+        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        return []
+
+    prompt = build_conflict_detection_prompt(clean_msg, candidates)
+
+    try:
+        from adapter.sidecar.compactor.extract_decisions import get_or_create_conversation
+        llm_output = get_or_create_conversation(prompt)
+    except Exception:
+        try:
+            from adapter.bridge.agentapi import create_conversation
+            import json as _json
+            resp = create_conversation(prompt, timeout=15, model="flash_lite")
+            llm_output = resp.get('response', {}).get('newConversation', {}).get('reply', '') or _json.dumps(resp)
+        except Exception:
+            dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+            return []
+
+    import re
+    json_match = re.search(r'({.*})', llm_output, re.DOTALL)
+    if not json_match:
+        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        return []
+
+    try:
+        import json
+        result = json.loads(json_match.group(1).strip())
+    except Exception:
+        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        return []
+
+    conflicts = result.get("conflicts", [])
+    if not conflicts:
+        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+        return []
+
+    candidate_map = {c["id"]: c for c in candidates}
+    inject_steps = []
+    has_any_conflict = False
+
+    for c in conflicts:
+        cid = c.get("decision_id")
+        if cid is None or cid not in candidate_map:
+            continue
+        has_any_conflict = True
+
+        d = candidate_map[cid]
+        conflict_key = f"line_c_conflict:{cid}"
+        previous_window = dao.get_hook_state(conv_id, -1, conflict_key)
+
+        if previous_window and str(previous_window) == str(turn_interval):
+            continue
+
+        if previous_window and str(previous_window) != str(turn_interval):
+            dao.delete_hook_state(conv_id, -1, conflict_key)
+
+        is_repeat = previous_window is not None
+        label = "REPEAT CONFLICT" if is_repeat else "SEMANTIC CONFLICT DETECTED"
+        type_label = d["decision_type"].upper()
+        date = d["created_at"][:10] if d.get("created_at") else ""
+        reason = c.get("reason", "")
+
+        conflict_details = (
+            f"  [{type_label}, {date}] {d['decision']}\n"
+            f"  LLM analysis: {reason}"
+        )
+
+        msg = (
+            f"<system-reminder>\n"
+            f"⚠️ {label}. YOUR PROPOSED COURSE OF ACTION CONTRADICTS PRIOR DECISIONS.\n\n"
+            f"BEFORE EXECUTING ANY TOOLS, YOU MUST:\n"
+            f"1. EXPLICITLY POINT OUT THE CONFLICT TO THE USER\n"
+            f"2. ASK THE USER WHETHER TO OVERRIDE THE PREVIOUS DECISION\n"
+            f"3. WAIT FOR EXPLICIT USER CONFIRMATION BEFORE PROCEEDING\n\n"
+            f"CONFLICT DETAILS:\n{conflict_details}\n\n"
+            f"DO NOT PROCEED WITHOUT USER CONFIRMATION.\n"
+            f"</system-reminder>"
+        )
+        inject_steps.append({"ephemeralMessage": msg})
+        dao.set_hook_state(conv_id, -1, conflict_key, str(turn_interval))
+
+    if has_any_conflict:
+        dao.set_hook_state(conv_id, -1, window_key, str(turn_interval))
+
+    return inject_steps
+
 
 def _handle_pre_tool_use(context, conv_id, current_turn_idx):
     tool_name = context.get("toolName", "")

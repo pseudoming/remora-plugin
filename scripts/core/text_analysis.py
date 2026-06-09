@@ -13,3 +13,20 @@ def scan_approval_signals(messages, keywords=None, negation_prefixes=None):
             if not re.search(neg_pattern, msg):
                 return True
     return False
+
+def build_conflict_detection_prompt(user_msg: str, candidates: list) -> str:
+    items = []
+    for i, c in enumerate(candidates, 1):
+        label = "REJECTED" if c.get("decision_type") == "rejected" else "DEFERRED"
+        items.append(f"#{i} [{label}] {c['decision']} (rationale: {c['rationale'][:150]})")
+    return f"""You are a semantic conflict detector.
+
+USER STATEMENT:
+"{user_msg}"
+
+HISTORICAL DECISIONS:
+{chr(10).join(items)}
+
+Return ONLY a JSON object. If any decision conflicts with the user's statement:
+{{"conflicts": [{{"decision_id": 42, "reason": "one sentence why"}}]}}
+If none: {{"conflicts": []}}"""

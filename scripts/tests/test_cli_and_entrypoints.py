@@ -549,6 +549,194 @@ def test_cognitive_push_pre_invoke_success():
             assert "SESSION RESUMED — 历史决策供参考" in msg2
 
 
+def test_cognitive_push_line_c():
+    ctx = {"transcriptPath": "/brain/conv_1/t.jsonl"}
+
+    # Pre-build a mock extract_decisions module for LLM call interception.
+    # get_or_create_conversation is imported dynamically inside _run_line_c,
+    # so we inject a mock into sys.modules rather than patching cognitive_push.
+    mock_extract = MagicMock()
+    mock_extract.get_or_create_conversation = MagicMock()
+
+    # 1. features.json enabled=false → Line C skipped, no injection
+    with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]), \
+         patch("cognitive_push._check_line_c_enabled", return_value=False), \
+         patch("cognitive_push.dao.read_mode", return_value="strict"), \
+         patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
+         patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+         patch("cognitive_push.dao.get_hook_state", return_value=None), \
+         patch("cognitive_push.dao.set_hook_state"), \
+         patch("cognitive_push.dao.update_cold_start"):
+        res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
+        conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
+        assert len(conflict_msgs) == 0
+
+    # 2. candidate pool empty → window flag set, no injection
+    with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]), \
+         patch("cognitive_push._check_line_c_enabled", return_value=True), \
+         patch("cognitive_push.dao.read_mode", return_value="strict"), \
+         patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
+         patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
+         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.dao.update_cold_start"), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=[]), \
+         patch("core.storage.connection.closing"), \
+         patch("core.storage.connection.get_conn"):
+        mock_cdal = MagicMock()
+        mock_cdal.get_user_input_count.return_value = 20
+        mock_cdal.stream_steps_reverse.return_value = [{"type": "USER_INPUT", "content": "hello world"}]
+        mock_cdal_cls.return_value = mock_cdal
+        res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
+        mock_set.assert_any_call("c1", -1, "line_c_window:2", "2")
+        conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
+        assert len(conflict_msgs) == 0
+
+    # 3. BM25 hit + LLM returns conflicts → inject ephemeralMessage
+    candidates = [{"id": 42, "decision": "Redis caching layer", "rationale": "operational cost", "decision_type": "rejected", "created_at": "2026-06-03"}]
+    mock_extract.get_or_create_conversation.reset_mock()
+    mock_extract.get_or_create_conversation.return_value = '{"conflicts": [{"decision_id": 42, "reason": "user is proposing a cache solution"}]}'
+    with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]), \
+         patch("cognitive_push._check_line_c_enabled", return_value=True), \
+         patch("cognitive_push.dao.read_mode", return_value="strict"), \
+         patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
+         patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
+         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.dao.update_cold_start"), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
+         patch("core.storage.connection.closing"), \
+         patch("core.storage.connection.get_conn"), \
+         patch.dict(sys.modules, {"adapter.sidecar.compactor.extract_decisions": mock_extract}):
+        mock_cdal = MagicMock()
+        mock_cdal.get_user_input_count.return_value = 20
+        mock_cdal.stream_steps_reverse.return_value = [{"type": "USER_INPUT", "content": "let's use Redis for caching"}]
+        mock_cdal_cls.return_value = mock_cdal
+        res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
+        conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
+        assert len(conflict_msgs) == 1
+        assert "Redis caching layer" in conflict_msgs[0]["ephemeralMessage"]
+        assert "LLM analysis" in conflict_msgs[0]["ephemeralMessage"]
+
+    # 4. BM25 hit but LLM returns empty conflicts → no injection
+    mock_extract.get_or_create_conversation.reset_mock()
+    mock_extract.get_or_create_conversation.return_value = '{"conflicts": []}'
+    with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]), \
+         patch("cognitive_push._check_line_c_enabled", return_value=True), \
+         patch("cognitive_push.dao.read_mode", return_value="strict"), \
+         patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
+         patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
+         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.dao.update_cold_start"), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
+         patch("core.storage.connection.closing"), \
+         patch("core.storage.connection.get_conn"), \
+         patch.dict(sys.modules, {"adapter.sidecar.compactor.extract_decisions": mock_extract}):
+        mock_cdal = MagicMock()
+        mock_cdal.get_user_input_count.return_value = 20
+        mock_cdal.stream_steps_reverse.return_value = [{"type": "USER_INPUT", "content": "let's use Redis"}]
+        mock_cdal_cls.return_value = mock_cdal
+        res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
+        conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
+        assert len(conflict_msgs) == 0
+
+    # 5. LLM timeout → silent skip, window flag set
+    mock_extract.get_or_create_conversation.reset_mock()
+    mock_extract.get_or_create_conversation.side_effect = Exception("timeout")
+    with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]), \
+         patch("cognitive_push._check_line_c_enabled", return_value=True), \
+         patch("cognitive_push.dao.read_mode", return_value="strict"), \
+         patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
+         patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
+         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.dao.update_cold_start"), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
+         patch("core.storage.connection.closing"), \
+         patch("core.storage.connection.get_conn"), \
+         patch.dict(sys.modules, {"adapter.sidecar.compactor.extract_decisions": mock_extract}):
+        mock_cdal = MagicMock()
+        mock_cdal.get_user_input_count.return_value = 20
+        mock_cdal.stream_steps_reverse.return_value = [{"type": "USER_INPUT", "content": "use Redis"}]
+        mock_cdal_cls.return_value = mock_cdal
+        res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
+        conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
+        assert len(conflict_msgs) == 0
+        mock_set.assert_any_call("c1", -1, "line_c_window:2", "2")
+
+    # 6. LLM returns non-JSON → silent skip
+    mock_extract.get_or_create_conversation.reset_mock()
+    mock_extract.get_or_create_conversation.side_effect = None
+    mock_extract.get_or_create_conversation.return_value = "not json at all"
+    with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]), \
+         patch("cognitive_push._check_line_c_enabled", return_value=True), \
+         patch("cognitive_push.dao.read_mode", return_value="strict"), \
+         patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
+         patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: None), \
+         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.dao.update_cold_start"), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
+         patch("core.storage.connection.closing"), \
+         patch("core.storage.connection.get_conn"), \
+         patch.dict(sys.modules, {"adapter.sidecar.compactor.extract_decisions": mock_extract}):
+        mock_cdal = MagicMock()
+        mock_cdal.get_user_input_count.return_value = 20
+        mock_cdal.stream_steps_reverse.return_value = [{"type": "USER_INPUT", "content": "use Redis"}]
+        mock_cdal_cls.return_value = mock_cdal
+        res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
+        conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
+        assert len(conflict_msgs) == 0
+
+    # 7. Same window repeat → conflict skipped (dedup)
+    mock_extract.get_or_create_conversation.reset_mock()
+    mock_extract.get_or_create_conversation.return_value = '{"conflicts": [{"decision_id": 42, "reason": "test"}]}'
+    with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]), \
+         patch("cognitive_push._check_line_c_enabled", return_value=True), \
+         patch("cognitive_push.dao.read_mode", return_value="strict"), \
+         patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
+         patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+         patch("cognitive_push.dao.get_hook_state", side_effect=lambda sid, tid, key: "2" if "line_c_conflict" in key else None), \
+         patch("cognitive_push.dao.set_hook_state") as mock_set, \
+         patch("cognitive_push.dao.update_cold_start"), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls, \
+         patch("core.storage.decisions.get_rejected_or_deferred_by_relevance", return_value=candidates), \
+         patch("core.storage.connection.closing"), \
+         patch("core.storage.connection.get_conn"), \
+         patch.dict(sys.modules, {"adapter.sidecar.compactor.extract_decisions": mock_extract}):
+        mock_cdal = MagicMock()
+        mock_cdal.get_user_input_count.return_value = 20
+        mock_cdal.stream_steps_reverse.return_value = [{"type": "USER_INPUT", "content": "use Redis again"}]
+        mock_cdal_cls.return_value = mock_cdal
+        res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
+        conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
+        assert len(conflict_msgs) == 0
+
+    # 8. No user message → skip
+    with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-invoke"]), \
+         patch("cognitive_push._check_line_c_enabled", return_value=True), \
+         patch("cognitive_push.dao.read_mode", return_value="strict"), \
+         patch("cognitive_push.dao.get_session", return_value=("c1", "strict", 1, "2024-01-01")), \
+         patch("cognitive_push.dao.get_project_uuid_by_conv", return_value="p1"), \
+         patch("cognitive_push.dao.get_hook_state", return_value=None), \
+         patch("cognitive_push.dao.set_hook_state"), \
+         patch("cognitive_push.dao.update_cold_start"), \
+         patch("adapter.bridge.conversation.ConversationDataAccessLayer") as mock_cdal_cls:
+        mock_cdal = MagicMock()
+        mock_cdal.get_user_input_count.return_value = 20
+        mock_cdal.stream_steps_reverse.return_value = []
+        mock_cdal_cls.return_value = mock_cdal
+        res = cognitive_push.main.__wrapped__({**ctx, "transcriptPath": "/brain/c1/t.jsonl"})
+        conflict_msgs = [s for s in res.get("injectSteps", []) if "SEMANTIC CONFLICT" in s.get("ephemeralMessage", "")]
+        assert len(conflict_msgs) == 0
+
+
 def test_cognitive_push_pre_tool_use():
     with patch("sys.argv", ["cognitive-push.py", "--stage", "pre-tool"]):
         # 1. Tool name not checked

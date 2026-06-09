@@ -41,8 +41,12 @@ def send_message(conv_id, prompt, timeout=120):
     _call("send-message", conv_id, prompt, timeout=timeout, env=env)
 
 
-def create_conversation(prompt, timeout=120):
+def create_conversation(prompt, timeout=120, model=None):
     env = os.environ.copy()
     env["ANTIGRAVITY_PROJECT_ID"] = "11111111-1111-1111-1111-111111111111"
-    result = _call("new-conversation", prompt, timeout=timeout, env=env)
+    cmd = [get_binary(), "new-conversation"]
+    if model:
+        cmd.append(f"--model={model}")
+    cmd.append(prompt)
+    result = subprocess.check_output(cmd, env=env, stderr=subprocess.STDOUT, timeout=timeout)
     return json.loads(result.decode("utf-8"))
