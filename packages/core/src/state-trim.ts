@@ -15,7 +15,7 @@ import {
 export function trimStaleHookStates(
   convId: string,
   currentTurnIdx: unknown,
-  conn?: Database.Database
+  conn?: Database
 ): void {
   const lastSeen = getRuntimeHookValue(convId, -1, "last_seen_turn", conn);
   let shouldTrim: boolean;

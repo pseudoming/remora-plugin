@@ -49,7 +49,7 @@ export function recallFts5Logs(
  * 根据 evidence_msg_ids JSON 数组构建证据摘要文本
  */
 function _buildEvidenceTexts(
-  conn: Database.Database,
+  conn: Database,
   evidenceIdsJson: string | null,
 ): string {
   const evidenceTexts: string[] = [];

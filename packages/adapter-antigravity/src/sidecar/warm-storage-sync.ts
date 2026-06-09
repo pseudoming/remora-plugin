@@ -22,7 +22,7 @@ import { ConversationDataAccessLayer } from "../bridge/conversation";
 
 const MAX_PROMPT_LENGTH = 8000;
 
-export function readIncrementalLogs(conn: Database.Database, session: Record<string, string>): [string, number, number] {
+export function readIncrementalLogs(conn: any, session: Record<string, string>): [string, number, number] {
   const isSub = isSubagentSession(session["conversationId"]);
   const convId = session["conversationId"];
 

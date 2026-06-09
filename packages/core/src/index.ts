@@ -74,6 +74,13 @@ export {
 
 // Filesystem
 export { walkFiles, calculateMd5, diffSnapshots } from "./filesystem";
+export type { SnapshotEntry, Snapshot } from "./filesystem";
+
+// Connection
+export { getConn } from "./storage/connection";
+
+// Coverage
+export { calculateFactualConfidence, validateIdInheritance } from "./coverage";
 
 // Logger
-export { setTraceId, init as initLogger, debug, info, warn, error, profile } from "./logger";
+export { setTraceId, init as initLogger, debug, info, warn, error, profile, HOOKS_PROFILE_LOG } from "./logger";

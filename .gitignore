@@ -34,3 +34,7 @@ __pycache__/
 *.db
 *.db-journal
 *.db-wal
+
+# tsc/tsup build artifacts must NOT leak into src/
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts

@@ -15,7 +15,7 @@ export interface TopicRow {
  */
 export function getActiveTopic(
   projectUuid: string,
-  conn?: Database
+  conn?: any
 ): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -45,7 +45,7 @@ export function createOrUpdateTopic(
   topicId: string,
   summary: string = "",
   source: string = "auto",
-  conn?: Database
+  conn?: any
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -71,7 +71,7 @@ export function createOrUpdateTopic(
 export function switchTopic(
   projectUuid: string,
   newTopicId: string,
-  conn?: Database
+  conn?: any
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -96,7 +96,7 @@ export function switchTopic(
 export function closeTopic(
   projectUuid: string,
   topicId: string,
-  conn?: Database
+  conn?: any
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -118,7 +118,7 @@ export function closeTopic(
  */
 export function getTopicsByUuid(
   projectUuid: string,
-  conn?: Database
+  conn?: any
 ): TopicRow[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -151,7 +151,7 @@ export function getTopicsByUuid(
 export function touchTopicSourceManual(
   projectUuid: string,
   topicId: string,
-  conn?: Database
+  conn?: any
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -177,7 +177,7 @@ export function mergePhysicalFilesToTopic(
   projectUuid: string,
   topicId: string,
   physicalFiles: string[],
-  conn?: Database
+  conn?: any
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -239,7 +239,7 @@ export function mergePhysicalFilesToTopic(
  */
 export function getOpenTopic(
   projectUuid: string,
-  conn?: Database
+  conn?: any
 ): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -264,7 +264,7 @@ export function getOpenTopic(
 export function getTopicFiles(
   projectUuid: string,
   topicId: string,
-  conn?: Database
+  conn?: any
 ): [string | null, string | null] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -293,7 +293,7 @@ export function updateTopicFiles(
   topicId: string,
   associatedFiles: string,
   referencedFiles: string,
-  conn?: Database
+  conn?: any
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -319,7 +319,7 @@ export function upsertTopic(
   topicId: string,
   summary: string,
   confidence: number,
-  conn?: Database
+  conn?: any
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -340,7 +340,7 @@ export function upsertTopic(
  * Return all distinct project_uuids present in the project_topics table.
  */
 export function getAllProjectUuids(
-  conn?: Database
+  conn?: any
 ): string[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -361,7 +361,7 @@ export function getAllProjectUuids(
  */
 export function getActiveTopicCreatedAt(
   projectUuid: string,
-  conn?: Database
+  conn?: any
 ): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;

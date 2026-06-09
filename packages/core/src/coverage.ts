@@ -19,7 +19,7 @@ export function calculateFactualConfidence(
   baselineFiles: string[],
   baselineActions: string[],
   outputTopics: Topic[],
-  conn?: Database.Database
+  conn?: Database
 ): number {
   if (!baselineFiles.length && !baselineActions.length) {
     return 1.0;
@@ -73,7 +73,7 @@ export function calculateFactualConfidence(
 export function validateIdInheritance(
   projectUuid: string,
   newTopics: Topic[],
-  conn?: Database.Database
+  conn?: Database
 ): boolean {
   const confirmedIds = getConfirmedDecisionIds(projectUuid, conn);
   if (!confirmedIds || confirmedIds.size === 0) {

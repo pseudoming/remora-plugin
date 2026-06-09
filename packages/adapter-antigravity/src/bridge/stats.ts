@@ -14,7 +14,7 @@ function getStatsPath(convId: string): string {
   return path.join(STATS_DIR, `${convId}.json`);
 }
 
-function getStats(convId: string): AccumulatedStats {
+export function getStats(convId: string): AccumulatedStats {
   const p = getStatsPath(convId);
   if (fs.existsSync(p)) {
     try {

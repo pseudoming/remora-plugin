@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { getConn } from "./connection";
 
-export function getProjectUuidByConv(sessionId: string, conn?: Database): string | null {
+export function getProjectUuidByConv(sessionId: string, conn?: any): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -17,7 +17,7 @@ export function getProjectUuidByConv(sessionId: string, conn?: Database): string
   }
 }
 
-export function watermarkExists(projectUuid: string, conversationId: string, conn?: Database): boolean {
+export function watermarkExists(projectUuid: string, conversationId: string, conn?: any): boolean {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -33,7 +33,7 @@ export function watermarkExists(projectUuid: string, conversationId: string, con
   }
 }
 
-export function getActiveTopicCreatedAt(projectUuid: string, conn?: Database): string | null {
+export function getActiveTopicCreatedAt(projectUuid: string, conn?: any): string | null {
   const { getActiveTopicCreatedAt: impl } = require("./topics");
   return impl(projectUuid, conn);
 }

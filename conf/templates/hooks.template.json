@@ -3,32 +3,32 @@
     "PreInvocation": [
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/zombie-detector.ts",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/zombie-detector.js",
         "timeout": 30
       },
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/snapshot-git.ts",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/snapshot-git.js",
         "timeout": 30
       },
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/session-guardian.ts",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/session-guardian.js",
         "timeout": 30
       },
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/tone-injector.ts",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/tone-injector.js",
         "timeout": 30
       },
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/cognitive-push.ts --stage=pre-invoke",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/cognitive-push.js --stage=pre-invoke",
         "timeout": 30
       },
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/sandbox/check-subagents-liveness.ts",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sandbox/check-subagents-liveness.js",
         "timeout": 30
       }
     ],
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/zombie-detector.ts",
+            "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/zombie-detector.js",
             "timeout": 30
           }
         ]
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/safety-check.ts",
+            "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/safety-check.js",
             "timeout": 30
           }
         ]
@@ -58,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/cognitive-push.ts --stage=pre-tool",
+            "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/cognitive-push.js --stage=pre-tool",
             "timeout": 30
           }
         ]
@@ -67,24 +67,24 @@
     "PostInvocation": [
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/hooks/action-gate.ts",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/action-gate.js",
         "timeout": 30
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/sidecar/compactor.ts --event-driven",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sidecar/compactor.js --event-driven",
         "timeout": 30
       },
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/maintenance/clean-session-stats.ts",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/maintenance/clean-session-stats.js",
         "timeout": 15
       },
       {
         "type": "command",
-        "command": "npx tsx {PLUGIN_ROOT}/packages/adapter-antigravity/src/sandbox/check-subagents-liveness.ts",
+        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sandbox/check-subagents-liveness.js",
         "timeout": 30
       }
     ]
