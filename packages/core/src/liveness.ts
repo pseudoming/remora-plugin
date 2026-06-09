@@ -72,7 +72,7 @@ export function parseSqliteTimestamp(tsVal: unknown): number {
 /**
  * 递归遍历任意嵌套结构（字符串/dict/list），提取除 parentId 外的所有 UUID。
  */
-export function findAllUuids(val: unknown, parentId: string): Set<string> {
+export function findAllUuids(val: string | Record<string, unknown> | unknown[], parentId: string): Set<string> {
   const uuids = new Set<string>();
 
   if (typeof val === 'string') {
@@ -93,7 +93,7 @@ export function findAllUuids(val: unknown, parentId: string): Set<string> {
       }
     }
   } else if (val !== null && typeof val === 'object') {
-    const obj = val as Record<string, unknown>;
+    const obj = val;
     for (const [k, v] of Object.entries(obj)) {
       if ((k === 'conversationId' || k === 'conversation_id') && typeof v === 'string') {
         if (v !== parentId) {

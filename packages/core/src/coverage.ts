@@ -1,3 +1,4 @@
+import Database from "better-sqlite3";
 import { getDecisionConfirmed, getConfirmedDecisionIds } from "./storage/decisions";
 
 interface Decision {
@@ -17,7 +18,8 @@ interface Topic {
 export function calculateFactualConfidence(
   baselineFiles: string[],
   baselineActions: string[],
-  outputTopics: Topic[]
+  outputTopics: Topic[],
+  conn?: Database.Database
 ): number {
   if (!baselineFiles.length && !baselineActions.length) {
     return 1.0;
@@ -49,7 +51,7 @@ export function calculateFactualConfidence(
       const decIdNum = parseInt(decId, 10);
       if (!isNaN(decIdNum)) {
         try {
-          coveredActions += getDecisionConfirmed(decIdNum) ? 1 : 0;
+          coveredActions += getDecisionConfirmed(decIdNum, conn) ? 1 : 0;
         } catch {
           // pass
         }
@@ -70,9 +72,10 @@ export function calculateFactualConfidence(
  */
 export function validateIdInheritance(
   projectUuid: string,
-  newTopics: Topic[]
+  newTopics: Topic[],
+  conn?: Database.Database
 ): boolean {
-  const confirmedIds = getConfirmedDecisionIds(projectUuid);
+  const confirmedIds = getConfirmedDecisionIds(projectUuid, conn);
   if (!confirmedIds || confirmedIds.size === 0) {
     return true;
   }

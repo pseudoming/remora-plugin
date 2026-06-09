@@ -26,9 +26,9 @@ export function readIncrementalLogs(conn: Database.Database, session: Record<str
   const isSub = isSubagentSession(session["conversationId"]);
   const convId = session["conversationId"];
 
-  let lastMsgId = getWatermark(conn, session["projectUuid"], convId);
+  let lastMsgId = getWatermark(session["projectUuid"], convId, conn);
 
-  let lastLine = getMaxLineNumber(conn, convId);
+  let lastLine = getMaxLineNumber(convId, conn);
 
   const cdal = new ConversationDataAccessLayer(convId);
 
@@ -77,9 +77,9 @@ export function readIncrementalLogs(conn: Database.Database, session: Record<str
           }
         }
 
-        const msgId = Number(insertMessage(conn, convId, currentLine,
+        const msgId = Number(insertMessage(convId, currentLine,
           formatTimestamp(step["timestamp"] || ""), role,
-          content));
+          content, conn));
 
         if (content && (stepType === "USER_INPUT" || stepType === "PLANNER_RESPONSE")) {
           const snippet = `[msg_${msgId}] ${content.slice(0, 500)}`;
@@ -97,42 +97,42 @@ export function readIncrementalLogs(conn: Database.Database, session: Record<str
   if (currentLine < lastLine) {
     const targetRollbackLine = Math.max(0, currentLine - 1);
 
-    const targetMsgId = getMaxMessageIdUpToLine(conn, convId, targetRollbackLine);
+    const targetMsgId = getMaxMessageIdUpToLine(convId, targetRollbackLine, conn);
 
-    deleteMessagesAboveLine(conn, convId, targetRollbackLine);
+    deleteMessagesAboveLine(convId, targetRollbackLine, conn);
 
-    const decisions = getDecisionsByConversation(conn, convId);
+    const decisions = getDecisionsByConversation(convId, conn);
     for (const { id: decId, evidence_msg_ids: evIdsStr } of decisions) {
       try {
         const evIds: number[] = evIdsStr ? JSON.parse(evIdsStr) : [];
         if (evIds.some((eid: number) => eid > targetMsgId)) {
-          deleteTopicDecision(conn, decId);
+          deleteTopicDecision(decId, conn);
         }
       } catch {
         // pass
       }
     }
 
-    const targetTimestamp = getMessageTimestamp(conn, targetMsgId);
+    const targetTimestamp = getMessageTimestamp(targetMsgId, conn);
     if (targetTimestamp) {
-      deleteDecisionsByConversationAfter(conn, convId, targetTimestamp);
+      deleteDecisionsByConversationAfter(convId, targetTimestamp, conn);
     }
 
-    deletePendingEvents(conn, session["projectUuid"]);
+    deletePendingEvents(session["projectUuid"], conn);
 
-    updateWatermark(conn, session["projectUuid"], convId, targetMsgId);
+    updateWatermark(session["projectUuid"], convId, targetMsgId, conn);
 
     console.log(`[Remora] 检测到会话 Undo 回滚，温存储已自愈水位线至 msg_id: ${targetMsgId}`);
     lastLine = targetRollbackLine;
     lastMsgId = targetMsgId;
   }
 
-  let currentMsgId = getMaxMessageId(conn, convId);
+  let currentMsgId = getMaxMessageId(convId, conn);
   if (!currentMsgId) {
     currentMsgId = lastMsgId;
   }
 
-  ensureWatermark(conn, session["projectUuid"], convId);
+  ensureWatermark(session["projectUuid"], convId, conn);
 
   const keyContent = newSnippets.join("\\n");
 

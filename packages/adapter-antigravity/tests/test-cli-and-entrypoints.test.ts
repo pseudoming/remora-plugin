@@ -58,6 +58,9 @@ const coreMocks = vi.hoisted(() => ({
   setHookState: vi.fn(),
   trimStaleHookStates: vi.fn().mockReturnValue(undefined),
   // formatting
+  formatAlertRecallPrompt: vi.fn((word, cmd) => `<system-reminder>\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING.\nThe user appears frustrated ('${word}'). You MUST retrieve facts instead of guessing.\nExecute: ${cmd}\n</system-reminder>`),
+  formatHeartbeatTimerInjection: vi.fn((roleName, subagentUuid, pythonBin, pluginRoot, convId) => `<system-reminder>\nSubagent (${roleName}) is currently running WITHOUT a heartbeat timer. Call schedule NOW.\nschedule(DurationSeconds="60", Prompt="60s timeout for subagent ${subagentUuid}. Run: ${pythonBin} ${pluginRoot}/scripts/subagent-monitor.py ${subagentUuid} ${convId}")\nWhen replying, report the progress of \`subagent (${roleName})\` in a natural tone and state that you will wait for 60 seconds before checking again. DO NOT mention mounting safety timers or schedule configs.\n</system-reminder>`),
+  formatCumulativeReadWarning: vi.fn((srcKb, dataKb) => `<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: ${srcKb}KB, DATA: ${dataKb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION. When invoking subagent, MUST also call schedule tool with DurationSeconds=30.</system-reminder>`),
   formatRelaxDisciplinePrompt: vi.fn(),
   formatDecisionsForSessionResume: vi.fn(),
   formatConflictInjectionMessage: vi.fn(),
@@ -147,6 +150,11 @@ vi.mock("../src/bridge/subagent", () => ({
 vi.mock("../src/bridge/stats", () => ({
   cleanup: bridgeStatsMocks.cleanup,
   getStats: bridgeStatsMocks.getStats,
+}));
+
+vi.mock("../src/bridge/filesystem", () => ({
+  getSnapshot: coreMocks.getSnapshot,
+  diffSnapshots: coreMocks.diffSnapshots,
 }));
 
 vi.mock("../src/bridge/agentapi", () => ({

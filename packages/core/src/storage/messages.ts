@@ -1,14 +1,17 @@
+import Database from "better-sqlite3";
 import { getConn } from "./connection";
 
 const USER_ROLES = ["USER", "USER_INPUT", "USER_EXPLICIT", "user"];
 
 export function getLatestNonUserMessages(
   convId: string,
-  limit: number = 5
+  limit: number = 5,
+  conn?: Database
 ): Array<{ timestamp: string; role: string; content: string }> {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const rows = conn
+    const rows = db
       .prepare(
         `SELECT timestamp, role, content FROM messages
          WHERE conversation_id = ?
@@ -31,7 +34,7 @@ export function getLatestNonUserMessages(
     console.error(`getLatestNonUserMessages failed: ${e}`);
     return [];
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -40,11 +43,13 @@ export function getLatestNonUserMessages(
  */
 export function getWatermark(
   projectUuid: string,
-  conversationId: string
+  conversationId: string,
+  conn?: Database
 ): number {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn
+    const row = db
       .prepare(
         "SELECT last_msg_id FROM watermarks WHERE project_uuid=? AND conversation_id=?"
       )
@@ -53,23 +58,25 @@ export function getWatermark(
       | undefined;
     return row ? row.last_msg_id : 0;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function getMaxLineNumber(
-  conversationId: string
+  conversationId: string,
+  conn?: Database
 ): number {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn
+    const row = db
       .prepare(
         "SELECT MAX(line_number) as max_ln FROM messages WHERE conversation_id=?"
       )
       .get(conversationId) as { max_ln: number | null } | undefined;
     return row && row.max_ln ? row.max_ln : 0;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -78,42 +85,48 @@ export function insertMessage(
   lineNumber: number,
   timestamp: string,
   role: string,
-  content: string
+  content: string,
+  conn?: Database
 ): number | bigint {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const result = conn
+    const result = db
       .prepare(
         "INSERT OR IGNORE INTO messages (conversation_id, line_number, timestamp, role, content) VALUES (?, ?, ?, ?, ?)"
       )
       .run(conversationId, lineNumber, timestamp, role, content);
     return result.lastInsertRowid;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function getMaxMessageId(
-  conversationId: string
+  conversationId: string,
+  conn?: Database
 ): number {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn
+    const row = db
       .prepare("SELECT MAX(id) as max_id FROM messages WHERE conversation_id=?")
       .get(conversationId) as { max_id: number | null } | undefined;
     return row && row.max_id ? row.max_id : 0;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function getMaxMessageIdUpToLine(
   conversationId: string,
-  lineNumber: number
+  lineNumber: number,
+  conn?: Database
 ): number {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn
+    const row = db
       .prepare(
         "SELECT MAX(id) as max_id FROM messages WHERE conversation_id=? AND line_number<=?"
       )
@@ -122,129 +135,145 @@ export function getMaxMessageIdUpToLine(
       | undefined;
     return row && row.max_id ? row.max_id : 0;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function deleteMessagesAboveLine(
   conversationId: string,
-  lineNumber: number
+  lineNumber: number,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare(
         "DELETE FROM messages WHERE conversation_id=? AND line_number > ?"
       )
       .run(conversationId, lineNumber);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function getDecisionsByConversation(
-  conversationId: string
+  conversationId: string,
+  conn?: Database
 ): Array<{ id: number; evidence_msg_ids: string }> {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    return conn
+    return db
       .prepare(
         "SELECT id, evidence_msg_ids FROM topic_decisions WHERE conversation_id=?"
       )
       .all(conversationId) as Array<{ id: number; evidence_msg_ids: string }>;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function deleteTopicDecision(
-  decisionId: number
+  decisionId: number,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare("DELETE FROM topic_decisions WHERE id=?")
       .run(decisionId);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function getMessageTimestamp(
-  messageId: number
+  messageId: number,
+  conn?: Database
 ): string | null {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn
+    const row = db
       .prepare("SELECT timestamp FROM messages WHERE id=?")
       .get(messageId) as { timestamp: string } | undefined;
     return row ? row.timestamp : null;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function deleteDecisionsByConversationAfter(
   conversationId: string,
-  createdAfter: string
+  createdAfter: string,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare(
         "DELETE FROM topic_decisions WHERE conversation_id=? AND created_at > ?"
       )
       .run(conversationId, createdAfter);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function deletePendingEvents(
-  projectUuid: string
+  projectUuid: string,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare(
         "DELETE FROM remora_event_queue WHERE project_uuid=? AND status='pending'"
       )
       .run(projectUuid);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function updateWatermark(
   projectUuid: string,
   conversationId: string,
-  msgId: number
+  msgId: number,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare(
         "UPDATE watermarks SET last_msg_id=?, last_updated=CURRENT_TIMESTAMP WHERE project_uuid=? AND conversation_id=?"
       )
       .run(msgId, projectUuid, conversationId);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function ensureWatermark(
   projectUuid: string,
-  conversationId: string
+  conversationId: string,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare(
         "INSERT OR IGNORE INTO watermarks (project_uuid, conversation_id, last_msg_id) VALUES (?, ?, 0)"
       )
       .run(projectUuid, conversationId);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -253,11 +282,13 @@ export function ensureWatermark(
  */
 export function backfillMessageTopicIds(
   topicId: string,
-  messageIds: Set<number>
+  messageIds: Set<number>,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const stmt = conn.prepare(
+    const stmt = db.prepare(
       `UPDATE messages SET topic_id =
          CASE
            WHEN topic_id IS NULL THEN json_array(?)
@@ -269,6 +300,6 @@ export function backfillMessageTopicIds(
       stmt.run(topicId, topicId, mid);
     }
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }

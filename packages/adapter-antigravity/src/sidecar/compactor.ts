@@ -16,7 +16,7 @@ import { processSessions, AgentApiError } from "./extract-decisions";
 import { scanAndIngestArtifacts } from "./sync-artifacts";
 import { checkPlanApproval } from "./check-approval";
 import { consumeEventQueue } from "./consume-events";
-import { getAllProjectUuids } from "@remora/core";
+import { getConn, getAllProjectUuids } from "@remora/core";
 
 export function pruneSidecarEvents(): void {
   try {
@@ -58,12 +58,17 @@ function main(): void {
       pruneExpiredWatermarks();
       processSessions(cycleStart);
 
-      const activeProjects = getAllProjectUuids();
-      for (const pUuid of activeProjects) {
-        checkPlanApproval(pUuid);
+      const conn = getConn();
+      try {
+        const activeProjects = getAllProjectUuids(conn);
+        for (const pUuid of activeProjects) {
+          checkPlanApproval(pUuid, conn);
+        }
+        consumeEventQueue(cycleStart, conn);
+        runGarbageCollection(conn);
+      } finally {
+        conn.close();
       }
-      consumeEventQueue(cycleStart);
-      runGarbageCollection();
     } catch (e) {
       if (e instanceof AgentApiError) {
         process.stderr.write(String(e) + "\n");

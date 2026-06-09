@@ -161,9 +161,9 @@ export function extractFactualBaseline(convId: string, startLine: number): [stri
   return [[...baselineFiles], [...baselineActions]];
 }
 
-function _getActiveTopic(projectUuid: string): string | null {
+function _getActiveTopic(projectUuid: string, conn: Database): string | null {
   try {
-    return getOpenTopic(projectUuid);
+    return getOpenTopic(projectUuid, conn);
   } catch (e) {
     console.error(`Error querying active topic: ${String(e)}`);
     return null;
@@ -186,9 +186,9 @@ export function processSessions(startTime: number): void {
     if (isSub) {
       const { changedFiles, referencedFiles } = extractSubagentReport(session.conversationId);
       if (changedFiles.length || referencedFiles.length) {
-        const activeTopic = _getActiveTopic(session.projectUuid);
+        const activeTopic = _getActiveTopic(session.projectUuid, conn);
         if (activeTopic) {
-          const [assocJson, refJson] = getTopicFiles(session.projectUuid, activeTopic);
+          const [assocJson, refJson] = getTopicFiles(session.projectUuid, activeTopic, conn);
           const existingAssoc: Array<{ file: string; source: string }> = assocJson ? JSON.parse(assocJson) : [];
           const existingRef: Array<{ file: string; source: string }> = refJson ? JSON.parse(refJson) : [];
           const assocDict: Record<string, { file: string; source: string }> = {};
@@ -215,22 +215,23 @@ export function processSessions(startTime: number): void {
             session.projectUuid,
             activeTopic,
             JSON.stringify(Object.values(assocDict)),
-            JSON.stringify(Object.values(refDict))
+            JSON.stringify(Object.values(refDict)),
+            conn
           );
         }
       }
-      updateWatermark(session.projectUuid, session.conversationId, currentMsgId);
+      updateWatermark(session.projectUuid, session.conversationId, currentMsgId, conn);
       continue;
     }
 
     if (!keyContent.trim()) {
-      updateWatermark(session.projectUuid, session.conversationId, currentMsgId);
+      updateWatermark(session.projectUuid, session.conversationId, currentMsgId, conn);
       continue;
     }
 
     const currentTimeStr = new Date().toISOString().replace("T", " ").slice(0, 19);
 
-    const activeTopicId = _getActiveTopic(session.projectUuid);
+    const activeTopicId = _getActiveTopic(session.projectUuid, conn);
     let topicConstraintDesc = "";
     let topicConstraintPrompt = "";
 
@@ -278,7 +279,7 @@ If no significant topics, output: {"topics": []}
 
     const llmOutput = getOrCreateConversation(prompt);
     if (!llmOutput) {
-      updateWatermark(session.projectUuid, session.conversationId, currentMsgId);
+      updateWatermark(session.projectUuid, session.conversationId, currentMsgId, conn);
       continue;
     }
 
@@ -306,7 +307,7 @@ If no significant topics, output: {"topics": []}
         if (!decisions.length) {
           continue;
         }
-        supersedeUnconfirmed(session.projectUuid, t.topic_id || "");
+        supersedeUnconfirmed(session.projectUuid, t.topic_id || "", conn);
       }
 
       for (const t of data.topics || []) {
@@ -314,7 +315,8 @@ If no significant topics, output: {"topics": []}
           session.projectUuid,
           t.topic_id || "",
           t.summary || "",
-          confidence
+          confidence,
+          conn
         );
 
         const decisions = t.decisions || [];
@@ -324,7 +326,7 @@ If no significant topics, output: {"topics": []}
         }
         for (const d of decisions) {
           const decisionText = d.decision || "";
-          if (decisionExists(session.projectUuid, topicId, decisionText)) {
+          if (decisionExists(session.projectUuid, topicId, decisionText, conn)) {
             continue;
           }
 
@@ -341,7 +343,8 @@ If no significant topics, output: {"topics": []}
             d.rationale || "",
             JSON.stringify(evidenceMsgIds),
             userConfirmedVal,
-            decisionType
+            decisionType,
+            conn
           );
         }
 
@@ -351,13 +354,13 @@ If no significant topics, output: {"topics": []}
             topicEvidenceIds.add(Number(mid));
           }
         }
-        backfillMessageTopicIds(t.topic_id || "", topicEvidenceIds);
+        backfillMessageTopicIds(t.topic_id || "", topicEvidenceIds, conn);
       }
     } catch (_e) {
       // pass  // JSONDecodeError or other parse failures
     }
 
-    updateWatermark(session.projectUuid, session.conversationId, currentMsgId);
+    updateWatermark(session.projectUuid, session.conversationId, currentMsgId, conn);
   }
   } finally {
     conn.close();

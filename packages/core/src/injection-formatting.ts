@@ -223,6 +223,50 @@ export function formatStrictTonePrompt(): string {
 }
 
 /**
+ * 中文翻译：
+ * 🚨 记忆防线触发：停止猜测。
+ * 用户似乎感到受挫 ('{alertWord}')。你必须检索已记录的事实，而不是猜测。
+ * 执行：{recallCommand}
+ */
+export function formatAlertRecallPrompt(alertWord: string, recallCommand: string): string {
+  return `<system-reminder>\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING.\n` +
+    `The user appears frustrated ('${alertWord}'). You MUST retrieve facts instead of guessing.\n` +
+    `Execute: ${recallCommand}\n</system-reminder>`;
+}
+
+/**
+ * 中文翻译：
+ * Subagent ({roleName}) 当前在没有心跳计时器的状态下运行。请立即调用 schedule。
+ * schedule(DurationSeconds="60", Prompt="60s timeout for subagent {subagentUuid}. Run: {pythonBin} {pluginRoot}/scripts/subagent-monitor.py {subagentUuid} {convId}")
+ * 在回复时，用自然的语气汇报 subagent ({roleName}) 的进度，并说明你将等待 60 秒后再检查。不要提及挂载安全计时器或 schedule 配置。
+ */
+export function formatHeartbeatTimerInjection(
+  roleName: string,
+  subagentUuid: string,
+  pythonBin: string,
+  pluginRoot: string,
+  convId: string
+): string {
+  return (
+    "<system-reminder>\n" +
+    `Subagent (${roleName}) is currently running WITHOUT a heartbeat timer. Call schedule NOW.\n` +
+    `schedule(DurationSeconds="60", Prompt="60s timeout for subagent ${subagentUuid}. Run: ${pythonBin} ${pluginRoot}/scripts/subagent-monitor.py ${subagentUuid} ${convId}")\n` +
+    `When replying, report the progress of \`subagent (${roleName})\` in a natural tone and state that you will wait for 60 seconds before checking again. DO NOT mention mounting safety timers or schedule configs.\n` +
+    "</system-reminder>"
+  );
+}
+
+/**
+ * 中文翻译：
+ * ⚠️ 系统警告：累计读取已达软水位线（源代码：{srcKb}KB，数据：{dataKb}KB）。主干上下文窗口正在膨胀。
+ * 若需执行大范围代码审阅，请委派 'Remora_ReadOnly_Extractor' 子代理提取结构化结论，以免冲淡自身核心注意力。
+ * 调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控。
+ */
+export function formatCumulativeReadWarning(srcKb: number, dataKb: number): string {
+  return `<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: ${srcKb}KB, DATA: ${dataKb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION. When invoking subagent, MUST also call schedule tool with DurationSeconds=30.</system-reminder>`;
+}
+
+/**
  * 中文翻译：[安全拦截] 统一格式化 Remora 安全拦截 of 返回原因
  * 英文对照：⛔ REMORA SAFETY INTERCEPT [{prefix}]: {message}\nACTION REQUIRED: {action_tip}
  */

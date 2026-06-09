@@ -2,9 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { getProfiler } from "../bridge/context";
+import { getSnapshot, diffSnapshots } from "../bridge/filesystem";
 import {
-  getSnapshot,
-  diffSnapshots,
   normalizeFilepath,
   ACTION_PATTERNS,
   resolvePhantomModifications,

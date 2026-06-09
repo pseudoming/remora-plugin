@@ -1,13 +1,16 @@
+import Database from "better-sqlite3";
 import { getConn } from "./connection";
 
 export function getRuntimeHookValue(
   sessionId: string,
   turnIdx: number,
-  key: string
+  key: string,
+  conn?: Database,
 ): string | null {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn
+    const row = db
       .prepare(
         "SELECT value FROM runtime_hook_state WHERE session_id = ? AND turn_idx = ? AND key = ?"
       )
@@ -17,7 +20,7 @@ export function getRuntimeHookValue(
     console.warn(`getRuntimeHookValue: ${e}`);
     return null;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -25,94 +28,104 @@ export function setRuntimeHookValue(
   sessionId: string,
   turnIdx: number,
   key: string,
-  value: string
+  value: string,
+  conn?: Database,
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn.prepare("BEGIN EXCLUSIVE").run();
-    conn
+    db.prepare("BEGIN EXCLUSIVE").run();
+    db
       .prepare(
         "INSERT INTO runtime_hook_state (session_id, turn_idx, key, value) VALUES (?, ?, ?, ?) " +
           "ON CONFLICT(session_id, turn_idx, key) DO UPDATE SET value = excluded.value"
       )
       .run(sessionId, turnIdx, key, value);
-    conn.prepare("COMMIT").run();
+    db.prepare("COMMIT").run();
   } catch (e) {
     console.warn(`setRuntimeHookValue: ${e}`);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function deleteRuntimeHookValue(
   sessionId: string,
   turnIdx: number,
-  key: string
+  key: string,
+  conn?: Database,
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn.prepare("BEGIN EXCLUSIVE").run();
-    conn
+    db.prepare("BEGIN EXCLUSIVE").run();
+    db
       .prepare(
         "DELETE FROM runtime_hook_state WHERE session_id = ? AND turn_idx = ? AND key = ?"
       )
       .run(sessionId, turnIdx, key);
-    conn.prepare("COMMIT").run();
+    db.prepare("COMMIT").run();
   } catch (e) {
     console.warn(`deleteRuntimeHookValue: ${e}`);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function trimRuntimeHookStates(
   sessionId: string,
-  currentTurnIdx: number
+  currentTurnIdx: number,
+  conn?: Database,
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn.prepare("BEGIN EXCLUSIVE").run();
-    conn
+    db.prepare("BEGIN EXCLUSIVE").run();
+    db
       .prepare(
         "DELETE FROM runtime_hook_state WHERE session_id = ? AND turn_idx >= ?"
       )
       .run(sessionId, currentTurnIdx);
-    conn.prepare("COMMIT").run();
+    db.prepare("COMMIT").run();
   } catch (e) {
     console.warn(`trimRuntimeHookStates: ${e}`);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function getHookState(
   sessionId: string,
   turnIdx: number,
-  key: string
+  key: string,
+  conn?: Database,
 ): string | null {
-  return getRuntimeHookValue(sessionId, turnIdx, key);
+  return getRuntimeHookValue(sessionId, turnIdx, key, conn);
 }
 
 export function setHookState(
   sessionId: string,
   turnIdx: number,
   key: string,
-  value: string
+  value: string,
+  conn?: Database,
 ): void {
-  setRuntimeHookValue(sessionId, turnIdx, key, value);
+  setRuntimeHookValue(sessionId, turnIdx, key, value, conn);
 }
 
 export function deleteHookState(
   sessionId: string,
   turnIdx: number,
-  key: string
+  key: string,
+  conn?: Database,
 ): void {
-  deleteRuntimeHookValue(sessionId, turnIdx, key);
+  deleteRuntimeHookValue(sessionId, turnIdx, key, conn);
 }
 
 export function trimHookStates(
   sessionId: string,
-  currentTurnIdx: number
+  currentTurnIdx: number,
+  conn?: Database,
 ): void {
-  trimRuntimeHookStates(sessionId, currentTurnIdx);
+  trimRuntimeHookStates(sessionId, currentTurnIdx, conn);
 }

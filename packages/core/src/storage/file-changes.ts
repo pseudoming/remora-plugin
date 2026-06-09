@@ -1,20 +1,23 @@
+import Database from "better-sqlite3";
 import { getConn } from "./connection";
 
-export function insertFileChange(projectUuid: string, conversationId: string, fileName: string, source: string): void {
-  const conn = getConn();
+export function insertFileChange(projectUuid: string, conversationId: string, fileName: string, source: string, conn?: Database): void {
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn.prepare(
+    db.prepare(
       "INSERT OR IGNORE INTO file_changes (project_uuid, conversation_id, file_name, source) VALUES (?, ?, ?, ?)"
     ).run(projectUuid, conversationId, fileName, source);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
-export function getFilesByTopic(projectUuid: string, topicId: string): string[] {
-  const conn = getConn();
+export function getFilesByTopic(projectUuid: string, topicId: string, conn?: Database): string[] {
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const rows = conn.prepare(
+    const rows = db.prepare(
       `SELECT DISTINCT fc.file_name FROM file_changes fc
        JOIN topic_decisions td ON fc.conversation_id = td.conversation_id
        WHERE td.project_uuid = ? AND td.topic_id = ?`
@@ -24,14 +27,15 @@ export function getFilesByTopic(projectUuid: string, topicId: string): string[] 
     console.warn(`getFilesByTopic: ${e}`);
     return [];
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
-export function getDecisionsByFile(projectUuid: string, fileName: string): Array<{ id: number; decision: string; rationale: string }> {
-  const conn = getConn();
+export function getDecisionsByFile(projectUuid: string, fileName: string, conn?: Database): Array<{ id: number; decision: string; rationale: string }> {
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const rows = conn.prepare(
+    const rows = db.prepare(
       `SELECT DISTINCT td.id, td.decision, td.rationale
        FROM topic_decisions td
        JOIN file_changes fc ON fc.conversation_id = td.conversation_id
@@ -43,6 +47,6 @@ export function getDecisionsByFile(projectUuid: string, fileName: string): Array
     console.warn(`getDecisionsByFile: ${e}`);
     return [];
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }

@@ -45,9 +45,11 @@ function _isConnLike(v: any): v is Database.Database {
 vi.mock("@remora/core", () => {
   const Database = require("better-sqlite3");
 
-  function _resolve(conn: any): { db: Database.Database; closeAfter: boolean } {
-    if (_isConnLike(conn)) return { db: conn, closeAfter: false };
-    return { db: new Database(TEST_DB_PATH, { timeout: 15000 }), closeAfter: true };
+  function _resolve(args: any[]): { db: Database.Database; closeAfter: boolean; a: any[] } {
+    if (args.length > 0 && _isConnLike(args[args.length - 1])) {
+      return { db: args[args.length - 1], closeAfter: false, a: args.slice(0, -1) };
+    }
+    return { db: new Database(TEST_DB_PATH, { timeout: 15000 }), closeAfter: true, a: args };
   }
 
   return {
@@ -60,89 +62,89 @@ vi.mock("@remora/core", () => {
       }
     },
     getWatermark: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        const row = db.prepare("SELECT last_msg_id FROM watermarks WHERE project_uuid=? AND conversation_id=?").get(args[1], args[2]) as { last_msg_id: number } | undefined;
+        const row = db.prepare("SELECT last_msg_id FROM watermarks WHERE project_uuid=? AND conversation_id=?").get(a[0], a[1]) as { last_msg_id: number } | undefined;
         return row ? row.last_msg_id : 0;
       } finally { if (closeAfter) db.close(); }
     },
     getMaxLineNumber: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        const row = db.prepare("SELECT MAX(line_number) as max_ln FROM messages WHERE conversation_id=?").get(args[1]) as { max_ln: number | null } | undefined;
+        const row = db.prepare("SELECT MAX(line_number) as max_ln FROM messages WHERE conversation_id=?").get(a[0]) as { max_ln: number | null } | undefined;
         return row && row.max_ln ? row.max_ln : 0;
       } finally { if (closeAfter) db.close(); }
     },
     insertMessage: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        const result = db.prepare("INSERT OR IGNORE INTO messages (conversation_id, line_number, timestamp, role, content) VALUES (?, ?, ?, ?, ?)").run(args[1], args[2], args[3], args[4], args[5]);
+        const result = db.prepare("INSERT OR IGNORE INTO messages (conversation_id, line_number, timestamp, role, content) VALUES (?, ?, ?, ?, ?)").run(a[0], a[1], a[2], a[3], a[4]);
         return Number(result.lastInsertRowid);
       } finally { if (closeAfter) db.close(); }
     },
     getMaxMessageId: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        const row = db.prepare("SELECT MAX(id) as max_id FROM messages WHERE conversation_id=?").get(args[1]) as { max_id: number | null } | undefined;
+        const row = db.prepare("SELECT MAX(id) as max_id FROM messages WHERE conversation_id=?").get(a[0]) as { max_id: number | null } | undefined;
         return row && row.max_id ? row.max_id : 0;
       } finally { if (closeAfter) db.close(); }
     },
     getMaxMessageIdUpToLine: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        const row = db.prepare("SELECT MAX(id) as max_id FROM messages WHERE conversation_id=? AND line_number<=?").get(args[1], args[2]) as { max_id: number | null } | undefined;
+        const row = db.prepare("SELECT MAX(id) as max_id FROM messages WHERE conversation_id=? AND line_number<=?").get(a[0], a[1]) as { max_id: number | null } | undefined;
         return row && row.max_id ? row.max_id : 0;
       } finally { if (closeAfter) db.close(); }
     },
     deleteMessagesAboveLine: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        db.prepare("DELETE FROM messages WHERE conversation_id=? AND line_number > ?").run(args[1], args[2]);
+        db.prepare("DELETE FROM messages WHERE conversation_id=? AND line_number > ?").run(a[0], a[1]);
       } finally { if (closeAfter) db.close(); }
     },
     getDecisionsByConversation: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        return db.prepare("SELECT id, evidence_msg_ids FROM topic_decisions WHERE conversation_id=?").all(args[1]) as Array<{ id: number; evidence_msg_ids: string }>;
+        return db.prepare("SELECT id, evidence_msg_ids FROM topic_decisions WHERE conversation_id=?").all(a[0]) as Array<{ id: number; evidence_msg_ids: string }>;
       } finally { if (closeAfter) db.close(); }
     },
     deleteTopicDecision: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        db.prepare("DELETE FROM topic_decisions WHERE id=?").run(args[1]);
+        db.prepare("DELETE FROM topic_decisions WHERE id=?").run(a[0]);
       } finally { if (closeAfter) db.close(); }
     },
     getMessageTimestamp: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        const row = db.prepare("SELECT timestamp FROM messages WHERE id=?").get(args[1]) as { timestamp: string } | undefined;
+        const row = db.prepare("SELECT timestamp FROM messages WHERE id=?").get(a[0]) as { timestamp: string } | undefined;
         return row ? row.timestamp : null;
       } finally { if (closeAfter) db.close(); }
     },
     deleteDecisionsByConversationAfter: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        db.prepare("DELETE FROM topic_decisions WHERE conversation_id=? AND created_at > ?").run(args[1], args[2]);
+        db.prepare("DELETE FROM topic_decisions WHERE conversation_id=? AND created_at > ?").run(a[0], a[1]);
       } finally { if (closeAfter) db.close(); }
     },
     deletePendingEvents: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        db.prepare("DELETE FROM remora_event_queue WHERE project_uuid=? AND status='pending'").run(args[1]);
+        db.prepare("DELETE FROM remora_event_queue WHERE project_uuid=? AND status='pending'").run(a[0]);
       } finally { if (closeAfter) db.close(); }
     },
     updateWatermark: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        db.prepare("INSERT OR REPLACE INTO watermarks (project_uuid, conversation_id, last_msg_id, last_updated) VALUES (?, ?, ?, datetime('now'))").run(args[1], args[2], args[3]);
+        db.prepare("INSERT OR REPLACE INTO watermarks (project_uuid, conversation_id, last_msg_id, last_updated) VALUES (?, ?, ?, datetime('now'))").run(a[0], a[1], a[2]);
       } finally { if (closeAfter) db.close(); }
     },
     ensureWatermark: (...args: any[]) => {
-      const { db, closeAfter } = _resolve(args[0]);
+      const { db, closeAfter, a } = _resolve(args);
       try {
-        const row = db.prepare("SELECT 1 FROM watermarks WHERE project_uuid=? AND conversation_id=?").get(args[1], args[2]);
+        const row = db.prepare("SELECT 1 FROM watermarks WHERE project_uuid=? AND conversation_id=?").get(a[0], a[1]);
         if (!row) {
-          db.prepare("INSERT OR IGNORE INTO watermarks (project_uuid, conversation_id, last_msg_id) VALUES (?, ?, 0)").run(args[1], args[2]);
+          db.prepare("INSERT OR IGNORE INTO watermarks (project_uuid, conversation_id, last_msg_id) VALUES (?, ?, 0)").run(a[0], a[1]);
         }
       } finally { if (closeAfter) db.close(); }
     },

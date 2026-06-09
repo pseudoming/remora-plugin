@@ -1,9 +1,11 @@
+import Database from "better-sqlite3";
 import { getConn } from "./connection";
 
-export function getProjectUuidByConv(sessionId: string): string | null {
-  const conn = getConn();
+export function getProjectUuidByConv(sessionId: string, conn?: Database): string | null {
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn.prepare(
+    const row = db.prepare(
       "SELECT project_uuid FROM watermarks WHERE conversation_id=? LIMIT 1"
     ).get(sessionId) as { project_uuid: string | null } | undefined;
     return row ? row.project_uuid : null;
@@ -11,14 +13,15 @@ export function getProjectUuidByConv(sessionId: string): string | null {
     console.warn(`getProjectUuidByConv: ${e}`);
     return null;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
-export function watermarkExists(projectUuid: string, conversationId: string): boolean {
-  const conn = getConn();
+export function watermarkExists(projectUuid: string, conversationId: string, conn?: Database): boolean {
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn.prepare(
+    const row = db.prepare(
       "SELECT 1 FROM watermarks WHERE project_uuid=? AND conversation_id=? LIMIT 1"
     ).get(projectUuid, conversationId);
     return row !== undefined;
@@ -26,11 +29,11 @@ export function watermarkExists(projectUuid: string, conversationId: string): bo
     console.warn(`watermarkExists: ${e}`);
     return false;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
-export function getActiveTopicCreatedAt(projectUuid: string): string | null {
+export function getActiveTopicCreatedAt(projectUuid: string, conn?: Database): string | null {
   const { getActiveTopicCreatedAt: impl } = require("./topics");
-  return impl(projectUuid);
+  return impl(projectUuid, conn);
 }

@@ -9,11 +9,13 @@ export function recallFts5Logs(
   convId: string,
   keyword: string,
   limit: number = 10,
+  conn?: Database,
 ): string[] {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
     const safeKeyword = keyword.replace(/"/g, '""');
-    const rows = conn
+    const rows = db
       .prepare(
         `SELECT m.role || ': ' || m.content AS formatted_msg
          FROM messages m
@@ -39,7 +41,7 @@ export function recallFts5Logs(
     console.warn(`recallFts5Logs: ${e}`);
     return [];
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -78,11 +80,13 @@ export function recallDecisionsByFts5Topic(
   projectUuid: string,
   convId: string,
   keyword: string,
+  conn?: Database,
 ): string[] {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
     const safeKeyword = keyword.replace(/"/g, '""');
-    const rows = conn
+    const rows = db
       .prepare(
         `SELECT topic_id, decision, rationale, evidence_msg_ids
          FROM topic_decisions
@@ -117,7 +121,7 @@ export function recallDecisionsByFts5Topic(
 
     const results: string[] = [];
     for (const row of rows) {
-      const evidenceStr = _buildEvidenceTexts(conn, row.evidence_msg_ids);
+      const evidenceStr = _buildEvidenceTexts(db, row.evidence_msg_ids);
       results.push(
         `[${row.topic_id}] ${row.decision} (原因: ${row.rationale})${evidenceStr}`,
       );
@@ -127,7 +131,7 @@ export function recallDecisionsByFts5Topic(
     console.warn(`recallDecisionsByFts5Topic: ${e}`);
     return [];
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -139,15 +143,17 @@ export function recallDecisionsByLike(
   convId: string,
   keyword: string,
   limit: number = 5,
+  conn?: Database,
 ): string[] {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
     const safeKeyword = keyword
       .replace(/\\/g, "\\\\")
       .replace(/%/g, "\\%")
       .replace(/_/g, "\\_");
     const likePattern = `%${safeKeyword}%`;
-    const rows = conn
+    const rows = db
       .prepare(
         `SELECT topic_id, decision, rationale, evidence_msg_ids
          FROM topic_decisions
@@ -170,7 +176,7 @@ export function recallDecisionsByLike(
 
     const results: string[] = [];
     for (const row of rows) {
-      const evidenceStr = _buildEvidenceTexts(conn, row.evidence_msg_ids);
+      const evidenceStr = _buildEvidenceTexts(db, row.evidence_msg_ids);
       results.push(
         `[${row.topic_id}] ${row.decision} (原因: ${row.rationale})${evidenceStr}`,
       );
@@ -180,7 +186,7 @@ export function recallDecisionsByLike(
     console.warn(`recallDecisionsByLike: ${e}`);
     return [];
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -191,11 +197,13 @@ export function touchTopicsAccessedByRecall(
   projectUuid: string,
   convId: string,
   keyword: string,
+  conn?: Database,
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
     const safeKeyword = keyword.replace(/"/g, '""');
-    conn
+    db
       .prepare(
         `UPDATE project_topics SET last_accessed_at = CURRENT_TIMESTAMP
          WHERE uuid = ?
@@ -234,6 +242,6 @@ export function touchTopicsAccessedByRecall(
         `%${safeKeyword}%`,
       );
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }

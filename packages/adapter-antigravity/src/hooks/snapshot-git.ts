@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getSnapshot } from "@remora/core";
+import { getSnapshot } from "../bridge/filesystem";
 
 export function main(context: Record<string, string>): { injectSteps: never[] } {
   try {

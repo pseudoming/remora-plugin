@@ -25,9 +25,9 @@ describe("trimStaleHookStates", () => {
     getRuntimeHookValue.mockReturnValue(null);
     trimStaleHookStates("conv-001", 5);
     expect(trimRuntimeHookStates).toHaveBeenCalledTimes(1);
-    expect(trimRuntimeHookStates).toHaveBeenCalledWith("conv-001", 5);
+    expect(trimRuntimeHookStates).toHaveBeenCalledWith("conv-001", 5, undefined);
     expect(setRuntimeHookValue).toHaveBeenCalledTimes(1);
-    expect(setRuntimeHookValue).toHaveBeenCalledWith("conv-001", -1, "last_seen_turn", "5");
+    expect(setRuntimeHookValue).toHaveBeenCalledWith("conv-001", -1, "last_seen_turn", "5", undefined);
   });
 
   it("test_same_turn_noop", () => {
@@ -41,9 +41,9 @@ describe("trimStaleHookStates", () => {
     getRuntimeHookValue.mockReturnValue("2");
     trimStaleHookStates("conv-001", 7);
     expect(trimRuntimeHookStates).toHaveBeenCalledTimes(1);
-    expect(trimRuntimeHookStates).toHaveBeenCalledWith("conv-001", 7);
+    expect(trimRuntimeHookStates).toHaveBeenCalledWith("conv-001", 7, undefined);
     expect(setRuntimeHookValue).toHaveBeenCalledTimes(1);
-    expect(setRuntimeHookValue).toHaveBeenCalledWith("conv-001", -1, "last_seen_turn", "7");
+    expect(setRuntimeHookValue).toHaveBeenCalledWith("conv-001", -1, "last_seen_turn", "7", undefined);
   });
 
   it("test_unparseable_last_seen_noop", () => {

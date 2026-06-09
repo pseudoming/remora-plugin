@@ -1,8 +1,9 @@
+import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { runTopicGarbageCollection, setTraceId } from "@remora/core";
 
-export function runGarbageCollection(): void {
-  runTopicGarbageCollection();
+export function runGarbageCollection(conn?: Database): void {
+  runTopicGarbageCollection(conn);
 }
 
 export function main(): void {

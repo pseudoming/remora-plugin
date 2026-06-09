@@ -47,12 +47,13 @@ export type RelevanceDecision = {
  */
 export function getConfirmedDecisions(
   projectUuid: string,
-  topicId: string
+  topicId: string,
+  conn?: Database
 ): ConfirmedDecision[] {
-  let conn: Database | null = null;
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn = getConn();
-    const rows = conn
+    const rows = db
       .prepare(
         `SELECT decision, rationale, evidence_msg_ids, decision_type
          FROM topic_decisions
@@ -68,7 +69,7 @@ export function getConfirmedDecisions(
         try {
           const msgIds: number[] = JSON.parse(row.evidence_msg_ids);
           for (const msgId of msgIds) {
-            const msgRow = conn
+            const msgRow = db
               .prepare("SELECT content FROM messages WHERE id = ?")
               .get(msgId) as EvidenceRow | undefined;
             if (msgRow) {
@@ -90,19 +91,20 @@ export function getConfirmedDecisions(
     console.warn(`get_confirmed_decisions: ${e}`);
     return [];
   } finally {
-    if (conn) conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function confirmDecision(
   projectUuid: string,
-  decisionId: number
+  decisionId: number,
+  conn?: Database
 ): boolean {
-  let conn: Database | null = null;
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn = getConn();
-    const changes = conn.transaction(() => {
-      const info = conn!
+    const changes = db.transaction(() => {
+      const info = db
         .prepare(
           `UPDATE topic_decisions
            SET user_confirmed = 1, updated_at = CURRENT_TIMESTAMP
@@ -116,15 +118,18 @@ export function confirmDecision(
     console.warn(`confirm_decision: ${e}`);
     return false;
   } finally {
-    if (conn) conn.close();
+    if (ownConn) db.close();
   }
 }
 
-export function getTopicIdByDecision(decisionId: number): string | null {
-  let conn: Database | null = null;
+export function getTopicIdByDecision(
+  decisionId: number,
+  conn?: Database
+): string | null {
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn = getConn();
-    const row = conn
+    const row = db
       .prepare("SELECT topic_id FROM topic_decisions WHERE id = ?")
       .get(decisionId) as { topic_id: string } | undefined;
     return row ? row.topic_id : null;
@@ -132,7 +137,7 @@ export function getTopicIdByDecision(decisionId: number): string | null {
     console.warn(`get_topic_id_by_decision: ${e}`);
     return null;
   } finally {
-    if (conn) conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -142,18 +147,20 @@ export function getTopicIdByDecision(decisionId: number): string | null {
 export function decisionExists(
   projectUuid: string,
   topicId: string,
-  decisionText: string
+  decisionText: string,
+  conn?: Database
 ): boolean {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn
+    const row = db
       .prepare(
         "SELECT id FROM topic_decisions WHERE project_uuid = ? AND topic_id = ? AND decision = ?"
       )
       .get(projectUuid, topicId, decisionText);
     return row !== undefined;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -162,17 +169,19 @@ export function decisionExists(
  */
 export function supersedeUnconfirmed(
   projectUuid: string,
-  topicId: string
+  topicId: string,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare(
         "DELETE FROM topic_decisions WHERE project_uuid = ? AND topic_id = ? AND user_confirmed = 0"
       )
       .run(projectUuid, topicId);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -181,11 +190,13 @@ export function supersedeUnconfirmed(
  */
 export function getPendingDecisions(
   projectUuid: string,
-  limit: number = 30
+  limit: number = 30,
+  conn?: Database
 ): PendingDecision[] {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const rows = conn
+    const rows = db
       .prepare(
         `SELECT id, decision, rationale
          FROM topic_decisions
@@ -196,7 +207,7 @@ export function getPendingDecisions(
       .all(projectUuid, limit) as PendingDecision[];
     return rows;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -205,19 +216,21 @@ export function getPendingDecisions(
  */
 export function confirmDecisionsByIds(
   decisionIds: number[],
-  projectUuid: string
+  projectUuid: string,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
     for (const dId of decisionIds) {
-      conn
+      db
         .prepare(
           "UPDATE topic_decisions SET user_confirmed = 1 WHERE id = ? AND project_uuid = ?"
         )
         .run(dId, projectUuid);
     }
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -229,11 +242,13 @@ export function insertDecision(
   rationale: string,
   evidenceMsgIds: string,
   userConfirmed: number,
-  decisionType: string
+  decisionType: string,
+  conn?: Database
 ): void {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare(
         `INSERT INTO topic_decisions
          (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, decision_type)
@@ -250,37 +265,41 @@ export function insertDecision(
         decisionType
       );
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function getDecisionConfirmed(
-  decisionId: number
+  decisionId: number,
+  conn?: Database
 ): boolean {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const row = conn
+    const row = db
       .prepare("SELECT user_confirmed FROM topic_decisions WHERE id = ?")
       .get(decisionId) as { user_confirmed: number } | undefined;
     return !!(row && row.user_confirmed === 1);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
 export function getConfirmedDecisionIds(
-  projectUuid: string
+  projectUuid: string,
+  conn?: Database
 ): Set<number> {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const rows = conn
+    const rows = db
       .prepare(
         "SELECT id FROM topic_decisions WHERE project_uuid = ? AND user_confirmed = 1"
       )
       .all(projectUuid) as { id: number }[];
     return new Set(rows.map((r) => r.id));
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -290,11 +309,13 @@ export function getConfirmedDecisionIds(
 export function getRecentDecisions(
   projectUuid: string,
   topicId: string,
-  limit: number = 5
+  limit: number = 5,
+  conn?: Database
 ): RecentDecision[] {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    const rows = conn
+    const rows = db
       .prepare(
         `SELECT id, decision, rationale, user_confirmed, created_at
          FROM topic_decisions
@@ -305,7 +326,7 @@ export function getRecentDecisions(
       .all(projectUuid, topicId, limit) as RecentDecision[];
     return rows;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
@@ -315,9 +336,11 @@ export function getRecentDecisions(
 export function getRejectedOrDeferredByRelevance(
   projectUuid: string,
   queryText: string,
-  limit: number = 12
+  limit: number = 12,
+  conn?: Database
 ): RelevanceDecision[] {
-  const conn = getConn();
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
     const safeQuery = queryText.replace(/"/g, '""');
 
@@ -325,7 +348,7 @@ export function getRejectedOrDeferredByRelevance(
     let existingIds: Set<number> = new Set();
 
     try {
-      const rows = conn
+      const rows = db
         .prepare(
           `SELECT td.id, td.decision, td.rationale, td.decision_type, td.created_at
            FROM topic_decisions td
@@ -352,7 +375,7 @@ export function getRejectedOrDeferredByRelevance(
       try {
         if (existingIds.size > 0) {
           const placeholders = Array.from(existingIds, () => "?").join(",");
-          const rows = conn
+          const rows = db
             .prepare(
               `SELECT id, decision, rationale, decision_type, created_at
                FROM topic_decisions
@@ -371,7 +394,7 @@ export function getRejectedOrDeferredByRelevance(
             ) as RelevanceDecision[];
           candidates.push(...rows);
         } else {
-          const rows = conn
+          const rows = db
             .prepare(
               `SELECT id, decision, rationale, decision_type, created_at
                FROM topic_decisions
@@ -390,14 +413,18 @@ export function getRejectedOrDeferredByRelevance(
 
     return candidates;
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }
 
-export function bumpInjection(decisionId: number): void {
-  const conn = getConn();
+export function bumpInjection(
+  decisionId: number,
+  conn?: Database
+): void {
+  const db = conn ?? getConn();
+  const ownConn = !conn;
   try {
-    conn
+    db
       .prepare(
         `UPDATE topic_decisions
          SET injected_count = injected_count + 1, last_injected_at = CURRENT_TIMESTAMP
@@ -405,6 +432,6 @@ export function bumpInjection(decisionId: number): void {
       )
       .run(decisionId);
   } finally {
-    conn.close();
+    if (ownConn) db.close();
   }
 }

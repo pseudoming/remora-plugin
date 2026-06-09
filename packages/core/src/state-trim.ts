@@ -1,3 +1,4 @@
+import Database from "better-sqlite3";
 import {
   getRuntimeHookValue,
   setRuntimeHookValue,
@@ -13,9 +14,10 @@ import {
  */
 export function trimStaleHookStates(
   convId: string,
-  currentTurnIdx: unknown
+  currentTurnIdx: unknown,
+  conn?: Database.Database
 ): void {
-  const lastSeen = getRuntimeHookValue(convId, -1, "last_seen_turn");
+  const lastSeen = getRuntimeHookValue(convId, -1, "last_seen_turn", conn);
   let shouldTrim: boolean;
 
   if (lastSeen === null) {
@@ -35,7 +37,7 @@ export function trimStaleHookStates(
     if (isNaN(trimTurn)) {
       trimTurn = 0;
     }
-    trimRuntimeHookStates(convId, trimTurn);
-    setRuntimeHookValue(convId, -1, "last_seen_turn", String(trimTurn));
+    trimRuntimeHookStates(convId, trimTurn, conn);
+    setRuntimeHookValue(convId, -1, "last_seen_turn", String(trimTurn), conn);
   }
 }

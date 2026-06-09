@@ -388,6 +388,7 @@ vi.mock("@remora/core", () => {
     checkDbExists: () => {
       try { return require("node:fs").statSync(testDbPath.value).isFile(); } catch { return false; }
     },
+    getConn: () => new BetterSqlite3(testDbPath.value, { timeout: 15000 }),
     getWatermark: _getWatermark,
     getMaxLineNumber: _getMaxLineNumber,
     insertMessage: _insertMessage,
@@ -420,7 +421,7 @@ vi.mock("@remora/core", () => {
     upsertArtifactTopic: _upsertArtifactTopic,
     enqueueEvent: _enqueueEvent,
     insertFileChange: _insertFileChange,
-    getAllProjectUuids: () => ["proj-1"] as string[],
+    getAllProjectUuids: (_conn?: Database) => ["proj-1"] as string[],
     getPlanChangeTime: () => null,
     getUserMessagesAfter: () => [],
     getPlanContent: () => "",
@@ -1203,7 +1204,7 @@ describe("compactor main", () => {
 
     expect(spyLock).toHaveBeenCalledTimes(1);
     expect(spyPrune).toHaveBeenCalledTimes(1);
-    expect(spyCheck).toHaveBeenCalledWith("proj-1");
+    expect(spyCheck).toHaveBeenCalledWith("proj-1", expect.any(Object));
     expect(spyConsume).toHaveBeenCalledTimes(1);
     expect(spyGc).toHaveBeenCalledTimes(1);
     expect(spyRelease).toHaveBeenCalledTimes(1);

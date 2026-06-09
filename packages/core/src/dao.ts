@@ -2,125 +2,40 @@
 // Mirror of scripts/lib/dao.py.
 
 // Sessions
-export {
-  readMode,
-  writeMode,
-  getLatestSession,
-  updateColdStart,
-  forceColdStartLatestSession,
-  getSession,
-} from "./storage/sessions";
+export * from "./storage/sessions";
 
 // Messages
-export {
-  getWatermark,
-  getMaxLineNumber,
-  insertMessage,
-  getMaxMessageId,
-  deleteMessagesAboveLine,
-  getDecisionsByConversation,
-  deleteTopicDecision,
-  getMessageTimestamp,
-  deleteDecisionsByConversationAfter,
-  deletePendingEvents,
-  updateWatermark,
-  ensureWatermark,
-  backfillMessageTopicIds,
-  getMaxMessageIdUpToLine,
-  getLatestNonUserMessages,
-} from "./storage/messages";
+export * from "./storage/messages";
 
 // Topics
-export {
-  getActiveTopic,
-  createOrUpdateTopic,
-  switchTopic,
-  closeTopic,
-  getTopicsByUuid,
-  touchTopicSourceManual,
-  mergePhysicalFilesToTopic,
-  getOpenTopic,
-  getTopicFiles,
-  updateTopicFiles,
-  upsertTopic,
-  getAllProjectUuids,
-  getActiveTopicCreatedAt,
-} from "./storage/topics";
+export * from "./storage/topics";
 
 // Artifacts
-export {
-  getPlanChangeTime,
-  getUserMessagesAfter,
-  getPlanContent,
-  enqueueEvent,
-  getPendingEvents,
-  markEventProcessed,
-  getArtifactHash,
-  upsertArtifactHash,
-  deleteArtifactMessages,
-  insertArtifactMessage,
-  upsertArtifactTopic,
-} from "./storage/artifacts";
+export * from "./storage/artifacts";
 
 // Decisions
-export {
-  getConfirmedDecisions,
-  confirmDecision,
-  getTopicIdByDecision,
-  decisionExists,
-  supersedeUnconfirmed,
-  getPendingDecisions,
-  confirmDecisionsByIds,
-  insertDecision,
-  getDecisionConfirmed,
-  getConfirmedDecisionIds,
-  getRecentDecisions,
-  getRejectedOrDeferredByRelevance,
-  bumpInjection,
-} from "./storage/decisions";
+export * from "./storage/decisions";
 
 // Recall
-export {
-  recallFts5Logs,
-  recallDecisionsByFts5Topic,
-  recallDecisionsByLike,
-  touchTopicsAccessedByRecall,
-} from "./storage/recall";
+export * from "./storage/recall";
 
 // Maintenance
-export {
-  runTopicGarbageCollection,
-  pruneExpiredWatermarks,
-  cleanupGhostMessages,
-} from "./storage/maintenance";
+export * from "./storage/maintenance";
 
 // File changes
-export {
-  insertFileChange,
-  getFilesByTopic,
-  getDecisionsByFile,
-} from "./storage/file-changes";
+export * from "./storage/file-changes";
 
-// Watermarks
+// Watermarks — hand-written to avoid getActiveTopicCreatedAt conflict with topics
 export {
   getProjectUuidByConv,
   watermarkExists,
 } from "./storage/watermarks";
 
 // Runtime state
-export {
-  getRuntimeHookValue,
-  setRuntimeHookValue,
-  deleteRuntimeHookValue,
-  trimRuntimeHookStates,
-  getHookState,
-  setHookState,
-  deleteHookState,
-  trimHookStates,
-} from "./storage/runtime-state";
+export * from "./storage/runtime-state";
 
 // Gate
-export { shouldFire, markFired, isDuplicate, clearStale, shouldInjectTone } from "./gate";
+export * from "./gate";
 
 // Connection
-export { getDbPath, checkDbExists } from "./storage/connection";
+export * from "./storage/connection";

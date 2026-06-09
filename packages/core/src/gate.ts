@@ -1,3 +1,4 @@
+import Database from "better-sqlite3";
 import {
   getRuntimeHookValue,
   setRuntimeHookValue,
@@ -10,9 +11,10 @@ import {
 export function shouldFire(
   convId: string,
   key: string,
-  value: unknown
+  value: unknown,
+  conn?: Database.Database
 ): boolean {
-  const prev = getRuntimeHookValue(convId, -1, key);
+  const prev = getRuntimeHookValue(convId, -1, key, conn);
   return String(prev) !== String(value);
 }
 
@@ -22,9 +24,10 @@ export function shouldFire(
 export function markFired(
   convId: string,
   key: string,
-  value: unknown
+  value: unknown,
+  conn?: Database.Database
 ): void {
-  setRuntimeHookValue(convId, -1, key, String(value));
+  setRuntimeHookValue(convId, -1, key, String(value), conn);
 }
 
 /**
@@ -33,9 +36,10 @@ export function markFired(
 export function isDuplicate(
   convId: string,
   key: string,
-  value: unknown
+  value: unknown,
+  conn?: Database.Database
 ): boolean {
-  const prev = getRuntimeHookValue(convId, -1, key);
+  const prev = getRuntimeHookValue(convId, -1, key, conn);
   return String(prev) === String(value);
 }
 
@@ -45,11 +49,12 @@ export function isDuplicate(
 export function clearStale(
   convId: string,
   key: string,
-  newValue: unknown
+  newValue: unknown,
+  conn?: Database.Database
 ): void {
-  const prev = getRuntimeHookValue(convId, -1, key);
+  const prev = getRuntimeHookValue(convId, -1, key, conn);
   if (prev && String(prev) !== String(newValue)) {
-    deleteRuntimeHookValue(convId, -1, key);
+    deleteRuntimeHookValue(convId, -1, key, conn);
   }
 }
 

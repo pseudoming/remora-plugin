@@ -1,16 +1,18 @@
+import Database from "better-sqlite3";
 import { getConn } from "./connection";
 
 /**
  * 静默清理 source='auto' 且 status='closed' 且 last_accessed_at 早于 72 小时前，
  * 且该话题下没有任何 user_confirmed = 1 的决策的话题。
  */
-export function runTopicGarbageCollection(): void {
+export function runTopicGarbageCollection(conn?: Database): void {
   try {
-    const conn = getConn();
+    const db = conn ?? getConn();
+    const ownConn = !conn;
     try {
       // Obtain EXCLUSIVE lock immediately to prevent Lock Upgrade Deadlocks in daemons
-      conn.prepare("BEGIN EXCLUSIVE").run();
-      const toDelete = conn
+      db.prepare("BEGIN EXCLUSIVE").run();
+      const toDelete = db
         .prepare(
           `SELECT pt.uuid, pt.topic_id FROM project_topics pt
            WHERE pt.source = 'auto' AND pt.status = 'closed'
@@ -28,19 +30,19 @@ export function runTopicGarbageCollection(): void {
         )
         .all() as { uuid: string; topic_id: string }[];
       for (const row of toDelete) {
-        conn
+        db
           .prepare("DELETE FROM topic_decisions WHERE project_uuid=? AND topic_id=?")
           .run(row.uuid, row.topic_id);
-        conn
+        db
           .prepare("DELETE FROM project_topics WHERE uuid=? AND topic_id=?")
           .run(row.uuid, row.topic_id);
         console.log(
           `[Remora GC] Pruned cold auto topic: ${row.topic_id} in project ${row.uuid}`
         );
       }
-      conn.prepare("COMMIT").run();
+      db.prepare("COMMIT").run();
     } finally {
-      conn.close();
+      if (ownConn) db.close();
     }
   } catch (e) {
     console.warn(`topic garbage collection: ${e}`);
@@ -52,10 +54,12 @@ export function runTopicGarbageCollection(): void {
  * 定期清理已失效的水印和关联数据。
  */
 export function pruneExpiredWatermarks(
-  brainDir: string
+  brainDir: string,
+  conn?: Database,
 ): void {
   try {
-    const conn = getConn();
+    const db = conn ?? getConn();
+    const ownConn = !conn;
     try {
       const fs = require("node:fs");
       const path = require("node:path");
@@ -67,7 +71,7 @@ export function pruneExpiredWatermarks(
       }
 
       // First query without exclusive lock
-      const activeDbConvs = conn
+      const activeDbConvs = db
         .prepare(
           `SELECT w.conversation_id 
            FROM watermarks w
@@ -88,7 +92,7 @@ export function pruneExpiredWatermarks(
         if (!fs.existsSync(convDir)) {
           toDelete.push([convId, "文件缺失"]);
         } else {
-          const res = conn
+          const res = db
             .prepare(
               `SELECT 1 FROM watermarks w
                LEFT JOIN messages m ON w.last_msg_id = m.id
@@ -104,25 +108,25 @@ export function pruneExpiredWatermarks(
       }
 
       if (toDelete.length > 0) {
-        conn.prepare("BEGIN EXCLUSIVE").run();
+        db.prepare("BEGIN EXCLUSIVE").run();
         for (const [convId, reason] of toDelete) {
-          conn
+          db
             .prepare("DELETE FROM watermarks WHERE conversation_id=?")
             .run(convId);
-          conn
+          db
             .prepare("DELETE FROM messages WHERE conversation_id=?")
             .run(convId);
-          conn
+          db
             .prepare("DELETE FROM topic_decisions WHERE conversation_id=?")
             .run(convId);
           console.log(
             `[Remora] 水印回收已清除会话 (${reason}): ${convId}`
           );
         }
-        conn.prepare("COMMIT").run();
+        db.prepare("COMMIT").run();
       }
     } finally {
-      conn.close();
+      if (ownConn) db.close();
     }
   } catch (e) {
     console.warn(`pruning expired watermarks: ${e}`);
@@ -130,26 +134,27 @@ export function pruneExpiredWatermarks(
   }
 }
 
-export function cleanupGhostMessages(): number {
+export function cleanupGhostMessages(conn?: Database): number {
   try {
-    const conn = getConn();
+    const db = conn ?? getConn();
+    const ownConn = !conn;
     try {
-      conn.prepare("BEGIN EXCLUSIVE").run();
-      const result = conn
+      db.prepare("BEGIN EXCLUSIVE").run();
+      const result = db
         .prepare(
           "DELETE FROM messages WHERE role IS NULL OR role = '' OR content IS NULL OR content = ''"
         )
         .run();
       const deleted = result.changes;
       if (deleted > 0) {
-        conn
+        db
           .prepare("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
           .run();
       }
-      conn.prepare("COMMIT").run();
+      db.prepare("COMMIT").run();
       return deleted;
     } finally {
-      conn.close();
+      if (ownConn) db.close();
     }
   } catch (e) {
     console.warn(`cleanupGhostMessages: ${e}`);

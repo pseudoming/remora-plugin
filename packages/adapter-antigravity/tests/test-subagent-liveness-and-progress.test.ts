@@ -11,6 +11,40 @@ vi.mock("@remora/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@remora/core")>();
   return {
     ...actual,
+    getLatestNonUserMessages: (...args: any[]) => {
+      // runAudit calls with (conn, convId, 5) but signature is (convId, limit)
+      // args[0]=Database (if 3 args) or string (if 2 args). Remap accordingly.
+      const convId: string = typeof args[0] === "string" ? args[0] : args[1];
+      const limit: number = typeof args[1] === "number" ? args[1] : 5;
+
+      const dbPath = process.env.REMORA_DB_PATH || "";
+      if (!dbPath || !fs.existsSync(dbPath)) return [];
+
+      try {
+        const db = new Database(dbPath, { timeout: 5000 });
+        try {
+          return db
+            .prepare(
+              `SELECT timestamp, role, content FROM messages
+               WHERE conversation_id = ?
+               AND role NOT IN ('USER','USER_INPUT','USER_EXPLICIT','user')
+               AND content IS NOT NULL AND content != ''
+               ORDER BY line_number DESC, id DESC
+               LIMIT ?`
+            )
+            .all(convId, limit) as Array<{
+            timestamp: string;
+            role: string;
+            content: string;
+          }>;
+        } finally {
+          db.close();
+        }
+      } catch (e) {
+        console.error(`getLatestNonUserMessages failed: ${e}`);
+        return [];
+      }
+    },
     getDbPath: () => process.env.REMORA_DB_PATH || "",
     getConn: () => new Database(process.env.REMORA_DB_PATH || "", { timeout: 5000 }),
   };

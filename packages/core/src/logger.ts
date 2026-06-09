@@ -117,15 +117,21 @@ function _shouldLog(lvl: string): boolean {
 }
 
 function _formatCaller(): string {
+  const origLimit = Error.stackTraceLimit;
+  Error.stackTraceLimit = 10;
   const trace = new Error().stack;
+  Error.stackTraceLimit = origLimit;
   if (!trace) return "unknown:0";
-  // stack format: "Error\n    at func (file:line:col)" or "    at file:line:col"
-  // We want frame 5: _formatCaller → _log → info/warn/... → caller
+  // Skip all frames inside logger.ts, return first external caller
   const lines = trace.split("\n");
-  const callerLine = lines[5] ?? lines[lines.length - 1] ?? "";
-  const match = callerLine.match(/(?:\()?([^:)]+):(\d+)(?::\d+)?\)?$/);
-  if (match) {
-    return `${path.basename(match[1])}:${match[2]}`;
+  for (const line of lines) {
+    const match = line.match(/(?:\()?([^:)]+):(\d+)(?::\d+)?\)?$/);
+    if (match) {
+      const file = path.basename(match[1]);
+      if (file !== "logger.ts" && file !== "logger.js") {
+        return `${file}:${match[2]}`;
+      }
+    }
   }
   return "unknown:0";
 }

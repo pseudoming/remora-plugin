@@ -12,6 +12,9 @@ export {
   formatPhantomRepeatWarning,
   formatStrictRecallReminder,
   formatStrictTonePrompt,
+  formatAlertRecallPrompt,
+  formatHeartbeatTimerInjection,
+  formatCumulativeReadWarning,
   makeDenyReason,
 } from "./injection-formatting";
 
@@ -69,7 +72,7 @@ export {
 } from "./zombie";
 
 // Filesystem
-export { calculateMd5, getSnapshot, diffSnapshots, getActiveFiles } from "./filesystem";
+export { walkFiles, calculateMd5, diffSnapshots } from "./filesystem";
 
 // Logger
 export { setTraceId, init as initLogger, debug, info, warn, error, profile } from "./logger";

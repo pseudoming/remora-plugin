@@ -594,7 +594,7 @@ describe("TestConsumeEventQueue", () => {
     coreMocks.getPendingDecisions.mockReturnValue([]);
     vi.spyOn(Date, "now").mockReturnValue(0);
     consumeEventQueue(0);
-    expect(coreMocks.markEventProcessed).toHaveBeenCalledWith(1);
+    expect(coreMocks.markEventProcessed).toHaveBeenCalledWith(1, undefined);
     vi.restoreAllMocks();
   });
 
@@ -642,8 +642,8 @@ describe("TestConsumeEventQueue", () => {
     );
     vi.spyOn(Date, "now").mockReturnValue(0);
     consumeEventQueue(0);
-    expect(coreMocks.confirmDecisionsByIds).toHaveBeenCalledWith([10, 20], "p1");
-    expect(coreMocks.markEventProcessed).toHaveBeenCalledWith(1);
+    expect(coreMocks.confirmDecisionsByIds).toHaveBeenCalledWith([10, 20], "p1", undefined);
+    expect(coreMocks.markEventProcessed).toHaveBeenCalledWith(1, undefined);
     vi.restoreAllMocks();
   });
 });

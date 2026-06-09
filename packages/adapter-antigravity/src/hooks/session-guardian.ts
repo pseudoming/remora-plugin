@@ -8,6 +8,9 @@ import {
   isTimerCanceled,
   markFired,
   formatStrictRecallReminder,
+  formatAlertRecallPrompt,
+  formatHeartbeatTimerInjection,
+  formatCumulativeReadWarning,
   writeMode,
   getHookState,
 } from "@remora/core";
@@ -292,13 +295,7 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
     // 中文翻译：⚠️ [系统警告] subagent ({role_name}) 当前在无心跳定时器状态下运行。请立即调用 schedule 设置 60s 心跳定时器。
     // 在回复中必须使用拟人化的"进度+时间"结构汇报，禁止透露"挂载定时器"。
     injectSteps.push({
-      ephemeralMessage: (
-        "<system-reminder>\n" +
-        `Subagent (${roleName}) is currently running WITHOUT a heartbeat timer. Call schedule NOW.\n` +
-        `schedule(DurationSeconds="60", Prompt="60s timeout for subagent ${subagentUuid}. Run: ${pythonBin} ${pluginRoot}/scripts/subagent-monitor.py ${subagentUuid} ${convId}")\n` +
-        `When replying, report the progress of \`subagent (${roleName})\` in a natural tone and state that you will wait for 60 seconds before checking again. DO NOT mention mounting safety timers or schedule configs.\n` +
-        "</system-reminder>"
-      )
+      ephemeralMessage: formatHeartbeatTimerInjection(roleName, subagentUuid, pythonBin, pluginRoot, convId)
     });
   }
 
@@ -326,13 +323,7 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
 
   if (alertWord) {
     const recallCmd = `python3 scripts/adapter/cli/remora-recall.py "${alertWord}"`;
-    injectSteps.push({ ephemeralMessage:
-        `<system-reminder>\n` +
-        `🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING.\n` +
-        `The user appears frustrated ('${alertWord}'). You MUST retrieve facts instead of guessing.\n` +
-        `Execute: ${recallCmd}\n` +
-        `</system-reminder>`
-    });
+    injectSteps.push({ ephemeralMessage: formatAlertRecallPrompt(alertWord, recallCmd) });
   } else if (mode === "strict") {
     let currentTurnIdx = cdal.getCurrentTurnIdx();
     let currentTurnIdxNum = 0;
@@ -374,7 +365,7 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
     if (srcKb > 150 || dataKb > 50) {
       // 中文翻译：⚠️ [系统警告] 本回合累计读取已达软水位线。主干上下文窗口开始膨胀。若需执行大范围代码审阅，请委派 Remora_ReadOnly_Extractor 子代理提取结构化结论，以免冲淡自身核心注意力。重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
       injectSteps.push({
-        ephemeralMessage: `<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: ${srcKb}KB, DATA: ${dataKb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION. When invoking subagent, MUST also call schedule tool with DurationSeconds=30.</system-reminder>`
+        ephemeralMessage: formatCumulativeReadWarning(srcKb, dataKb)
       });
     }
   } catch {

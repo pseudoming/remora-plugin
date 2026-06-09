@@ -1,3 +1,4 @@
+# Re-export facade — TS equivalent: packages/core/src/dao.ts (via @remora/core)
 from core.storage.sessions import (
     read_mode, write_mode, get_latest_session, update_cold_start,
     force_cold_start_latest_session, get_session

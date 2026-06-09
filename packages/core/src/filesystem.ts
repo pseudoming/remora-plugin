@@ -1,10 +1,9 @@
 /**
- * Filesystem helpers — snapshot, hashing, git-aware file listing.
+ * Filesystem helpers — hashing, diffing, file walking.
  *
- * 1:1 mirror of scripts/core/filesystem.py.
+ * Platform-agnostic core. Git-aware snapshot lives in adapter/bridge/filesystem.ts.
  */
 
-import { execSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -17,60 +16,29 @@ const BLACKLIST_DIRS = new Set([
 export interface SnapshotEntry { mtime: number; size: number }
 export type Snapshot = Record<string, SnapshotEntry>;
 
-export function getActiveFiles(cwd: string): Set<string> {
-  let isGit = false;
-  try {
-    execSync("git rev-parse --is-inside-work-tree", { cwd, stdio: "ignore" });
-    isGit = true;
-  } catch { isGit = false; }
+export function walkFiles(cwd: string): Set<string> {
+  const result = new Set<string>();
+  let fileCount = 0;
 
-  const activeFiles = new Set<string>();
-
-  if (isGit) {
+  function _walk(dir: string): void {
+    if (fileCount > 2000) return;
     try {
-      const output = execSync(
-        "git ls-files --cached --others --exclude-standard",
-        { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }
-      );
-      for (const line of output.split("\n")) {
-        const trimmed = line.trim();
-        if (trimmed) activeFiles.add(path.resolve(cwd, trimmed));
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (BLACKLIST_DIRS.has(entry.name)) continue;
+        if (fileCount > 2000) return;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          _walk(fullPath);
+        } else if (entry.isFile()) {
+          result.add(path.resolve(fullPath));
+          fileCount++;
+        }
       }
-    } catch { isGit = false; }
-  }
-
-  if (!isGit) _walkFiles(cwd, activeFiles);
-  return activeFiles;
-}
-
-function _walkFiles(dir: string, result: Set<string>, count: number = 0): number {
-  let fileCount = count;
-  try {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (BLACKLIST_DIRS.has(entry.name)) continue;
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        fileCount = _walkFiles(fullPath, result, fileCount);
-      } else if (entry.isFile()) {
-        result.add(path.resolve(fullPath));
-        fileCount++;
-        if (fileCount > 2000) break;
-      }
-    }
-  } catch { /* skip */ }
-  return fileCount;
-}
-
-export function getSnapshot(cwd: string): Snapshot {
-  const files = getActiveFiles(cwd);
-  const snapshot: Snapshot = {};
-  for (const f of files) {
-    try {
-      const st = fs.statSync(f);
-      snapshot[f] = { mtime: st.mtimeMs / 1000, size: st.size };
     } catch { /* skip */ }
   }
-  return snapshot;
+
+  _walk(cwd);
+  return result;
 }
 
 export function calculateMd5(filePath: string): string {

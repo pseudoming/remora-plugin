@@ -1,18 +1,19 @@
+import Database from "better-sqlite3";
 import { getPendingEvents, markEventProcessed } from "@remora/core";
 import { getPendingDecisions, confirmDecisionsByIds } from "@remora/core";
 import { getOrCreateConversation, AgentApiError } from "./extract-decisions";
 
-export function consumeEventQueue(startTime: number): void {
-  const events = getPendingEvents();
+export function consumeEventQueue(startTime: number, conn?: Database): void {
+  const events = getPendingEvents(conn);
   if (!events.length) {
     return;
   }
 
   for (const event of events) {
-    const pendingDecisions = getPendingDecisions(event.project_uuid);
+    const pendingDecisions = getPendingDecisions(event.project_uuid, 30, conn);
 
     if (!pendingDecisions.length) {
-      markEventProcessed(event.id);
+      markEventProcessed(event.id, conn);
       continue;
     }
 
@@ -43,7 +44,7 @@ If none match, return: {"confirmed_ids": []}
       if (jsonMatch) {
         const resultData = JSON.parse(jsonMatch[1].trim());
         const confirmedIds: number[] = resultData.confirmed_ids ?? [];
-        confirmDecisionsByIds(confirmedIds, event.project_uuid);
+        confirmDecisionsByIds(confirmedIds, event.project_uuid, conn);
         console.log(
           `[Remora] 事件 ${event.id} (${event.event_type}) 消费成功，已将决策集 ${JSON.stringify(confirmedIds)} 打标锁定。`
         );
@@ -56,6 +57,6 @@ If none match, return: {"confirmed_ids": []}
       continue;
     }
 
-    markEventProcessed(event.id);
+    markEventProcessed(event.id, conn);
   }
 }

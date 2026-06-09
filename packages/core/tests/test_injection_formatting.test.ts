@@ -9,6 +9,9 @@ import {
   formatPhantomRepeatWarning,
   formatStrictRecallReminder,
   formatStrictTonePrompt,
+  formatAlertRecallPrompt,
+  formatHeartbeatTimerInjection,
+  formatCumulativeReadWarning,
   makeDenyReason,
 } from "../src/injection-formatting";
 
@@ -173,5 +176,53 @@ describe("injection-formatting", () => {
     expect(result).toContain("PREFIX");
     expect(result).toContain("Something went wrong");
     expect(result).not.toContain("ACTION REQUIRED:");
+  });
+
+  it("test_format_alert_recall_prompt", () => {
+    const result = formatAlertRecallPrompt("frustrated", 'python3 scripts/adapter/cli/remora-recall.py "frustrated"');
+    expect(typeof result).toBe("string");
+    expect(result).toContain("<system-reminder>");
+    expect(result).toContain("MEMORY DEFENSE TRIGGERED");
+    expect(result).toContain("frustrated");
+    expect(result).toContain("remora-recall.py");
+    expect(result).toContain("STOP GUESSING");
+    expect(result).toContain("</system-reminder>");
+  });
+
+  it("test_format_heartbeat_timer_injection", () => {
+    const result = formatHeartbeatTimerInjection(
+      "Remora_ReadOnly_Extractor",
+      "abc-123-uuid",
+      "python3",
+      "/home/agent/.gemini/config/plugins/remora-plugin",
+      "conv-456"
+    );
+    expect(typeof result).toBe("string");
+    expect(result).toContain("<system-reminder>");
+    expect(result).toContain("Remora_ReadOnly_Extractor");
+    expect(result).toContain("abc-123-uuid");
+    expect(result).toContain("python3");
+    expect(result).toContain("subagent-monitor.py");
+    expect(result).toContain("conv-456");
+    expect(result).toContain("heartbeat timer");
+    expect(result).toContain("</system-reminder>");
+  });
+
+  it("test_format_cumulative_read_warning", () => {
+    const result = formatCumulativeReadWarning(200, 75);
+    expect(typeof result).toBe("string");
+    expect(result).toContain("<system-reminder>");
+    expect(result).toContain("SOURCE: 200KB");
+    expect(result).toContain("DATA: 75KB");
+    expect(result).toContain("CUMULATIVE READ REACHED SOFT LIMIT");
+    expect(result).toContain("Remora_ReadOnly_Extractor");
+    expect(result).toContain("DurationSeconds=30");
+    expect(result).toContain("</system-reminder>");
+  });
+
+  it("test_format_cumulative_read_warning_zero", () => {
+    const result = formatCumulativeReadWarning(0, 0);
+    expect(result).toContain("SOURCE: 0KB");
+    expect(result).toContain("DATA: 0KB");
   });
 });
