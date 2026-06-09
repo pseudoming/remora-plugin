@@ -254,6 +254,38 @@ When running parallel subagents that edit the same test files, later subagents c
 | 60 | Adapter rewrite (29 src + 17 test files, 755 pass) | ✅ committed |
 | 61 | Hook entrypoint switch + prompt injection + agent hardening | ✅ committed |
 | 62 | Python removal — TypeScript is the sole source | ✅ committed |
-| 63 | npm installer + multi-platform | PENDING |
+| 63 | npm installer + multi-platform | ✅ committed |
 | 98 | Optimizations & SQLite strategy | ✅ all resolved |
 | 99 | OpenCode adapter | PENDING |
+
+## Phase 63 Build Pipeline — Lessons Learned
+
+### tsup vs tsc: Use tsup for cross-package builds
+
+`tsc` fails when compiling adapter packages — cannot resolve `@remora/core` barrel exports. `vitest` + `tsup` use `esbuild` — same resolver, no issues.
+
+| Tool | Works for monorepo? | Use case |
+|------|:---:|---------|
+| `vitest` | ✅ esbuild | Tests |
+| `tsup` | ✅ esbuild | Production build |
+| `tsc` | ❌ cross-package barrels | Type-checking only |
+
+Build command: `node build.js` — per-directory `tsup` to avoid esbuild overload.
+
+### Stale .js Files Poison vitest
+
+If `tsc`/`tsup` leaks `.js`/`.d.ts` into `src/` alongside `.ts`, vitest reads the stale compiled version. `.gitignore` blocks `packages/*/src/**/*.js` and `*.d.ts`. Check for stale artifacts first when tests fail unexpectedly.
+
+### `getConn()` Must mkdirSync
+
+Python `get_conn()` → `os.makedirs(dirname, exist_ok=True)`. TS must mirror:
+```typescript
+export function getConn(): Database {
+  fs.mkdirSync(path.dirname(getDbPath()), { recursive: true });
+  return new Database(getDbPath(), { timeout: 15000 });
+}
+```
+
+### Export Check: Defined ≠ Exported
+
+`stats.ts` defined `getStats()` — forgot `export`. Tests passed (mock covered it), `tsup` build failed. Always verify `export` on public functions.
