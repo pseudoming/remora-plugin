@@ -254,5 +254,6 @@ When running parallel subagents that edit the same test files, later subagents c
 | 60 | Adapter rewrite (29 src + 17 test files, 755 pass) | ✅ committed |
 | 61 | Hook entrypoint switch + prompt injection + agent hardening | ✅ committed |
 | 62 | Python removal — TypeScript is the sole source | ✅ committed |
+| 63 | npm installer + multi-platform | PENDING |
 | 98 | Optimizations & SQLite strategy | ✅ all resolved |
 | 99 | OpenCode adapter | PENDING |
