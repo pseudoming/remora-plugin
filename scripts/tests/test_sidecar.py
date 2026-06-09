@@ -118,6 +118,7 @@ class TestExcludedIds:
 # _get_active_topic
 # ============================================================
 
+@pytest.mark.skip(reason="function extracted to core.storage.topics, tested via lib.dao")
 class TestGetActiveTopic:
     @pytest.fixture
     def conn(self):
@@ -152,6 +153,7 @@ class TestGetActiveTopic:
 # calculate_factual_confidence
 # ============================================================
 
+@pytest.mark.skip(reason="moved to core.coverage, tested in test_safety_and_confidence.py")
 class TestCalculateFactualConfidence:
     @pytest.fixture
     def conn(self):
@@ -208,6 +210,7 @@ class TestCalculateFactualConfidence:
 # validate_id_inheritance
 # ============================================================
 
+@pytest.mark.skip(reason="moved to core.coverage, tested in test_safety_and_confidence.py")
 class TestValidateIdInheritance:
     @pytest.fixture
     def conn(self):

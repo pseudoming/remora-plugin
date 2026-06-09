@@ -4,7 +4,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.session import read_mode
 from core.logger import warn, error
-from core.gate import should_fire, mark_fired
+from core.gate import should_fire, mark_fired, should_inject_tone
+from core.injection_formatting import format_strict_tone_prompt
+from core.state_trim import trim_stale_hook_states
 
 import json, re
 
@@ -36,29 +38,11 @@ def main(context):
             conv_id = match.group(1)
             
     from adapter.bridge.conversation import ConversationDataAccessLayer
-    from lib.dao import get_hook_state, set_hook_state, trim_hook_states
 
     cdal = ConversationDataAccessLayer(conv_id)
     current_turn_idx = cdal.get_current_turn_idx()
 
-    # 物理时序裁剪 (Timeline Trimming)
-    last_seen = get_hook_state(conv_id, -1, 'last_seen_turn')
-    should_trim = False
-    if last_seen is None:
-        should_trim = True
-    else:
-        try:
-            should_trim = int(last_seen) != int(current_turn_idx)
-        except (ValueError, TypeError):
-            should_trim = False
-
-    if should_trim:
-        try:
-            trim_turn = int(current_turn_idx)
-        except (ValueError, TypeError):
-            trim_turn = 0
-        trim_hook_states(conv_id, trim_turn)
-        set_hook_state(conv_id, -1, 'last_seen_turn', str(trim_turn))
+    trim_stale_hook_states(conv_id, current_turn_idx)
 
 
     mode = read_mode(conv_id, "strict")
@@ -66,7 +50,7 @@ def main(context):
     inject_steps = []
     if mode in ("strict", "alert"):
         user_input_count = cdal.get_user_input_count()
-        if user_input_count % 5 == 0:
+        if should_inject_tone(user_input_count):
             if should_fire(conv_id, "tone_injected", str(current_turn_idx)):
                 mark_fired(conv_id, "tone_injected", str(current_turn_idx))
 
@@ -80,19 +64,7 @@ def main(context):
                 # 3. 极简注释：在代码编辑中，除非显式要求，否则不要写任何注释或文档字符串。
                 # 4. 事实错误报告：如果你犯了错误，事实且简明地承认它（例如，“修正了第25行的变量引用”）。不要重复道歉。
                 # ============================================================
-                strict_tone_msg = (
-                    "<system-reminder>\n"
-                    "⛔ REMORA COMMUNICATION STYLE CONSTRAINT [STRICT TONE]:\n"
-                    "============================================================\n"
-                    "YOU MUST COMMUNICATE WITH MAXIMUM EFFICIENCY AND DIRECTNESS!\n\n"
-                    "1. NO RUNNING COMMENTARY: DO NOT NARRATE YOUR INTERNAL DELIBERATION OR EXPLAIN YOUR THOUGHT PROCESS. DELIVER RESULTS AND CONCLUSIONS FIRST.\n"
-                    "2. ZERO FLATTERY: NEVER USE HYPERBOLE, APOLOGIES, OR EMOTIONAL FLATTENING.\n"
-                    "3. MINIMAL COMMENTARY: IN CODE EDITS, WRITE NO COMMENTS OR DOCSTRINGS UNLESS EXPLICITLY ASKED.\n"
-                    "4. FACTUAL ERROR REPORTING: IF YOU COMMITTED AN ERROR, ACKNOWLEDGE IT FACTUALLY AND CONCISELY (E.g., \"Corrected variable reference in line 25\"). DO NOT REPETITIVELY APOLOGIZE.\n"
-                    "============================================================\n"
-                    "</system-reminder>"
-                )
-                inject_steps.append({"ephemeralMessage": strict_tone_msg})
+                inject_steps.append({"ephemeralMessage": format_strict_tone_prompt()})
         
     return {"injectSteps": inject_steps}
 

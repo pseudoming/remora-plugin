@@ -6,10 +6,20 @@ from adapter.bridge.context import hook_entrypoint
 from adapter.bridge.session import read_mode
 from adapter.bridge.stats import accumulate
 from core.logger import warn, error
+from core.injection_formatting import make_deny_reason
+from core.safety_policy import enforce_prompt_length_limit, enforce_sandbox_workspace, is_rot_sensitive_file, is_rot_sensitive_path, estimate_read_bytes, is_accumulated_limit_exceeded
+
+_REMORA_RESTRICTED_SUBAGENT = "Remora_Deep_Diver"
+_REMORA_VALID_WORKSPACES = frozenset(["branch", "share"])
+_ARTIFACT_PATH = "/artifacts/"
+_ARTIFACT_SUFFIXES = ("task.md", "implementation_plan.md", "walkthrough.md")
+from core.state_trim import trim_stale_hook_states
 
 # 引入抽离出的核心算法模块
 from core.rules.inspector import inspect_command
 from adapter.bridge.subagent import get_subagent_type
+from adapter.bridge.conversation import ConversationDataAccessLayer
+from lib.dao import get_hook_state, set_hook_state
 
 import json
 import re
@@ -42,14 +52,6 @@ import subprocess
 
 
 
-def make_deny_reason(prefix, message, action_tip=""):
-    # 中文翻译：[安全拦截] 统一格式化 Remora 安全拦截 of 返回原因
-    # 英文对照：⛔ REMORA SAFETY INTERCEPT [{prefix}]: {message}\nACTION REQUIRED: {action_tip}
-    reason = f"⛔ REMORA SAFETY INTERCEPT [{prefix}]: {message}"
-    if action_tip:
-        reason += f"\nACTION REQUIRED: {action_tip}"
-    return reason
-
 
 @hook_entrypoint(fallback_result={"decision": "allow"})
 def main(context):
@@ -69,30 +71,10 @@ def main(context):
             mode = read_mode(conv_id, "strict")
 
     # Timeline trimming (Timeline Trimming)
-    from lib.dao import get_hook_state, set_hook_state, trim_hook_states
-    from adapter.bridge.conversation import ConversationDataAccessLayer
-    
     cdal = ConversationDataAccessLayer(conv_id)
     current_turn_idx = cdal.get_current_turn_idx()
-    
-    # Check if this turn has been trimmed
-    last_seen = get_hook_state(conv_id, -1, 'last_seen_turn')
-    should_trim = False
-    if last_seen is None:
-        should_trim = True
-    else:
-        try:
-            should_trim = int(last_seen) != int(current_turn_idx)
-        except (ValueError, TypeError):
-            should_trim = False
 
-    if should_trim:
-        try:
-            trim_turn = int(current_turn_idx)
-        except (ValueError, TypeError):
-            trim_turn = 0
-        trim_hook_states(conv_id, trim_turn)
-        set_hook_state(conv_id, -1, 'last_seen_turn', str(trim_turn))
+    trim_stale_hook_states(conv_id, current_turn_idx)
 
 
     subagent_type = get_subagent_type(transcript_path)
@@ -126,28 +108,22 @@ def main(context):
             prompt_str = sub.get('Prompt', '')
 
             # 增加 1500 字符强限拦截（底线防崩拦截座）
-            if len(prompt_str) > 1500:
-                # 中文翻译：[子任务负载拦截] 指派给子代理的 Prompt 长度突破 1500 字符硬限。请做任务拆细与精炼描述！
-                # 英文对照：⛔ REMORA SAFETY INTERCEPT [PAYLOAD ENFORCEMENT]: Subagent Prompt length ({len(prompt_str)} chars) exceeds 1500 limit.\nACTION REQUIRED: Please partition the task and simplify the description.
+            is_over_limit, deny = enforce_prompt_length_limit(prompt_str)
+            if is_over_limit:
                 return {
                     "decision": "deny",
-                    "reason": make_deny_reason(
-                        "PAYLOAD ENFORCEMENT",
-                        f"Subagent Prompt length ({len(prompt_str)} chars) exceeds 1500 limit.",
-                        "Please partition the task and simplify the description."
-                    )
+                    "reason": make_deny_reason(deny['prefix'], deny['message'], deny['action_tip'])
                 }
 
-            if t_name == "Remora_Deep_Diver" and ws not in ['branch', 'share']:
-                # 中文翻译：[沙盒强制隔离] 'Remora_Deep_Diver' 必须通过 Workspace='branch' 或 'share' 在隔离环境中调用。禁止在主工作区直接执行以防污染！
-                # 英文对照：⛔ REMORA SAFETY INTERCEPT [SANDBOX ENFORCEMENT]: 'Remora_Deep_Diver' MUST be invoked with Workspace='branch' or 'share'.\nACTION REQUIRED: Direct execution in the main tree is prohibited!
+            is_violation, deny = enforce_sandbox_workspace(
+                t_name, ws,
+                restricted_type="Remora_Deep_Diver",
+                valid_workspaces={"branch", "share"}
+            )
+            if is_violation:
                 return {
                     "decision": "deny",
-                    "reason": make_deny_reason(
-                        "SANDBOX ENFORCEMENT",
-                        "'Remora_Deep_Diver' MUST be invoked with Workspace='branch' or 'share'.",
-                        "Direct execution in the main tree is prohibited!"
-                    )
+                    "reason": make_deny_reason(deny['prefix'], deny['message'], deny['action_tip'])
                 }
         # 检查是否已注入过 JIT 指导
         jit_injected = get_hook_state(conv_id, current_turn_idx, "subagent_jit")
@@ -178,7 +154,7 @@ def main(context):
         target_file = args.get('AbsolutePath', '')
         if target_file:
             # 1. 敏感后缀强力拦截 (大日志直接阻断)
-            if target_file.endswith('.jsonl') or target_file.endswith('.log') or target_file.endswith('.sqlite'):
+            if is_rot_sensitive_file(target_file):
                 if is_readonly_sub:
                     pass  # 只读特工大日志读取显式放行
                 elif not is_sub:
@@ -199,12 +175,7 @@ def main(context):
                     conv_id = match.group(1)
                     
                     is_data_log = target_file.endswith(('.jsonl', '.log', '.sqlite', '.csv'))
-                    inc_bytes = 0
-                    if os.path.exists(target_file):
-                        if 'StartLine' in args and 'EndLine' in args:
-                            inc_bytes = (int(args['EndLine']) - int(args['StartLine']) + 1) * 50
-                        else:
-                            inc_bytes = os.path.getsize(target_file)
+                    inc_bytes = estimate_read_bytes(args, target_file)
                     
                     if inc_bytes > 0:
                         try:
@@ -214,7 +185,7 @@ def main(context):
                                 stats = accumulate(conv_id, source_add=inc_bytes)
                                 
                             # 三级硬性熔断
-                            if stats["accumulated_source_bytes"] > 400 * 1024 or stats["accumulated_data_bytes"] > 150 * 1024:
+                            if is_accumulated_limit_exceeded(stats):
                                 # 中文翻译：
                                 # ⛔ [安全拦截] 累积读取量已超限！
                                 # ============================================================
@@ -343,11 +314,11 @@ def main(context):
         search_path = args.get('SearchPath', '')
         if search_path:
             # 1. 敏感后缀拦截
-            if search_path.endswith('.jsonl') or search_path.endswith('.log') or search_path.endswith('.sqlite'):
+            if is_rot_sensitive_file(search_path):
                 if not is_sub:
                     return {"decision": "deny", "reason": rot_reason}
             # 2. 敏感目录拦截 (如 Orchestrator 的日志目录)
-            if '/.system_generated' in search_path or '/logs' in search_path:
+            if is_rot_sensitive_path(search_path):
                 if not is_sub:
                     return {"decision": "deny", "reason": rot_reason}
         

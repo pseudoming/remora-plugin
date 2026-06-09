@@ -4,7 +4,7 @@ import json
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from adapter.bridge.paths import get_data_dir
-from core.liveness import HEAVY_TOOLS, judge_zombie, suggest_zombie_action
+from core.liveness import judge_zombie, suggest_zombie_action
 import subprocess
 from datetime import datetime, timezone
 
@@ -67,7 +67,7 @@ def main():
     now = datetime.now(timezone.utc)
     idle_seconds = int((now - last_update).total_seconds())
     
-    is_zombie, limit = judge_zombie(idle_seconds, last_tool_name)
+    is_zombie, limit = judge_zombie(idle_seconds, last_tool_name, heavy_tools={"run_command", "grep_search"})
     status = "zombie" if is_zombie else "active"
     
     # 物理维护自愈重试计数 (绑定 parent_conv_id)

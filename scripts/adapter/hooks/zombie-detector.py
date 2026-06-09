@@ -6,7 +6,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from adapter.bridge.context import hook_entrypoint
 from core.logger import warn, error, _HOOKS_PROFILE_LOG as HOOKS_PROFILE_LOG
-from core.zombie import get_sys_uptime, clean_whitelist, INFRASTRUCTURE_KEYWORDS
+from core.zombie import get_sys_uptime, clean_whitelist, INFRASTRUCTURE_KEYWORDS, is_infrastructure_process, is_process_expired
 
 def log_duration(elapsed, exit_code=0):
     try:
@@ -30,8 +30,6 @@ def main(context):
     whitelist_path = os.path.expanduser("~/.remora/zombie_whitelist")
     whitelisted_pids = clean_whitelist(whitelist_path)
     
-    # 基础设施进程白名单，防止僵尸检测器误杀自身
-    infrastructure_keywords = INFRASTRUCTURE_KEYWORDS
 
     is_tool_use = (context and isinstance(context, dict) and context.get('toolCall') is not None)
 
@@ -76,7 +74,7 @@ def main(context):
                 
             elapsed_seconds = sys_uptime - (starttime / clk_tck)
             
-            if elapsed_seconds > 15.0:
+            if is_process_expired(elapsed_seconds):
                 if pid in whitelisted_pids:
                     continue
                     
@@ -85,12 +83,8 @@ def main(context):
                     cmdline = " ".join([c.decode('utf-8', 'ignore') for c in cmdline_raw if c]).strip()
                     
                 # Static infrastructure whitelist
-                is_infra = False
-                for kw in infrastructure_keywords:
-                    if kw in cmdline:
-                        is_infra = True
-                        break
-                        
+                is_infra = is_infrastructure_process(cmdline)
+
                 if is_infra:
                     continue
                 

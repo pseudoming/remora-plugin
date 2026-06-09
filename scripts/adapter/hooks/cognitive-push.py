@@ -11,6 +11,9 @@ from lib import dao
 from core.gate import should_fire, mark_fired, is_duplicate
 from core.storage.runtime_state import get_hook_state as _get
 from core.logger import warn, error, debug
+from core.injection_formatting import format_relax_discipline_prompt, format_decisions_for_session_resume, format_conflict_injection_message, format_file_decisions_injection, format_write_gate_deny_prompt
+from core.safety_policy import is_planning_artifact
+from core.state_trim import trim_stale_hook_states
 
 
 def _get_active_topic_and_decisions(uuid):
@@ -34,19 +37,7 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
     # In PreInvocation, when in discussion/planning phase, inject system discipline
     mode = dao.read_mode(conv_id, "strict")
     if mode == "relax":
-        # 中文翻译：[行为纪律] 您当前处于需求研讨与规划阶段。
-        # 除非用户明确指定了具体文件名，否则禁止修改核心代码文件。
-        # /artifacts/ 下的规划制品可自由编辑。
-        # 若在此期间发现任何未经用户明确要求的 Bug 或代码异味，严禁立即动手。先写入实施计划，获得用户批准！
-        ephemeral_msg = (
-            "<system-discipline>\n"
-            "COORDINATOR BEHAVIORAL DISCIPLINE:\n"
-            "1. YOU ARE CURRENTLY IN THE REQUIREMENT DISCUSSION AND PLANNING PHASE.\n"
-            "2. UNLESS THE USER EXPLICITLY NAMES A SPECIFIC FILE TO MODIFY, DO NOT INVOKE ANY TOOLS (e.g., write_to_file, replace_file_content, run_command) THAT CHANGE CORE CODE FILES. YOU MAY FREELY EDIT PLANNING ARTIFACTS UNDER /artifacts/.\n"
-            "3. IF YOU SPOT A BUG OR CODE SMELL NOT EXPLICITLY REQUESTED BY THE USER, DOCUMENT IT IN THE IMPLEMENTATION PLAN INSTEAD OF FIXING IT. SEEK USER APPROVAL BEFORE ANY WRITES.\n"
-            "</system-discipline>"
-        )
-        inject_steps.append({"ephemeralMessage": ephemeral_msg})
+        inject_steps.append({"ephemeralMessage": format_relax_discipline_prompt(artifact_path="/artifacts/", write_tool_examples=("write_to_file", "replace_file_content", "run_command"))})
 
     # Line C: semantic conflict detection (feature-gated)
     if _check_line_c_enabled():
@@ -73,29 +64,8 @@ def _handle_pre_invocation(context, conv_id, current_turn_idx):
     topic_id, decisions = _get_active_topic_and_decisions(uuid)
     
     if decisions:
-        lines = []
-        for d in decisions:
-            label = f"[{d['created_at'][:16]}"
-            if d['user_confirmed']:
-                label += ", 已确认"
-            label += f"] {d['decision']}"
-            if d.get('rationale'):
-                label += f" (原因: {d['rationale'][:120]})"
-            lines.append(label)
-        decision_text = "\n".join(lines)
         debug(f"session resumed: {conv_id}, injecting {len(decisions)} decisions")
-        decisions_from_memory = f"活跃话题: {topic_id}\n{decision_text}"
-        prompt = (
-            f"<system-reminder>\n"
-            f"⚠️ SESSION RESUMED — 历史决策供参考:\n"
-            f"============================================================\n"
-            f"以下是本次话题下最近的历史决策（按时间排列）。\n"
-            f"如果其中任何一条与当前上下文冲突，请与用户讨论后再继续。\n"
-            f"{decisions_from_memory}\n"
-            f"============================================================\n"
-            f"</system-reminder>"
-        )
-        inject_steps.append({"ephemeralMessage": prompt})
+        inject_steps.append({"ephemeralMessage": format_decisions_for_session_resume(decisions, topic_id)})
         from core.storage.connection import get_conn, closing
         from core.storage.decisions import bump_injection
         with closing(get_conn()) as conn:
@@ -215,28 +185,7 @@ def _run_line_c(context, conv_id, current_turn_idx):
             continue
 
         is_repeat = _get(conv_id, -1, conflict_key) is not None
-        label = "REPEAT CONFLICT" if is_repeat else "SEMANTIC CONFLICT DETECTED"
-        type_label = d["decision_type"].upper()
-        date = d["created_at"][:10] if d.get("created_at") else ""
-        reason = c.get("reason", "")
-
-        conflict_details = (
-            f"  [{type_label}, {date}] {d['decision']}\n"
-            f"  LLM analysis: {reason}"
-        )
-
-        msg = (
-            f"<system-reminder>\n"
-            f"⚠️ {label}. YOUR PROPOSED COURSE OF ACTION CONTRADICTS PRIOR DECISIONS.\n\n"
-            f"BEFORE EXECUTING ANY TOOLS, YOU MUST:\n"
-            f"1. EXPLICITLY POINT OUT THE CONFLICT TO THE USER\n"
-            f"2. ASK THE USER WHETHER TO OVERRIDE THE PREVIOUS DECISION\n"
-            f"3. WAIT FOR EXPLICIT USER CONFIRMATION BEFORE PROCEEDING\n\n"
-            f"CONFLICT DETAILS:\n{conflict_details}\n\n"
-            f"DO NOT PROCEED WITHOUT USER CONFIRMATION.\n"
-            f"</system-reminder>"
-        )
-        inject_steps.append({"ephemeralMessage": msg})
+        inject_steps.append({"ephemeralMessage": format_conflict_injection_message(d, c, is_repeat)})
         mark_fired(conv_id, conflict_key, str(turn_interval))
 
     if has_any_conflict:
@@ -276,7 +225,9 @@ def _handle_pre_tool_use(context, conv_id, current_turn_idx):
 
     # 方案 2：全局核心代码"首写拦截 + 自适应二次放行"
     # 检查目标文件是否是规划制品
-    is_artifact = "/artifacts/" in target_file or target_file.endswith("task.md") or target_file.endswith("implementation_plan.md") or target_file.endswith("walkthrough.md")
+    is_artifact = is_planning_artifact(target_file,
+        artifact_path_fragment="/artifacts/",
+        artifact_suffixes=("task.md", "implementation_plan.md", "walkthrough.md"))
     
     if not is_artifact:
         # 如果不是规划制品且没有命中特定的保护决策（是普通的业务代码文件）
@@ -292,17 +243,7 @@ def _handle_pre_tool_use(context, conv_id, current_turn_idx):
             if decisions:
                 dedup_key = f"file_decisions_injected:{file_name}"
                 if should_fire(conv_id, dedup_key, str(current_turn_idx)):
-                    lines = []
-                    for i, d in enumerate(decisions[:3], 1):
-                        lines.append(f"  {i}. {d['decision'][:150]}")
-                    msg = (
-                        f"<system-reminder>\n"
-                        f"⚠️ {file_name} 关联 {len(decisions)} 条历史决策:\n"
-                        f"{chr(10).join(lines)}\n"
-                        f"写入前请确认不与上述决策冲突。\n"
-                        f"</system-reminder>"
-                    )
-                    inject_steps.append({"ephemeralMessage": msg})
+                    inject_steps.append({"ephemeralMessage": format_file_decisions_injection(file_name, decisions)})
                     mark_fired(conv_id, dedup_key, str(current_turn_idx))
                     from core.storage.connection import get_conn, closing
                     from core.storage.decisions import bump_injection
@@ -324,18 +265,7 @@ def _handle_pre_tool_use(context, conv_id, current_turn_idx):
             # 1. 解释意图：向用户说明你正在修改的核心代码文件及改动逻辑。
             # 2. 自适应重试：若此修改确有必要且用户已批准，你必须在当前回合立即再次调用此写工具以解锁释放。
             # ============================================================
-            prompt = (
-                f"<system-reminder>\n"
-                f"⛔ REMORA SAFETY LIMIT [GLOBAL-WRITE-GATE]: UNSANCTIONED WRITE BLOCKED!\n"
-                f"============================================================\n"
-                f"!!! DISCUSSION PROTECTION & ANTI-IMPULSIVE GATE TRIGGERED !!!\n"
-                f"YOU ARE ATTEMPTING TO MODIFY A CORE CODE FILE (Target: {target_file}) IN AN UNSANCTIONED DISCUSSION PHASE OR ON THE FIRST CALL.\n\n"
-                f"TO PROCEED, YOU MUST:\n"
-                f"1. EXPLAIN INTENT: EXPLAIN TO THE USER THE LOGIC AND PURPOSE OF MODIFYING THIS CORE FILE.\n"
-                f"2. ADAPTIVE RETRY: IF THIS EDIT IS INDEED SANCTIONED AND CONFIRMED, RE-EXECUTE THE WRITE TOOL IMMEDIATELY IN THE CURRENT TURN TO UNLOCK AND RELEASE.\n"
-                f"============================================================\n"
-                f"</system-reminder>"
-            )
+            prompt = format_write_gate_deny_prompt(target_file)
             return {
                 "decision": "deny",
                 "reason": f"⛔ REMORA SAFETY LIMIT [GLOBAL-WRITE-GATE]: Unauthorized edit to {target_file} blocked. Explain intent and retry.",
@@ -366,24 +296,7 @@ def main(context):
     cdal = ConversationDataAccessLayer(conv_id)
     current_turn_idx = cdal.get_current_turn_idx()
 
-    # 物理时序裁剪 (Timeline Trimming)
-    last_seen = dao.get_hook_state(conv_id, -1, 'last_seen_turn')
-    should_trim = False
-    if last_seen is None:
-        should_trim = True
-    else:
-        try:
-            should_trim = int(last_seen) != int(current_turn_idx)
-        except (ValueError, TypeError):
-            should_trim = False
-
-    if should_trim:
-        try:
-            trim_turn = int(current_turn_idx)
-        except (ValueError, TypeError):
-            trim_turn = 0
-        dao.trim_hook_states(conv_id, trim_turn)
-        dao.set_hook_state(conv_id, -1, 'last_seen_turn', str(trim_turn))
+    trim_stale_hook_states(conv_id, current_turn_idx)
 
         
     try:

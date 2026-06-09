@@ -122,7 +122,7 @@ def run_audit(conv_id: str, parent_conv_id: str = None) -> dict:
             death_reason = "Progress file exists but contains no valid timestamp."
     else:
         idle_seconds = int(min(active_elapseds))
-        is_zombie, limit = judge_zombie(idle_seconds, latest_msg_role or "unknown")
+        is_zombie, limit = judge_zombie(idle_seconds, latest_msg_role or "unknown", heavy_tools={"run_command", "grep_search"})
         is_dead = is_zombie
         if is_dead:
             death_reason = f"Liveness timeout: last updated {idle_seconds}s ago (Threshold: {limit}s)."

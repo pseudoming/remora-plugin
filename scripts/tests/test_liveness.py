@@ -2,7 +2,6 @@ import os
 
 from core.liveness import (
     RELAX_PATTERN,
-    HEAVY_TOOLS,
     clean_system_reminders,
     detect_mode,
     parse_sqlite_timestamp,
@@ -184,34 +183,34 @@ def test_find_all_uuids_list():
 
 
 def test_judge_zombie_normal_tool_under_60():
-    is_zombie, limit = judge_zombie(30, "view_file")
+    is_zombie, limit = judge_zombie(30, "view_file", heavy_tools={"run_command", "grep_search"})
     assert not is_zombie
     assert limit == 60
 
 
 def test_judge_zombie_heavy_tool_under_180():
-    is_zombie, limit = judge_zombie(120, "run_command")
+    is_zombie, limit = judge_zombie(120, "run_command", heavy_tools={"run_command", "grep_search"})
     assert not is_zombie
     assert limit == 180
 
 
 def test_judge_zombie_normal_tool_over_60():
-    is_zombie, limit = judge_zombie(61, "view_file")
+    is_zombie, limit = judge_zombie(61, "view_file", heavy_tools={"run_command", "grep_search"})
     assert is_zombie
     assert limit == 60
 
 
 def test_judge_zombie_heavy_tool_over_180():
-    is_zombie, limit = judge_zombie(181, "grep_search")
+    is_zombie, limit = judge_zombie(181, "grep_search", heavy_tools={"run_command", "grep_search"})
     assert is_zombie
     assert limit == 180
 
 
 def test_judge_zombie_exact_boundary_normal():
-    is_zombie, limit = judge_zombie(60, "view_file")
+    is_zombie, limit = judge_zombie(60, "view_file", heavy_tools={"run_command", "grep_search"})
     assert not is_zombie
 
 
 def test_judge_zombie_exact_boundary_heavy():
-    is_zombie, limit = judge_zombie(180, "run_command")
+    is_zombie, limit = judge_zombie(180, "run_command", heavy_tools={"run_command", "grep_search"})
     assert not is_zombie

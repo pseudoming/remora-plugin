@@ -19,7 +19,7 @@ def get_active_files(cwd):
             is_git = False
             
     if not is_git:
-        blacklist_dirs = {'node_modules', '.venv', 'venv', '.gemini', '__pycache__', 'build', 'dist', 'target', 'vendor', 'pkg', '.gradle', '.git'}
+        blacklist_dirs = {'node_modules', '.venv', 'venv', '__pycache__', 'build', 'dist', 'target', 'vendor', 'pkg', '.gradle', '.git'}
         file_count = 0
         for root, dirs, files in os.walk(cwd):
             dirs[:] = [d for d in dirs if d not in blacklist_dirs]
@@ -53,3 +53,14 @@ def calculate_md5(file_path):
         for chunk in iter(lambda: f.read(4096), b""):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
+
+def diff_snapshots(pre_snapshot, post_snapshot):
+    modified_files = set()
+    for fpath, post_st in post_snapshot.items():
+        if fpath not in pre_snapshot:
+            modified_files.add(os.path.basename(fpath))
+        else:
+            pre_st = pre_snapshot[fpath]
+            if post_st['mtime'] != pre_st['mtime'] or post_st['size'] != pre_st['size']:
+                modified_files.add(os.path.basename(fpath))
+    return modified_files

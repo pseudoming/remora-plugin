@@ -7,10 +7,10 @@ import base64
 
 # 动态将插件下的 scripts 和 sidecars 注入环境变量路径
 PLUGIN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-sys.path.insert(0, os.path.join(PLUGIN_DIR, "scripts", "adapter", "sidecar", "compactor"))
+sys.path.insert(0, os.path.join(PLUGIN_DIR, "scripts"))
 # 导入要测试的模块
 from core.rules.inspector import inspect_command, decode_base64_token
-from extract_decisions import calculate_factual_confidence
+from core.coverage import calculate_factual_confidence, validate_id_inheritance
 
 class TestSafetyRules(unittest.TestCase):
     def test_allow_rules(self):
@@ -174,7 +174,6 @@ class TestFactualConfidence(unittest.TestCase):
         self.assertEqual(confidence, 0.5)
 
     def test_validate_id_inheritance_warning(self):
-        from extract_decisions import validate_id_inheritance
         
         # 1. Insert user_confirmed=1 topic decisions
         self.conn.execute("INSERT INTO topic_decisions (id, project_uuid, user_confirmed) VALUES (201, 'p1', 1)")

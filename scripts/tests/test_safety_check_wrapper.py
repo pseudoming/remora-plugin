@@ -301,7 +301,8 @@ def test_grep_search_sensitive(mock_get_subagent):
 # =====================================================================
 
 @patch("safety-check.get_subagent_type")
-def test_invoke_subagent_jit_already_injected(mock_get_subagent):
+@patch("safety-check.trim_stale_hook_states")
+def test_invoke_subagent_jit_already_injected(mock_trim, mock_get_subagent):
     mock_get_subagent.return_value = None
     context = {
         "toolCall": {
@@ -319,7 +320,8 @@ def test_invoke_subagent_jit_already_injected(mock_get_subagent):
         "transcriptPath": "/brain/conv123/transcript.jsonl"
     }
 
-    with patch("lib.dao.get_hook_state", return_value="injected"):
+    with patch("safety-check.get_hook_state", return_value="injected"), \
+         patch("safety-check.set_hook_state"):
         res = safety_check.main.__wrapped__(context)
         assert res["decision"] == "allow"
         assert "injectSteps" not in res

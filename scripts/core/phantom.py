@@ -43,3 +43,6 @@ ACTION_PATTERNS = [
         re.IGNORECASE,
     ),
 ]
+
+def resolve_phantom_modifications(declared_files, actual_files):
+    return declared_files - actual_files

@@ -7,10 +7,11 @@ from core.logger import warn, error
 
 import json, re, subprocess
 from adapter.bridge.subagent import get_subagent_type
-from core.liveness import clean_system_reminders, detect_mode
+from core.liveness import clean_system_reminders, detect_mode, is_timer_canceled
 from adapter.bridge.paths import get_data_dir, extract_conv_id, find_plugin_root
 from lib import dao
 from core.gate import mark_fired
+from core.injection_formatting import format_strict_recall_reminder
 
 @hook_entrypoint(fallback_result={"injectSteps": [{"ephemeralMessage": "<system-reminder>⚠️ Remora Session Guardian 发生异常。状态同步防线已降级，但不影响正常对话。</system-reminder>"}]})
 def main(context):
@@ -178,10 +179,9 @@ def main(context):
             pass
 
     # 逆序索引越小时间越近。若子代理活动比最新的定时器更近，代表 timer 已经被该中间消息自动静默取消了
-    is_timer_canceled = (latest_subagent_activity_index != -1 and 
-                         (latest_schedule_index == -1 or latest_subagent_activity_index < latest_schedule_index))
-                         
-    if subagent_uuid and not subagent_finish_detected and (not has_schedule_after or is_timer_canceled):
+    timer_canceled = is_timer_canceled(latest_subagent_activity_index, latest_schedule_index)
+                          
+    if subagent_uuid and not subagent_finish_detected and (not has_schedule_after or timer_canceled):
         plugin_root = find_plugin_root()
         python_bin = sys.executable or "/usr/bin/python3"
         
@@ -276,11 +276,7 @@ def main(context):
         except (ValueError, TypeError):
             last_recall = 0
         if current_turn_idx - last_recall >= 3:
-            inject_steps.append({"ephemeralMessage":
-                "<system-reminder>\n"
-                "📓 Before finalizing a new decision, cross-check with remora-recall.py. If a past decision conflicts with your current plan, discuss with the user before proceeding.\n"
-                "</system-reminder>"
-            })
+            inject_steps.append({"ephemeralMessage": format_strict_recall_reminder(recall_tool="remora-recall.py")})
             mark_fired(conv_id, "last_recall_turn", current_turn_idx)
 
     dao.write_mode(conv_id, mode)

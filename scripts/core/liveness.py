@@ -4,9 +4,6 @@ from typing import List, Optional, Set, Tuple, Union
 
 RELAX_PATTERN = r'(草稿|想法|讨论|draft|brainstorm|discuss)'
 
-HEAVY_TOOLS: Set[str] = {"run_command", "grep_search"}
-
-
 def clean_system_reminders(text: str) -> str:
     return re.sub(r'<system-reminder>.*?</system-reminder>', '', text, flags=re.DOTALL)
 
@@ -76,8 +73,8 @@ def find_all_uuids(val, parent_id):
     return uuids
 
 
-def judge_zombie(idle_seconds: int, tool_name: str) -> Tuple[bool, int]:
-    is_heavy = tool_name in HEAVY_TOOLS
+def judge_zombie(idle_seconds: int, tool_name: str, heavy_tools=None) -> Tuple[bool, int]:
+    is_heavy = tool_name in (heavy_tools or frozenset())
     limit = 180 if is_heavy else 60
     is_zombie = idle_seconds > limit
     return (is_zombie, limit)
@@ -94,3 +91,7 @@ def format_timestamp(ts_str):
         return time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())
     ts_str = ts_str.replace('T', ' ').replace('Z', '')
     return ts_str[:19]
+
+def is_timer_canceled(last_subagent_activity_index, latest_schedule_index):
+    return (last_subagent_activity_index != -1 and
+            (latest_schedule_index == -1 or last_subagent_activity_index < latest_schedule_index))

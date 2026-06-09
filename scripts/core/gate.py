@@ -20,3 +20,8 @@ def clear_stale(conv_id: str, key: str, new_value) -> None:
     if prev and str(prev) != str(new_value):
         from core.storage.runtime_state import delete_hook_state as _del
         _del(conv_id, -1, key)
+
+
+def should_inject_tone(user_input_count):
+    """Returns True every 5th user input."""
+    return user_input_count % 5 == 0

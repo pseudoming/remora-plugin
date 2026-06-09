@@ -154,3 +154,19 @@ cognitive-push PreToolUse calls `get_decisions_by_file()` on write gate allow pa
 - `update_watermark` merged: decisions.py copy removed, messages.py version is canonical
 - `get_open_topic(conn, ...)` separated from existing `get_active_topic(project_uuid)` to avoid signature collision
 - `get_all_project_uuids(conn)` added to `topics.py` for compactor dispatch loop
+
+## PENDING WORK — Roadmap Items
+
+### Route C: Operational Optimization
+
+| # | Task | Status | Dependencies |
+|---|------|--------|-------------|
+| C2 | **Auto-compression**: High-frequency decisions (injected_count > N, user_confirmed=1) → LLM one-line summary → `compressed_summary` column. Injection points prefer compressed summary over full text. | BLOCKED | Needs C1 data (1-2 weeks of injected_count accumulation to determine threshold) |
+| C3 | **Context budget balancing**: Per-session token tracking for memory injection. Prioritize high-value decisions when context window is tight. | BLOCKED | Needs C2 for compressed summaries |
+
+### Route A: Multi-Platform Support
+
+| # | Task | Status | Dependencies |
+|---|------|--------|-------------|
+| A3 | **Binpack core**: Package `core/` as distributable binary/package for cross-platform reuse | PENDING | None — core is already clean |
+| A4 | **OpenCode adapter**: New adapter layer for opencode platform hooks | PENDING | A3 binpack |
