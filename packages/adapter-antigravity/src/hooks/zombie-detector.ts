@@ -11,7 +11,7 @@ export function logDuration(elapsed: number, exitCode: number = 0): void {
         if (fs.existsSync(HOOKS_PROFILE_LOG) && fs.statSync(HOOKS_PROFILE_LOG).size > 1024 * 1024) {
             fs.writeFileSync(HOOKS_PROFILE_LOG, `=== Log Rotated at ${new Date().toISOString()} ===\n`, "utf-8");
         }
-        fs.appendFileSync(HOOKS_PROFILE_LOG, `=== [zombie-detector.py] Run at ${new Date().toISOString()} ===\n`, "utf-8");
+        fs.appendFileSync(HOOKS_PROFILE_LOG, `=== [zombie-detector.ts] Run at ${new Date().toISOString()} ===\n`, "utf-8");
         fs.appendFileSync(HOOKS_PROFILE_LOG, `  [total]: ${elapsed.toFixed(2)} ms (Exit Code: ${exitCode})\n\n`, "utf-8");
     } catch (e) {
         // pass

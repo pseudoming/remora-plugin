@@ -35,7 +35,7 @@ This document details the 10 core business flows of the Remora system, covering 
 ```mermaid
 sequenceDiagram
     participant AGY as Antigravity Engine
-    participant SG as session-guardian.py
+    participant SG as session-guardian.js
     participant DB as SQLite (remora_memory.db)
     
     AGY->>SG: Triggers PreInvocation Hook (Context JSON)
@@ -71,14 +71,14 @@ sequenceDiagram
      * Validates global cumulative read limits (Source 400KB, Data 150KB); denies if exceeded.
   5. **If calling `run_command`**:
      * Intercepts commands like `cat`, `grep`, `jq`, `awk` that directly fetch sensitive logs.
-     * Invokes `inspector.py` (the core rule engine) to recursively deconstruct nested shells, performing Base64 decryption and environment variable expansion validation.
+     * Invokes `inspector.ts` (the core rule engine) to recursively deconstruct nested shells, performing Base64 decryption and environment variable expansion validation.
      * For heavy physical operations such as compilation (`build`) and testing (`test`), forces delegation to `Remora_Deep_Diver`; the main agent environment refuses to execute them.
   6. **If calling `grep_search`**:
      * Prevents direct scanning of agent-specific metadata directories or giant JSONL log paths.
 * **Mermaid Flowchart**:
 ```mermaid
 flowchart TD
-    A[Model triggers Tool Call] --> B(PreToolUse Hook: safety-check.py)
+    A[Model triggers Tool Call] --> B(PreToolUse Hook: safety-check.js)
     B --> C{Read session_state mode}
     C -->|strict / relax / alert| D[Call agentapi for agent type]
     D --> E{Classify tool type}
@@ -124,8 +124,8 @@ flowchart TD
 * **API Interaction Logic**:
   * Receives the exit-phase context and extracts `artifactDirectoryPath` (the physical path of the artifact directory).
 * **Detailed Steps**:
-  1. Invokes `clean-session-stats.py` to determine if the system is currently in `fullyIdle` state. If so, resets session transient read limits.
-  2. Triggers `compactor.py --event-driven`, harvesting `implementation_plan.md` and `walkthrough.md` from `/artifacts/`.
+  1. Invokes `clean-session-stats.js` to determine if the system is currently in `fullyIdle` state. If so, resets session transient read limits.
+  2. Triggers `compactor.js --event-driven`, harvesting `implementation_plan.md` and `walkthrough.md` from `/artifacts/`.
   3. Computes the MD5 of these two files.
   4. Compares against records in `artifact_hashes`. If unchanged, exits directly; if changed, triggers incremental import:
   5. Physically deletes old artifact data records.
@@ -136,7 +136,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant AGY as Antigravity Engine
-    participant Comp as compactor.py (--event-driven)
+    participant Comp as compactor.js (--event-driven)
     participant DB as SQLite (remora_memory.db)
     
     AGY->>Comp: Agent exits session (Stop Hook)
@@ -172,15 +172,15 @@ sequenceDiagram
      * If `status` field is `completed`: classified as Alive & successfully completed.
      * If `status` field is `blocked` or logs contain errors like `permission denied`: classified as Blocked.
      * Computes the minimum time delta `idle_seconds` between the `progress.json` update time and the SQLite sub-session's last message write time.
-     * If currently executing `run_command`, the stuck timeout threshold is relaxed to 180 seconds; otherwise 60 seconds. If `idle_seconds` exceeds the threshold, `judge_zombie()` from `core/liveness.py` classifies the subagent as `Dead (Timeout)`.
-   4. **Self-Healing Suggestions (via `suggest_zombie_action()` in `core/liveness.py`):**
+     * If currently executing `run_command`, the stuck timeout threshold is relaxed to 180 seconds; otherwise 60 seconds. If `idle_seconds` exceeds the threshold, `judge_zombie()` from `core/liveness.ts` classifies the subagent as `Dead (Timeout)`.
+   4. **Self-Healing Suggestions (via `suggest_zombie_action()` in `core/liveness.ts`):**
      * Checks and increments the retry count in `{PLUGIN_ROOT}/data/.runtime/remora_subagent_retries/{parent_conv_id}.json`.
      * If cumulative retry count $< 2$: returns `kill_and_retry` suggestion, guiding the LLM to forcefully kill and retry.
      * If cumulative retry count $\ge 2$: returns `escalate_to_human` suggestion, stopping retries and directly reporting to the user.
 * **Mermaid Flowchart**:
 ```mermaid
 flowchart TD
-    A[Hook triggered or periodic check] --> B(check-subagents-liveness.py)
+    A[Hook triggered or periodic check] --> B(check-subagents-liveness.js)
     B --> C[Scan for active subagent UUIDs]
     C --> D[Read progress.json & DB state]
     
@@ -222,7 +222,7 @@ flowchart TD
 * **Mermaid Flowchart**:
 ```mermaid
 flowchart TD
-    A[Hook intercept called] --> B(zombie-detector.py)
+    A[Hook intercept called] --> B(zombie-detector.js)
     B --> C[Load ~/.remora/zombie_whitelist]
     B --> D[Read system /proc directory]
     
@@ -252,7 +252,7 @@ flowchart TD
   * **Locking Mode**: Uses strong `BEGIN EXCLUSIVE` transaction-level write locks to avoid lock escalation conflicts with foreground hooks.
 * **API Interaction Logic**: No external API interaction; purely local warm storage database archival and cleanup logic.
 * **Detailed Steps**:
-  1. **Topic Garbage Collection (`topic_gc.py`)**:
+  1. **Topic Garbage Collection (`topic-gc.js`)**:
      * Starts a strong exclusive lock transaction `BEGIN EXCLUSIVE`.
      * Queries `project_topics` for all topics satisfying the following conditions:
        1. Source is auto-extracted: `source='auto'`;
@@ -260,7 +260,7 @@ flowchart TD
        3. Contains no user-confirmed decisions in `topic_decisions` (`user_confirmed = 1`);
        4. Topic last accessed is earlier than 72 hours ago: `last_accessed_at < datetime('now', '-72 hours')`.
      * Physically deletes the corresponding `topic_decisions` entries and removes the `project_topics` topic records.
-  2. **Session Garbage Collection (`session_gc.py`)**:
+  2. **Session Garbage Collection (`session-gc.js`)**:
      * Retrieves sessions from `watermarks` whose last active time is earlier than 30 days ago, or that are marked in `session_state` as physically lost/deleted.
      * Verifies that their physical brain-split directories have been removed.
      * Once conditions are met, starts a `BEGIN EXCLUSIVE` transaction and deletes the session's related data from `watermarks`, `messages`, and `topic_decisions`.
@@ -268,8 +268,8 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant Cron as Cron / Compactor Daemon
-    participant SGC as session_gc.py
-    participant TGC as topic_gc.py
+    participant SGC as session-gc.js
+    participant TGC as topic-gc.js
     participant DB as SQLite (remora_memory.db)
     
     Cron->>TGC: Trigger topic GC (72h cycle)
@@ -289,7 +289,7 @@ sequenceDiagram
 ## 3. Data Management Flows
 
 ### 7. Database Schema Initialization / Migration Flow
-* **Business Description**: Automatically triggers table creation and migration upon project deployment, plugin installation via `install.py`, or database schema upgrades.
+* **Business Description**: Automatically triggers table creation and migration upon project deployment, plugin installation via `install.ts`, or database schema upgrades.
 * **Underlying Scripts**: `{PLUGIN_ROOT}/packages/adapter-antigravity/src/schema/schema-init.ts` and the schema declaration script `{PLUGIN_ROOT}/packages/adapter-antigravity/src/schema/schema.sql`.
 * **SQLite Interaction**:
   * **Tables**: Creates or modifies 9 core entity tables and virtual tables.
@@ -310,7 +310,7 @@ sequenceDiagram
 * **Mermaid Flowchart**:
 ```mermaid
 flowchart TD
-    A[install.py starts] --> B(schema_init.py)
+    A[install.ts starts] --> B(schema-init.js)
     B --> C[Read schema.sql, create tables, enable WAL]
     C --> D[Create FTS5 virtual table & AI/AD sync triggers]
     
@@ -346,12 +346,12 @@ flowchart TD
      * Performs `LIKE` fuzzy matching on the `decision` and `rationale` columns of `topic_decisions`.
    6. **Self-Healing Touch Refresh**:
       * If match count $> 0$, updates the `last_accessed_at` timestamp of all matched topics to the current time, preventing premature GC cleanup.
-   7. **Automatic Step-Distance Recall Injection:** In `strict` mode, the session guardian automatically triggers `remora-recall.py` every N conversational turns (step-distance), injecting a curated batch of recent topic decisions into the LLM context as `<system-reminder>` prompts. This ensures ongoing architectural alignment without the LLM needing to explicitly invoke recall.
+   7. **Automatic Step-Distance Recall Injection:** In `strict` mode, the session guardian automatically triggers `remora-recall.js` every N conversational turns (step-distance), injecting a curated batch of recent topic decisions into the LLM context as `<system-reminder>` prompts. This ensures ongoing architectural alignment without the LLM needing to explicitly invoke recall.
    8. **Alert-Triggered Forced Recall:** When the user message contains a Line C alert keyword (as defined in `conf/approval.json`), the hook bypasses normal recall gating and forces an immediate full recall of all matched decisions with their evidence excerpts, raising architectural priority in the prompt context.
 * **Mermaid Flowchart**:
 ```mermaid
 flowchart TD
-    A[Model runs remora-recall.py <keyword>] --> B[Resolve project_uuid & session mapping]
+    A[Model runs remora-recall.js <keyword>] --> B[Resolve project_uuid & session mapping]
     B --> C{Multi-channel parallel recall}
     
     C -->|Channel A: Forward| D[messages_fts FTS5 MATCH]
@@ -395,11 +395,11 @@ flowchart TD
 * **Mermaid Flowchart**:
 ```mermaid
 flowchart TD
-    A[Run remora-topic.py confirm -d <id>] --> B[Set user_confirmed = 1]
+    A[Run remora-topic.js confirm -d <id>] --> B[Set user_confirmed = 1]
     B --> C[Promote topic to manual, prevent GC]
     C --> D[Fetch latest subagent worktree dir]
     
-    D --> E[Run sandbox-merge.py for branch name]
+    D --> E[Run sandbox-merge.js for branch name]
     E --> F[Run git diff for physical changes]
     F --> G[Run git merge into main workspace]
     
@@ -429,10 +429,10 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant Admin as Maintenance / cron
-    participant CGR as cleanup_ghost_records.py
+    participant CGR as cleanup-ghost-records.js
     participant DB as SQLite (remora_memory.db)
     
-    Admin->>CGR: Run cleanup_ghost_records.py
+    Admin->>CGR: Run cleanup-ghost-records.js
     CGR->>DB: Query & count ghost records in messages
     alt Ghost rows > 0
         CGR->>DB: DELETE FROM messages WHERE role/content empty or NULL
@@ -453,11 +453,11 @@ In **Daemon background-mount** mode, the Compactor's business chain runs in the 
 
 ```mermaid
 flowchart TD
-    Start[Compactor periodic wakeup] --> A[Scan active sessions (scan_sessions.py)]
+    Start[Compactor periodic wakeup] --> A[Scan active sessions (scan-sessions.js)]
     A --> B{Sub-session / main session}
     
     B -->|Subagent session| C[Extract subagent report, update topic files]
-    B -->|Main session| D[Incremental read warm_storage_sync.py]
+    B -->|Main session| D[Incremental read warm-storage-sync.js]
     
     D --> E{Undo rollback detected?}
     E -->|Yes| F[Self-heal watermark, rollback messages & decisions]

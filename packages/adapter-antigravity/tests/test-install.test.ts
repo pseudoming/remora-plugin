@@ -29,15 +29,15 @@ describe("TestRenderString", () => {
     expect(result).toBe("root=/opt/remora");
   });
 
-  it("test_python_substitution", () => {
-    // {PYTHON} is no longer substituted — TypeScript-only, no Python dependency
-    const result = install.renderString("py={PYTHON}", "/opt/remora");
-    expect(result).toBe("py={PYTHON}");
+  it("test_unused_substitution", () => {
+    // {UNUSED_MACRO} is not substituted — it's not a supported macro
+    const result = install.renderString("py={UNUSED_MACRO}", "/opt/remora");
+    expect(result).toBe("py={UNUSED_MACRO}");
   });
 
-  it("test_both_substitutions", () => {
-    const result = install.renderString("{PLUGIN_ROOT}/bin {PYTHON}", "/p");
-    expect(result).toBe("/p/bin {PYTHON}");
+  it("test_plugin_root_and_unused_substitutions", () => {
+    const result = install.renderString("{PLUGIN_ROOT}/bin {UNUSED_MACRO}", "/p");
+    expect(result).toBe("/p/bin {UNUSED_MACRO}");
   });
 
   it("test_no_substitution_needed", () => {
@@ -228,12 +228,12 @@ describe("TestRenderAllTemplates", () => {
     fs.writeFileSync(path.join(confTemplates, "SKILL.template.md"), "{PLUGIN_ROOT}");
     const agentsTemplates = tmpPath("conf", "templates", "agents");
     fs.mkdirSync(agentsTemplates, { recursive: true });
-    fs.writeFileSync(path.join(agentsTemplates, "test.template.json"), "{PYTHON}");
+    fs.writeFileSync(path.join(agentsTemplates, "test.template.json"), "{UNUSED_MACRO}");
     const agentsDir = tmpPath("agents");
     fs.mkdirSync(agentsDir);
 
     install.dryRun = false;
-    install.renderAllTemplates(tempRoot);
+    install.renderAllTemplates(tempRoot, tempRoot);
 
     expect(fs.existsSync(tmpPath("hooks.json"))).toBe(true);
     expect(fs.existsSync(path.join(sidecarDir, "sidecar.json"))).toBe(true);
@@ -250,7 +250,7 @@ describe("TestRenderAllTemplates", () => {
     fs.writeFileSync(path.join(confTemplates, "hooks.template.json"), "{}");
 
     install.dryRun = true;
-    install.renderAllTemplates(tempRoot);
+    install.renderAllTemplates(tempRoot, tempRoot);
     install.dryRun = false;
 
     expect(fs.existsSync(tmpPath("hooks.json"))).toBe(false);

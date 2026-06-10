@@ -59,7 +59,7 @@ const coreMocks = vi.hoisted(() => ({
   trimStaleHookStates: vi.fn().mockReturnValue(undefined),
   // formatting
   formatAlertRecallPrompt: vi.fn((word, cmd) => `<system-reminder>\n🚨 MEMORY DEFENSE TRIGGERED: STOP GUESSING.\nThe user appears frustrated ('${word}'). You MUST retrieve facts instead of guessing.\nExecute: ${cmd}\n</system-reminder>`),
-  formatHeartbeatTimerInjection: vi.fn((roleName, subagentUuid, pythonBin, pluginRoot, convId) => `<system-reminder>\nSubagent (${roleName}) is currently running WITHOUT a heartbeat timer. Call schedule NOW.\nschedule(DurationSeconds="60", Prompt="60s timeout for subagent ${subagentUuid}. Run: ${pythonBin} ${pluginRoot}/scripts/subagent-monitor.py ${subagentUuid} ${convId}")\nWhen replying, report the progress of \`subagent (${roleName})\` in a natural tone and state that you will wait for 60 seconds before checking again. DO NOT mention mounting safety timers or schedule configs.\n</system-reminder>`),
+  formatHeartbeatTimerInjection: vi.fn((roleName, subagentUuid, pythonBin, pluginRoot, convId) => `<system-reminder>\nSubagent (${roleName}) is currently running WITHOUT a heartbeat timer. Call schedule NOW.\nschedule(DurationSeconds="60", Prompt="60s timeout for subagent ${subagentUuid}. Run: ${pythonBin} ${pluginRoot}/scripts/subagent-monitor.js ${subagentUuid} ${convId}")\nWhen replying, report the progress of \`subagent (${roleName})\` in a natural tone and state that you will wait for 60 seconds before checking again. DO NOT mention mounting safety timers or schedule configs.\n</system-reminder>`),
   formatCumulativeReadWarning: vi.fn((srcKb, dataKb) => `<system-reminder>⚠️ SYSTEM WARNING: CUMULATIVE READ REACHED SOFT LIMIT (SOURCE: ${srcKb}KB, DATA: ${dataKb}KB). MAIN CONTEXT WINDOW IS INFLATING. IF EXTENSIVE CODE REVIEW IS REQUIRED, DELEGATE TO 'Remora_ReadOnly_Extractor' SUBAGENT TO EXTRACT STRUCTURED SUMMARIES AND PREVENT ATTENTION DILUTION. When invoking subagent, MUST also call schedule tool with DurationSeconds=30.</system-reminder>`),
   formatRelaxDisciplinePrompt: vi.fn(),
   formatDecisionsForSessionResume: vi.fn(),
@@ -1582,7 +1582,7 @@ describe("session_guardian", () => {
       // CDAL mock steps
       conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([
         { type: "USER_INPUT", content: "Let's discuss brainstorm ideas for this project" },
-        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "30", Prompt: "subagent-monitor.py fake_uuid c1" } }] },
+        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "30", Prompt: "subagent-monitor.js fake_uuid c1" } }] },
       ]);
 
       // Stats mock → > 150KB → triggers cumulative warning
@@ -1624,7 +1624,7 @@ describe("session_guardian", () => {
 });
 
 // =========================================================================
-// 15. subagent-monitor.py
+// 15. subagent-monitor.js
 // =========================================================================
 describe("subagent_monitor", () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;
@@ -1826,7 +1826,7 @@ describe("session_guardian_subagent_warning", () => {
       conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([
         { type: "USER_INPUT", content: "hello" },
         { type: "GENERIC", content: "22222222-2222-2222-2222-222222222222 active progress update" },
-        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: "60s timeout for subagent 22222222-2222-2222-2222-222222222222. Run: python3 scripts/subagent-monitor.py 22222222-2222-2222-2222-222222222222 conv_1" } }] },
+        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: "60s timeout for subagent 22222222-2222-2222-2222-222222222222. Run: node scripts/subagent-monitor.js 22222222-2222-2222-2222-222222222222 conv_1" } }] },
       ]);
 
       // agentapi returns role name
@@ -1869,7 +1869,7 @@ describe("session_guardian_subagent_warning", () => {
         { type: "GENERIC", content: "22222222-2222-2222-2222-222222222222 active progress update" },
         { type: "PLANNER_RESPONSE", tool_calls: [
           { name: "invoke_subagent", args: { Subagents: [{ TypeName: "Remora_ReadOnly_Extractor" }] } },
-          { name: "schedule", args: { DurationSeconds: "60", Prompt: "60s timeout for subagent 22222222-2222-2222-2222-222222222222. Run: python3 scripts/subagent-monitor.py 22222222-2222-2222-2222-222222222222 conv_1" } },
+          { name: "schedule", args: { DurationSeconds: "60", Prompt: "60s timeout for subagent 22222222-2222-2222-2222-222222222222. Run: node scripts/subagent-monitor.js 22222222-2222-2222-2222-222222222222 conv_1" } },
         ] },
       ]);
 
@@ -2255,8 +2255,8 @@ describe("session_guardian_heartbeat_subagent_detection", () => {
       // Two schedules: first sets uuid, second is skipped
       conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([
         { type: "PLANNER_RESPONSE", tool_calls: [
-          { name: "schedule", args: { DurationSeconds: "60", Prompt: `subagent-monitor.py ${subagentUuid} conv_1` } },
-          { name: "schedule", args: { DurationSeconds: "30", Prompt: `subagent-monitor.py 33333333-3333-3333-3333-333333333333 conv_1` } },
+          { name: "schedule", args: { DurationSeconds: "60", Prompt: `subagent-monitor.js ${subagentUuid} conv_1` } },
+          { name: "schedule", args: { DurationSeconds: "30", Prompt: `subagent-monitor.js 33333333-3333-3333-3333-333333333333 conv_1` } },
         ] },
         { type: "USER_INPUT", content: "hello" },
       ]);
@@ -2282,7 +2282,7 @@ describe("session_guardian_heartbeat_subagent_detection", () => {
       // UUID 11111111-1111-1111-1111-111111111111 is the sentinel value → skipped
       conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([
         { type: "PLANNER_RESPONSE", tool_calls: [
-          { name: "schedule", args: { DurationSeconds: "60", Prompt: "subagent-monitor.py 11111111-1111-1111-1111-111111111111 conv_1" } },
+          { name: "schedule", args: { DurationSeconds: "60", Prompt: "subagent-monitor.js 11111111-1111-1111-1111-111111111111 conv_1" } },
         ] },
         { type: "USER_INPUT", content: "hello" },
       ]);
@@ -2387,7 +2387,7 @@ describe("session_guardian_pass2_and_retry", () => {
 
       // Schedule includes subagent UUID but no activity step → timerCanceled logic applies
       conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([
-        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: python3 scripts/subagent-monitor.py ${subagentUuid} conv_1` } }] },
+        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: node scripts/subagent-monitor.js ${subagentUuid} conv_1` } }] },
         { type: "USER_INPUT", content: "hello" },
       ]);
 
@@ -2412,7 +2412,7 @@ describe("session_guardian_pass2_and_retry", () => {
 
       // CONVERSATION_HISTORY containing UUID is skipped in pass2
       conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([
-        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: python3 scripts/subagent-monitor.py ${subagentUuid} conv_1` } }] },
+        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: node scripts/subagent-monitor.js ${subagentUuid} conv_1` } }] },
         { type: "CONVERSATION_HISTORY", content: `${subagentUuid} was active` },
         { type: "USER_INPUT", content: "hello" },
       ]);
@@ -2475,7 +2475,7 @@ describe("session_guardian_role_name", () => {
 
       conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([
         { type: "GENERIC", content: `${subagentUuid} active progress update` },
-        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: python3 scripts/subagent-monitor.py ${subagentUuid} conv_1` } }] },
+        { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: node scripts/subagent-monitor.js ${subagentUuid} conv_1` } }] },
         { type: "USER_INPUT", content: "hello" },
       ]);
 
@@ -2509,7 +2509,7 @@ describe("session_guardian_role_name", () => {
         { type: "GENERIC", content: `${subagentUuid} active progress update` },
         { type: "PLANNER_RESPONSE", tool_calls: [
           { name: "invoke_subagent", args: { TypeName: "Remora_Coder" } },
-          { name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: python3 scripts/subagent-monitor.py ${subagentUuid} conv_1` } },
+          { name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: node scripts/subagent-monitor.js ${subagentUuid} conv_1` } },
         ] },
         { type: "USER_INPUT", content: "hello" },
       ]);
@@ -2541,7 +2541,7 @@ describe("session_guardian_role_name", () => {
         { type: "GENERIC", content: `${subagentUuid} active progress update` },
         { type: "PLANNER_RESPONSE", tool_calls: [
           { name: "invoke_subagent", args: { Subagents: [] } },
-          { name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: python3 scripts/subagent-monitor.py ${subagentUuid} conv_1` } },
+          { name: "schedule", args: { DurationSeconds: "60", Prompt: `60s timeout for subagent ${subagentUuid}. Run: node scripts/subagent-monitor.js ${subagentUuid} conv_1` } },
         ] },
         { type: "USER_INPUT", content: "hello" },
       ]);

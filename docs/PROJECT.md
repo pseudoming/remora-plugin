@@ -70,3 +70,20 @@ npm install
 node packages/adapter-antigravity/bin/install.js
 npm test  # 755 tests
 ```
+
+---
+
+## Deployment & Database Evolution
+
+This project adopts a physically isolated deployment strategy and dynamic column migration to ensure a clean runtime environment and user data safety.
+
+### 1. Physically Isolated Deployment & Obsolete Purging
+The development directory is physically isolated from the global runtime plugin directory.
+- **One-Click Build & Deploy**: Run `./deploy.sh` in the development directory. The script automatically cleans Python caches, builds TypeScript files, and incrementally syncs files to the global deployment directory via `rsync`.
+- **Post-Sync Obsolete Purging**: To keep the bundle size minimal, the installer `install.ts` automatically purges TypeScript source files (`src/`), test suites (`tests/`), and compilation settings (`tsconfig.json`). It also **recursively removes all `.d.ts` type declaration files** and the **`node_modules/.vite` build cache**.
+
+### 2. Database Safe Migration
+SQLite database `remora_memory.db` uses multi-layered protection when schemas undergo upgrades:
+- **Physical Overwrite Prevention**: The `data/` folder is explicitly excluded during `rsync` syncs. Before DDL checks, a cold backup copy (`remora_memory.db.bak`) is automatically created in the same folder.
+- **Try-Catch Incremental DDL Hot Upgrades**: Instead of wiping databases to rebuild tables, the database initialization (`schema-init.ts`'s `initDb()`) queries columns incrementally. If a column is missing, the `catch` block performs an `ALTER TABLE table ADD COLUMN` migration without data loss.
+

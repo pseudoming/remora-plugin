@@ -617,7 +617,7 @@ describe("getOrCreateConversation", () => {
     const result = extractDecisions.getOrCreateConversation("test prompt");
 
     expect(result).toBe("LLM reply text");
-    expect(mockSendMessage).toHaveBeenCalledWith("existing-conv-id", "test prompt");
+    expect(mockSendMessage).toHaveBeenCalledWith("existing-conv-id", "test prompt", 180);
   });
 
   it("rollover when above 150 steps", () => {

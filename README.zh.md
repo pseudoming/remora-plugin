@@ -191,6 +191,31 @@ cd packages/adapter-antigravity && npm test     # 424 个适配器测试
 
 ---
 
+### 编译、物理隔离部署与数据库演进
+
+本项目采用物理隔离的自包含部署方式。开发目录（如 `~/wsl_code/remora-plugin`）为源码仓库，全局运行插件目录（`~/.gemini/config/plugins/remora-plugin`）为物理独立运行环境。
+
+#### 1. 一键构建与物理部署
+在开发目录下直接运行一键部署脚本：
+```bash
+./deploy.sh
+```
+该脚本将自动完成：
+- 递归清理开发目录下的 Python 编译缓存。
+- 执行 TypeScript 构建编译（输出至各个 `dist/` 目录）。
+- 物理断开旧的符号链接，通过 `rsync` 增量同步文件至全局部署目录。
+- **物理大扫除**：在目标运行目录中强制清除开发期特有的源文件（`src/`）、测试用例（`tests/`）、配置文件（`tsconfig.json`），并**递归清理所有 `.d.ts` 类型声明文件**和 **`node_modules/.vite` 构建缓存**，实现最大程度的体积瘦身与环境纯净。
+
+#### 2. 数据库安全演进 (Database Migration)
+- **数据防覆盖**：在 `rsync` 过程中彻底排除了 `data/` 目录。本地已积累的 `remora_memory.db` 在重新部署时绝不会被覆盖。
+- **自动冷备份**：每次运行安装升级时，程序会自动在同目录下为 `remora_memory.db` 创建一份 `.bak` 冷备份保护。
+- **字段热升级**：当需要扩展表字段时：
+  1. 在 `packages/core/schema/schema.sql` 的建表 DDL 中追加新字段（供新用户使用）。
+  2. 在 `packages/adapter-antigravity/src/schema/schema-init.ts` 的 `initDb()` 中追加对应的 `try-catch` 探测与 `ALTER TABLE ADD COLUMN` 逻辑（供已有老数据库自动热升级）。
+
+
+---
+
 ## 贡献
 
 PR 欢迎，特别是：
@@ -210,6 +235,7 @@ PR 欢迎，特别是：
 |---|---|
 | [项目总览](docs/PROJECT.md) | 架构、阶段、质量门禁 |
 | [核心业务流程](docs/business_flows.md) | 10 个流程 + Mermaid 图 |
+| [子代理协同与探活](docs/subagent_collaboration.zh.md) | 协同设计、心跳超时延期、编译物理部署、SQLite 热升级 |
 | [Antigravity 集成](.agents/skills/antigravity-integration/SKILL.md) | Hook / Sidecar / Plugin 协议 |
 | [记忆机制](.agents/skills/antigravity-memory-mechanics/SKILL.md) | Checkpoint / Compaction / SQLite 温存储 |
 | [Debug 工具](packages/adapter-antigravity/src/debug/README.md) | tail / inspect / env |

@@ -259,7 +259,7 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
 
       // 1. 高吞吐量特征拦截 (Anti-Context-Rot)
       const rotPattern =
-        /\b(?:cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.py\b/i;
+        /\b(?:cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.(?:py|ts)\b/i;
       const hasRotFeature = rotPattern.test(cmd);
 
       // 2. 安全性拦截与审计分流 (调用抽离出的 safety_rules)
@@ -289,10 +289,11 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
       } else {
         // 不含大日志特征的常规命令审计
         if (decision === "deny") {
-          // 沙盒调试特工允许在分支内执行测试和构建
-          if (isDeepDiverSub && (category === "test" || category === "build")) {
+          // 子特工在隔离空间下，允许执行测试和构建
+          if (isSub && !isReadonlySub && (category === "test" || category === "build")) {
             return { decision: "allow" };
           }
+
 
           if (category === "test" || category === "build") {
             // 中文翻译：

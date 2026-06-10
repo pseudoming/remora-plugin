@@ -133,24 +133,24 @@ describe("injection-formatting", () => {
   });
 
   it("test_format_phantom_repeat_warning", () => {
-    const phantomFiles = ["test.py"];
+    const phantomFiles = ["test.ts"];
     const result = formatPhantomRepeatWarning(phantomFiles);
     expect(typeof result).toBe("string");
     expect(result).toContain("底层检测模块发现了异常");
   });
 
   it("test_format_strict_recall_reminder", () => {
-    const result = formatStrictRecallReminder("remora-recall.py");
+    const result = formatStrictRecallReminder("remora-recall.ts");
     expect(typeof result).toBe("string");
     expect(result).toContain("cross-check");
-    expect(result).toContain("remora-recall.py");
+    expect(result).toContain("remora-recall.ts");
   });
 
   it("test_format_strict_recall_reminder_generic", () => {
     const result = formatStrictRecallReminder();
     expect(typeof result).toBe("string");
     expect(result).toContain("cross-check with the recall tool");
-    expect(result).not.toContain("remora-recall.py");
+    expect(result).not.toContain("remora-recall.ts");
   });
 
   it("test_format_strict_tone_prompt", () => {
@@ -179,12 +179,12 @@ describe("injection-formatting", () => {
   });
 
   it("test_format_alert_recall_prompt", () => {
-    const result = formatAlertRecallPrompt("frustrated", 'python3 scripts/adapter/cli/remora-recall.py "frustrated"');
+    const result = formatAlertRecallPrompt("frustrated", 'npx tsx packages/adapter-antigravity/src/cli/remora-recall.ts "frustrated"');
     expect(typeof result).toBe("string");
     expect(result).toContain("<system-reminder>");
     expect(result).toContain("MEMORY DEFENSE TRIGGERED");
     expect(result).toContain("frustrated");
-    expect(result).toContain("remora-recall.py");
+    expect(result).toContain("remora-recall.ts");
     expect(result).toContain("STOP GUESSING");
     expect(result).toContain("</system-reminder>");
   });
@@ -193,16 +193,16 @@ describe("injection-formatting", () => {
     const result = formatHeartbeatTimerInjection(
       "Remora_ReadOnly_Extractor",
       "abc-123-uuid",
-      "python3",
-      "/home/agent/.gemini/config/plugins/remora-plugin",
+      "node",
+      "/mock/plugin/root",
       "conv-456"
     );
     expect(typeof result).toBe("string");
     expect(result).toContain("<system-reminder>");
     expect(result).toContain("Remora_ReadOnly_Extractor");
     expect(result).toContain("abc-123-uuid");
-    expect(result).toContain("python3");
-    expect(result).toContain("subagent-monitor.py");
+    expect(result).toContain("node");
+    expect(result).toContain("subagent-monitor.js");
     expect(result).toContain("conv-456");
     expect(result).toContain("heartbeat timer");
     expect(result).toContain("</system-reminder>");

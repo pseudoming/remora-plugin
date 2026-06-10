@@ -404,7 +404,7 @@ describe("test_subagent_liveness_and_progress", () => {
       vi.spyOn(ConversationDataAccessLayer.prototype, "getLatestPlannerResponse").mockReturnValue("");
 
       const context = {
-        transcriptPath: `/home/agent/.gemini/antigravity/brain/${parentConvId}/.system_generated/logs/transcript.jsonl`,
+        transcriptPath: `/mock/brain/${parentConvId}/.system_generated/logs/transcript.jsonl`,
       };
 
       const res = main(context);
@@ -481,7 +481,7 @@ describe("test_subagent_liveness_and_progress", () => {
       vi.spyOn(ConversationDataAccessLayer.prototype, "getLatestPlannerResponse").mockReturnValue("");
 
       const context = {
-        transcriptPath: `/home/agent/.gemini/antigravity/brain/${parentConvId}/.system_generated/logs/transcript.jsonl`,
+        transcriptPath: `/mock/brain/${parentConvId}/.system_generated/logs/transcript.jsonl`,
       };
 
       const res = main(context);

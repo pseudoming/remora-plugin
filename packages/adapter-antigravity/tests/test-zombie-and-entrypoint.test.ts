@@ -178,7 +178,7 @@ describe("TestZombieDetectorInterception", () => {
         statFields[21] = "5000";
         return statFields.join(" ");
       }
-      if (path.includes("cmdline")) return Buffer.from("python3\x00custom-process.py\x00");
+      if (path.includes("cmdline")) return Buffer.from("node\x00custom-process.js\x00");
       return "";
     };
     mockReadFileSync.mockImplementation(readFileImpl as any);
@@ -213,7 +213,7 @@ describe("TestZombieDetectorInterception", () => {
         statFields[21] = "5000";
         return statFields.join(" ");
       }
-      if (path.includes("cmdline")) return Buffer.from("python3\x00custom-process.py\x00");
+      if (path.includes("cmdline")) return Buffer.from("node\x00custom-process.js\x00");
       return "";
     };
     mockReadFileSync.mockImplementation(readFileImpl as any);
@@ -287,9 +287,9 @@ describe("TestZombieDetectorInterception", () => {
 
       if (path.includes("cmdline")) {
         if (path.includes("6666"))
-          return Buffer.from("python3\x00session-guardian.py\x00");
+          return Buffer.from("node\x00session-guardian.js\x00");
         if (path.includes("5555"))
-          return Buffer.from("python3\x00rogue-zombie.py\x00");
+          return Buffer.from("node\x00rogue-zombie.js\x00");
         return Buffer.from("other\x00");
       }
       return "";

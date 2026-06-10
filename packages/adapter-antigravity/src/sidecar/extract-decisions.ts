@@ -74,7 +74,7 @@ export function getOrCreateConversation(prompt: string): string {
         }
       } else {
         try {
-          sendMessage(convId, prompt);
+          sendMessage(convId, prompt, 180);
           const reply = cdal.getLatestPlannerResponse();
           return reply || "";
         } catch (e: any) {
@@ -88,7 +88,7 @@ export function getOrCreateConversation(prompt: string): string {
   try {
     const currentDateStr = new Date().toISOString().slice(0, 10);
     const initPrompt = `# Remora Memory Compactor (${currentDateStr})\n\n` + prompt;
-    const resp: any = createConversation(initPrompt);
+    const resp: any = createConversation(initPrompt, 180, "flash");
 
     const reply = resp?.response?.newConversation?.reply || "";
     const newConvId = resp?.response?.newConversation?.conversationId || "";

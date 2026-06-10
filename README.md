@@ -195,6 +195,31 @@ cd packages/adapter-antigravity && npm test     # 424 adapter tests
 
 ---
 
+### Build, Physical Isolated Deployment, and Database Migration
+
+This project uses a physically isolated, self-contained deployment approach. The development directory (e.g., `~/wsl_code/remora-plugin`) acts as the source code repository, while the global runtime plugin directory (`~/.gemini/config/plugins/remora-plugin`) serves as the physically isolated execution environment.
+
+#### 1. One-Click Build & Physical Deployment
+Directly run the deployment script in the development directory:
+```bash
+./deploy.sh
+```
+This script automatically:
+- Recursively cleans Python compilation caches in the development folder.
+- Executes TypeScript compilation (outputs to respective `dist/` directories).
+- Physically severs old symbolic links and incrementally synchronizes files to the global deployment directory via `rsync`.
+- **Physical Obsolete Purging**: Forces removal of development-only source files (`src/`), unit tests (`tests/`), and config files (`tsconfig.json`) in the runtime directory. It also **recursively purges all `.d.ts` type declaration files** and the **`node_modules/.vite` build cache** to achieve minimal package size and clean execution.
+
+#### 2. Database Safe Migration
+- **Data Preservation**: The `data/` directory is explicitly excluded during `rsync`. Existing user database `remora_memory.db` will never be overwritten or deleted during deployments.
+- **Automated Cold Backup**: Every installation/upgrade automatically creates a cold backup (`remora_memory.db.bak`) in the same directory before schema updates.
+- **Incremental Column Upgrades**: When adding columns or extending table schemas:
+  1. Append the new column to the table definition inside `packages/core/schema/schema.sql` (for clean installations).
+  2. Implement an incremental `try-catch` probe and `ALTER TABLE ADD COLUMN` statement in `packages/adapter-antigravity/src/schema/schema-init.ts`'s `initDb()` function (for seamless hot upgrading of existing databases).
+
+
+---
+
 ## Contributing
 
 PRs welcome, especially for:
@@ -214,6 +239,7 @@ Ensure both npm test suites are all green before submitting.
 |---|---|
 | [Project Overview](docs/PROJECT.md) | Architecture, phases, quality gates |
 | [Core Business Flows](docs/business_flows.md) | 10 flows + Mermaid diagrams |
+| [Subagent Collaboration](docs/subagent_collaboration.md) | Collaboration design, Timer Rollover, physical deploy, SQLite hot upgrade |
 | [Antigravity Integration](.agents/skills/antigravity-integration/SKILL.md) | Hook / Sidecar / Plugin protocol |
 | [Memory Mechanics](.agents/skills/antigravity-memory-mechanics/SKILL.md) | Checkpoint / Compaction / SQLite warm storage |
 | [Debug Tools](packages/adapter-antigravity/src/debug/README.md) | tail / inspect / env |

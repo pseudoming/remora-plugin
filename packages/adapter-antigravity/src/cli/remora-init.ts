@@ -64,16 +64,16 @@ function initEnvironment(): boolean {
 
   if (initialized) {
     const scriptsDir = path.join(pluginDir, "scripts");
-    const pyFiles = recursiveWalk(scriptsDir, /\.py$/);
+    const tsFiles = recursiveWalk(scriptsDir, /\.ts$/);
     const shFiles = recursiveWalk(scriptsDir, /\.sh$/);
     const compactorDir = path.join(scriptsDir, "adapter", "sidecar", "compactor");
-    const compactorPyFiles = fs.existsSync(compactorDir)
+    const compactorTsFiles = fs.existsSync(compactorDir)
       ? fs.readdirSync(compactorDir)
-          .filter((f) => f.endsWith(".py"))
+          .filter((f) => f.endsWith(".ts"))
           .map((f) => path.join(compactorDir, f))
       : [];
 
-    const allFiles = [...pyFiles, ...shFiles, ...compactorPyFiles];
+    const allFiles = [...tsFiles, ...shFiles, ...compactorTsFiles];
     for (const filePath of allFiles) {
       const st = fs.statSync(filePath);
       fs.chmodSync(filePath, st.mode | 0o111);

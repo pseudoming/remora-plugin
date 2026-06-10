@@ -5,9 +5,9 @@
  */
 
 export const INFRASTRUCTURE_KEYWORDS: ReadonlySet<string> = new Set([
-  "compactor.py", "safety-check.py", "zombie-detector.py",
-  "cognitive-push.py", "snapshot-git.py", "session-guardian.py",
-  "tone-injector.py", "clean-session-stats.py", "action-gate.py",
+  "compactor.js", "safety-check.js", "zombie-detector.js",
+  "cognitive-push.js", "snapshot-git.js", "session-guardian.js",
+  "tone-injector.js", "clean-session-stats.js", "action-gate.js",
   "shellIntegration-bash.sh",
 ]);
 

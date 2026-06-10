@@ -13,12 +13,12 @@ description: 手动切换、新建或关闭活跃的话题上下文
 - `/topic <name>` (默认动作为 switch)
 
 ## 2. 执行动作
-主 Agent 收到指令后，禁止直接忽略，必须在本地 WSL2 环境下通过命令行执行 `remora-topic.py` 控制脚本写入数据库。
+主 Agent 收到指令后，禁止直接忽略，必须在本地 WSL2 环境下通过命令行执行 `remora-topic.js` 控制脚本写入数据库。
 
 ### 命令行调用规范
 使用 `run_command` 工具执行以下命令：
 ```bash
-{PYTHON} {PLUGIN_ROOT}/scripts/remora-topic.py <action> -u "${ANTIGRAVITY_PROJECT_ID}" -n "<name>"
+node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/cli/remora-topic.js <action> -u "${ANTIGRAVITY_PROJECT_ID}" -n "<name>"
 ```
 - `<action>` 对应用户输入的动作，可选值为：`new`、`switch`、`close`。若用户未提供动作，默认为 `switch`。
 - `<name>` 对应话题的标识符。

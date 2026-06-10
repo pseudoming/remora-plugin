@@ -193,7 +193,7 @@ function insertFileChange(param0: unknown, param1: unknown, fileName: string, so
 
 function extractConvId(transcriptPath: string): string {
   // 从路径中提取 conversation_id
-  // /home/agent/.gemini/antigravity/brain/{conv_id}/logs/transcript.jsonl
+  // /mock/agent/gemini/antigravity/brain/{conv_id}/logs/transcript.jsonl
   const parts = transcriptPath.split("/");
   return parts[6]; // conv_id 是路径第 7 段 (0-indexed: 6)
 }
@@ -229,7 +229,7 @@ describe("test_sync_artifacts_file_changes_artifact", () => {
 
     scanAndIngestArtifacts({
       artifactDirectoryPath: "/fake/artifacts",
-      transcriptPath: `/home/agent/.gemini/antigravity/brain/${convId}/logs/transcript.jsonl`,
+      transcriptPath: `/mock/agent/gemini/antigravity/brain/${convId}/logs/transcript.jsonl`,
     });
 
     const callFilenames = new Set(insertFileChangeCalls.map(c => c.fileName));

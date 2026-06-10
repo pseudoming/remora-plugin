@@ -237,7 +237,7 @@ export function formatAlertRecallPrompt(alertWord: string, recallCommand: string
 /**
  * 中文翻译：
  * Subagent ({roleName}) 当前在没有心跳计时器的状态下运行。请立即调用 schedule。
- * schedule(DurationSeconds="60", Prompt="60s timeout for subagent {subagentUuid}. Run: {pythonBin} {pluginRoot}/scripts/subagent-monitor.py {subagentUuid} {convId}")
+ * schedule(DurationSeconds="60", Prompt="60s timeout for subagent {subagentUuid}. Run: {pythonBin} {pluginRoot}/dist/sandbox/subagent-monitor.js {subagentUuid} {convId}")
  * 在回复时，用自然的语气汇报 subagent ({roleName}) 的进度，并说明你将等待 60 秒后再检查。不要提及挂载安全计时器或 schedule 配置。
  */
 export function formatHeartbeatTimerInjection(
@@ -250,7 +250,7 @@ export function formatHeartbeatTimerInjection(
   return (
     "<system-reminder>\n" +
     `Subagent (${roleName}) is currently running WITHOUT a heartbeat timer. Call schedule NOW.\n` +
-    `schedule(DurationSeconds="60", Prompt="60s timeout for subagent ${subagentUuid}. Run: ${pythonBin} ${pluginRoot}/scripts/subagent-monitor.py ${subagentUuid} ${convId}")\n` +
+    `schedule(DurationSeconds="60", Prompt="60s timeout for subagent ${subagentUuid}. Run: ${pythonBin} ${pluginRoot}/dist/sandbox/subagent-monitor.js ${subagentUuid} ${convId}")\n` +
     `When replying, report the progress of \`subagent (${roleName})\` in a natural tone and state that you will wait for 60 seconds before checking again. DO NOT mention mounting safety timers or schedule configs.\n` +
     "</system-reminder>"
   );

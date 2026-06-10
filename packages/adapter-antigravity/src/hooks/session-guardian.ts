@@ -152,14 +152,14 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
               const argsStr = JSON.stringify(tc["args"] || tc["arguments"] || {});
               if (latestScheduleIndex === -1) {
                 latestScheduleIndex = idx;
-                if (argsStr.includes("subagent-monitor.py")) {
+                if (argsStr.includes("subagent-monitor.js")) {
                   hasScheduleAfter = true;
                 } else {
                   hasScheduleAfter = false;
                 }
               }
 
-              if (!subagentUuid && argsStr.includes("subagent-monitor.py")) {
+              if (!subagentUuid && argsStr.includes("subagent-monitor.js")) {
                 const uuidRegex = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
                 const cidMatches = Array.from(argsStr.matchAll(uuidRegex));
                 for (const match of cidMatches) {
@@ -241,7 +241,7 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
 
   if (subagentUuid && !subagentFinishDetected && (!hasScheduleAfter || timerCanceled)) {
     const pluginRoot = findPluginRoot();
-    const pythonBin = "python3";
+    const pythonBin = "node";
 
     // 提取子会话的角色名称 (优先通过 agentapi，其次通过历史记录)
     let roleName: string | null = null;

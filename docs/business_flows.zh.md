@@ -35,7 +35,7 @@
 ```mermaid
 sequenceDiagram
     participant AGY as Antigravity Engine
-    participant SG as session-guardian.py
+    participant SG as session-guardian.js
     participant DB as SQLite (remora_memory.db)
     
     AGY->>SG: 触发 PreInvocation Hook (Context JSON)
@@ -71,14 +71,14 @@ sequenceDiagram
      * 校验全局累积读取限制（Source 400KB，Data 150KB），超限则拒绝。
   5. **若调用 `run_command`**：
      * 拦截直接拉取敏感日志的 `cat`, `grep`, `jq`, `awk` 等命令。
-      * 调用 `inspector.py`（核心规则引擎）递归解构 nested shell，进行 Base64 解密和环境变量展开校验。
+     * 调用 `inspector.ts`（核心规则引擎）递归解构 nested shell，进行 Base64 解密和环境变量展开校验。
      * 对编译（`build`）和测试（`test`）等繁重物理行为强制委派至 `Remora_Deep_Diver`，主特工环境拒绝执行。
   6. **若调用 `grep_search`**：
      * 阻止直接扫描特工专属元数据目录或巨型 JSONL 日志路径。
 * **Mermaid 流程图**：
 ```mermaid
 flowchart TD
-    A[大模型触发 Tool Call] --> B(PreToolUse Hook: safety-check.py)
+    A[大模型触发 Tool Call] --> B(PreToolUse Hook: safety-check.js)
     B --> C{读取 session_state 模式}
      C -->|strict / relax / alert| D[调用 agentapi 获取特工类型]
     D --> E{工具类别判定}
@@ -124,8 +124,8 @@ flowchart TD
 * **API 交互逻辑**：
   * 接收退出阶段上下文，提取 `artifactDirectoryPath`（制品物理目录路径）。
 * **详细步骤**：
-  1. 调用 `clean-session-stats.py` 判定当前是否已处于 `fullyIdle` 状态。若是，重置会话临时读限制。
-  2. 触发 `compactor.py --event-driven`，搜刮 `/artifacts/` 下的 `implementation_plan.md` 和 `walkthrough.md`。
+  1. 调用 `clean-session-stats.js` 判定当前是否已处于 `fullyIdle` 状态。若是，重置会话临时读限制。
+  2. 触发 `compactor.js --event-driven`，搜刮 `/artifacts/` 下的 `implementation_plan.md` 和 `walkthrough.md`。
   3. 计算这两个文件的 MD5。
   4. 比对 `artifact_hashes` 中的记录。若无变化，直接退出；若发生变化，则触发增量导入：
   5. 物理删除旧的制品数据记录。
@@ -136,7 +136,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant AGY as Antigravity Engine
-    participant Comp as compactor.py (--event-driven)
+    participant Comp as compactor.js (--event-driven)
     participant DB as SQLite (remora_memory.db)
     
     AGY->>Comp: Agent 退出会话 (Stop Hook)
@@ -172,15 +172,15 @@ sequenceDiagram
      * 若 `status` 字段为 `completed`：判定存活且已成功结束。
      * 若 `status` 字段为 `blocked` 或日志中捕获到 `permission denied` 等错误：标记为 Blocked。
      * 计算 `progress.json` 更新时间与 SQLite 子会话最后消息写入时间的最小时间差 `idle_seconds`。
-     * 若正在执行 `run_command`，超时卡死阈值放宽至 180 秒，否则为 60 秒。若 `idle_seconds` 超过阈值，由 `core/liveness.py` 的 `judge_zombie()` 判定子代理为 `Dead (Timeout)`。
-   4. **自愈建议（通过 `core/liveness.py` 中的 `suggest_zombie_action()`）：**
+     * 若正在执行 `run_command`，超时卡死阈值放宽至 180 秒，否则为 60 秒。若 `idle_seconds` 超过阈值，由 `core/liveness.ts` 的 `judge_zombie()` 判定子代理为 `Dead (Timeout)`。
+   4. **自愈建议（通过 `core/liveness.ts` 中的 `suggest_zombie_action()`）：**
      * 检查并累加 `{PLUGIN_ROOT}/data/.runtime/remora_subagent_retries/{parent_conv_id}.json` 中的重试次数。
      * 若累计重试次数 $< 2$：向父特工返回 `kill_and_retry` 建议，引导大模型强杀并重试。
      * 若累计重试次数 $\ge 2$：返回 `escalate_to_human` 建议，停止重试，直接上报用户。
 * **Mermaid 流程图**：
 ```mermaid
 flowchart TD
-    A[触发 Hook 或定期检测] --> B(check-subagents-liveness.py)
+    A[触发 Hook 或定期检测] --> B(check-subagents-liveness.js)
     B --> C[扫描提取活跃的子特工 UUID]
     C --> D[读取子特工 progress.json 与 DB 状态]
     
@@ -222,7 +222,7 @@ flowchart TD
 * **Mermaid 流程图**：
 ```mermaid
 flowchart TD
-    A[Hook 拦截调用] --> B(zombie-detector.py)
+    A[Hook 拦截调用] --> B(zombie-detector.js)
     B --> C[加载 ~/.remora/zombie_whitelist]
     B --> D[读取系统的 /proc 进程目录]
     
@@ -252,7 +252,7 @@ flowchart TD
   * **锁定模式**：采用强 `BEGIN EXCLUSIVE` 事务级写锁，避免与前台 Hook 发生锁升级冲突。
 * **API 交互逻辑**：无外部 API 交互，纯本地温存储数据库归档清理逻辑。
 * **详细步骤**：
-  1. **主题垃圾清理 (`topic_gc.py`)**：
+  1. **主题垃圾清理 (`topic-gc.js`)**：
      * 启动强排他锁事务 `BEGIN EXCLUSIVE`。
      * 查询 `project_topics` 中所有满足以下条件的话题：
        1. 来源为自动提取：`source='auto'`；
@@ -260,7 +260,7 @@ flowchart TD
        3. 在 `topic_decisions` 中不包含任何已经被用户物理确认的决策（`user_confirmed = 1`）；
        4. 话题最后更新时间早于 72 小时前：`last_accessed_at < datetime('now', '-72 hours')`。
      * 物理删除对应的 `topic_decisions` 条目，并删除 `project_topics` 话题记录。
-  2. **会话垃圾清理 (`session_gc.py`)**：
+  2. **会话垃圾清理 (`session-gc.js`)**：
      * 检索 `watermarks` 中最后活跃时间早于 30 天前，或者在系统 `session_state` 中标记为物理丢失/删除的会话。
      * 验证其物理脑裂目录是否已被移除。
      * 满足条件后启动 `BEGIN EXCLUSIVE` 事务，删除 `watermarks`、`messages` 和 `topic_decisions` 中该会话的相关数据。
@@ -268,8 +268,8 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant Cron as Cron / Compactor Daemon
-    participant SGC as session_gc.py
-    participant TGC as topic_gc.py
+    participant SGC as session-gc.js
+    participant TGC as topic-gc.js
     participant DB as SQLite (remora_memory.db)
     
     Cron->>TGC: 触发自动主题清理 (72小时周期)
@@ -289,7 +289,7 @@ sequenceDiagram
 ## 三、 数据管理流程 (Data Management Flows)
 
 ### 7. 数据库结构初始化/迁移流程
-* **业务描述**：在项目部署、通过 `install.py` 安装插件或数据库结构升级时，自动触发库表建制和迁移。
+* **业务描述**：在项目部署、通过 `install.ts` 安装插件或数据库结构升级时，自动触发库表建制和迁移。
 * **底层脚本**：`{PLUGIN_ROOT}/packages/adapter-antigravity/src/schema/schema-init.ts` 与表结构声明脚本 `{PLUGIN_ROOT}/packages/adapter-antigravity/src/schema/schema.sql`。
 * **SQLite 交互**：
   * **表**：创建或修改 9 张核心实体表及虚拟表。
@@ -310,7 +310,7 @@ sequenceDiagram
 * **Mermaid 流程图**：
 ```mermaid
 flowchart TD
-    A[安装程序 install.py 启动] --> B(schema_init.py)
+    A[安装程序 install.ts 启动] --> B(schema-init.js)
     B --> C[读取并执行 schema.sql 建表并开启 WAL 模式]
     C --> D[创建 FTS5 虚拟表及 AI/AD 自动同步触发器]
     
@@ -346,12 +346,12 @@ flowchart TD
      * 对 `topic_decisions` 的 `decision` 和 `rationale` 列执行 `LIKE` 模糊匹配。
    6. **自愈加热触碰**：
        * 若匹配数 $> 0$，将命中的所有话题的 `last_accessed_at` 时间戳更新为当前时间，避免其近期被 GC 垃圾清理回收。
-   7. **自动步距召回注入：** 在 `strict` 模式下，会话守护者每 N 轮对话自动触发 `remora-recall.py`（步距召回），将一批精选的近期话题决策作为 `<system-reminder>` 提示词注入 LLM 上下文，确保持续的架构对齐，无需 LLM 显式调用召回。
+   7. **自动步距召回注入：** 在 `strict` 模式下，会话守护者每 N 轮对话自动触发 `remora-recall.js`（步距召回），将一批精选的近期话题决策作为 `<system-reminder>` 提示词注入 LLM 上下文，确保持续的架构对齐，无需 LLM 显式调用召回。
    8. **警觉触发强制召回：** 当用户消息包含 Line C 警觉关键词（由 `conf/approval.json` 定义）时，拦截器绕过正常召回门控，强制立即全面召回所有匹配决策及其证据摘录，在提示词上下文中提高架构优先级。
 * **Mermaid 流程图**：
 ```mermaid
 flowchart TD
-    A[模型执行 remora-recall.py <keyword>] --> B[解析 project_uuid 与会话映射]
+    A[模型执行 remora-recall.js <keyword>] --> B[解析 project_uuid 与会话映射]
     B --> C{多通道并行召回}
     
     C -->|通道 A 正向| D[messages_fts 执行 FTS5 MATCH]
@@ -395,11 +395,11 @@ flowchart TD
 * **Mermaid 流程图**：
 ```mermaid
 flowchart TD
-    A[调用 remora-topic.py confirm -d <id>] --> B[更新 decisions 中 user_confirmed = 1]
+    A[调用 remora-topic.js confirm -d <id>] --> B[更新 decisions 中 user_confirmed = 1]
     B --> C[更新关联话题为 manual 防止 GC 回收]
     C --> D[检索并获取最新的子代理 worktree 目录]
     
-    D --> E[执行 sandbox-merge.py 获取临时分支名]
+    D --> E[执行 sandbox-merge.js 获取临时分支名]
     E --> F[执行 git diff 计算沙箱物理修改文件列表]
     F --> G[物理执行 git merge 将子代理代码合并入主工程]
     
@@ -429,10 +429,10 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant Admin as Maintenance / cron
-    participant CGR as cleanup_ghost_records.py
+    participant CGR as cleanup-ghost-records.js
     participant DB as SQLite (remora_memory.db)
     
-    Admin->>CGR: 执行 cleanup_ghost_records.py
+    Admin->>CGR: 执行 cleanup-ghost-records.js
     CGR->>DB: 检索并计数 messages 中的幽灵数据
     alt 脏数据行数 > 0
         CGR->>DB: DELETE FROM messages WHERE role/content 为空或 NULL
@@ -453,11 +453,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    Start[Compactor 定时周期唤醒] --> A[扫描活跃会话 scan_sessions.py]
+    Start[Compactor 定时周期唤醒] --> A[扫描活跃会话 scan-sessions.js]
     A --> B{子会话 / 主会话识别}
     
     B -->|子特工会话| C[提取子代理 report 并更新其常驻话题文件列表]
-    B -->|主特工会话| D[增量读取日志 warm_storage_sync.py]
+    B -->|主特工会话| D[增量读取日志 warm-storage-sync.js]
     
     D --> E{发生 Undo 回滚?}
     E -->|Yes| F[自愈水位线, 回滚 messages 事实与对应 decisions]

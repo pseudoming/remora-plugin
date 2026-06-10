@@ -19,7 +19,7 @@ description: 当面临长链路调试、深水区排查或大型重构时，主 
 ## 3. 决策锚定与打标 (Decision Anchoring & Confirmation)
 **Single Source of Truth**：SQLite 数据库 remora_memory.db 是决策的唯一真相源。严禁在主干或工作区手动写入 decisions.md 等物理文件。
 1. **结构化上报**：子代理 Remora_Deep_Diver 运行结束后，主 Agent 应接收并检查其遵循硬编码格式规范化上报的决策摘要（必须包含 `[ROOT CAUSE]` / `[REJECTED APPROACHES & RATIONALE]` / `[ASSOCIATED FILES]`）。
-2. **事件流同步**：该格式化的决策上报将由 compactor.py 守护进程提取并异步持久化至 SQLite 温存储中。
+2. **事件流同步**：该格式化的决策上报将由 compactor.ts 守护进程提取并异步持久化至 SQLite 温存储中。
 3. **确认锁定**：主 Agent 必须主动引导用户运行 `/confirm <decision_id>`，对数据库中已同步的核心决策进行手动打标确认，以防止决策在后续的内存压缩轮询中被作为过时信息清除。
 
 ## 4. 温存储主动召回 (Active Recall)

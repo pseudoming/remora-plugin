@@ -22,7 +22,7 @@
   `cp /home/agent/wsl_code/remora/scratch/subagent-benchmark/benchmark_history.json <new_conv_scratch_dir>/benchmark_history.json` (注：如果前会话已遗失，可直接从 `/home/agent/.gemini/antigravity/brain/1bc798be-707c-4abf-aeb1-079f197976e7/artifacts/walkthrough.md` 中手动读取历史数据重建)
 
 ### 步骤 2: 调整测试环境的初始化逻辑
-由于新会话中活跃的工作区已正确绑定到 `/home/agent/.gemini/config/plugins/remora-plugin`，子智能体分支已原生包含 packages 代码。因此，**在生成 Wave 3 的 Prompt 负载时，请移除 prepare-wave.ts 中的 `rsync` 代码同步逻辑**，仅保留通过 `sed` 将 trigger 和 timeout 回滚到缺陷状态的逻辑。
+由于新会话中活跃的工作区已正确绑定到全局插件物理目录，子智能体分支已原生包含 packages 代码。因此，**在生成 Wave 3 的 Prompt 负载时，请移除 prepare-wave.ts 中的 `rsync` 代码同步逻辑**，仅保留通过 `sed` 将 trigger 和 timeout 回滚到缺陷状态的逻辑。
 
 ### 步骤 3: 运行 Wave 3 并分析
 1. 生成 Wave 3 的 Payload 并调用子智能体运行。

@@ -3,7 +3,7 @@ import { isInfrastructureProcess, isProcessExpired, INFRASTRUCTURE_KEYWORDS } fr
 
 describe("TestIsInfrastructureProcess", () => {
   it("test_matches_keyword", () => {
-    expect(isInfrastructureProcess("/usr/bin/python3 cognitive-push.py arg")).toBe(true);
+    expect(isInfrastructureProcess("node cognitive-push.js arg")).toBe(true);
   });
 
   it("test_no_match", () => {
@@ -36,9 +36,9 @@ describe("TestIsProcessExpired", () => {
 describe("TestInfrastructureKeywords", () => {
   it("test_contains_expected_entries", () => {
     const expected = new Set([
-      "compactor.py", "safety-check.py", "zombie-detector.py",
-      "cognitive-push.py", "snapshot-git.py", "session-guardian.py",
-      "tone-injector.py", "clean-session-stats.py", "action-gate.py",
+      "compactor.js", "safety-check.js", "zombie-detector.js",
+      "cognitive-push.js", "snapshot-git.js", "session-guardian.js",
+      "tone-injector.js", "clean-session-stats.js", "action-gate.js",
       "shellIntegration-bash.sh",
     ]);
     expect(INFRASTRUCTURE_KEYWORDS).toEqual(expected);
