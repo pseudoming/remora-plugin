@@ -5,7 +5,7 @@ export function getRuntimeHookValue(
   sessionId: string,
   turnIdx: number,
   key: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -29,7 +29,7 @@ export function setRuntimeHookValue(
   turnIdx: number,
   key: string,
   value: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -53,7 +53,7 @@ export function deleteRuntimeHookValue(
   sessionId: string,
   turnIdx: number,
   key: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -75,7 +75,7 @@ export function deleteRuntimeHookValue(
 export function trimRuntimeHookStates(
   sessionId: string,
   currentTurnIdx: number,
-  conn?: Database,
+  conn?: Database.Database,
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -98,7 +98,7 @@ export function getHookState(
   sessionId: string,
   turnIdx: number,
   key: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): string | null {
   return getRuntimeHookValue(sessionId, turnIdx, key, conn);
 }
@@ -108,7 +108,7 @@ export function setHookState(
   turnIdx: number,
   key: string,
   value: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): void {
   setRuntimeHookValue(sessionId, turnIdx, key, value, conn);
 }
@@ -117,7 +117,7 @@ export function deleteHookState(
   sessionId: string,
   turnIdx: number,
   key: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): void {
   deleteRuntimeHookValue(sessionId, turnIdx, key, conn);
 }
@@ -125,7 +125,7 @@ export function deleteHookState(
 export function trimHookStates(
   sessionId: string,
   currentTurnIdx: number,
-  conn?: Database,
+  conn?: Database.Database,
 ): void {
   trimRuntimeHookStates(sessionId, currentTurnIdx, conn);
 }

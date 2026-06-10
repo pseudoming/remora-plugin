@@ -9,7 +9,7 @@ export function recallFts5Logs(
   convId: string,
   keyword: string,
   limit: number = 10,
-  conn?: Database,
+  conn?: Database.Database,
 ): string[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -49,7 +49,7 @@ export function recallFts5Logs(
  * 根据 evidence_msg_ids JSON 数组构建证据摘要文本
  */
 function _buildEvidenceTexts(
-  conn: Database,
+  conn: Database.Database,
   evidenceIdsJson: string | null,
 ): string {
   const evidenceTexts: string[] = [];
@@ -80,7 +80,7 @@ export function recallDecisionsByFts5Topic(
   projectUuid: string,
   convId: string,
   keyword: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): string[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -143,7 +143,7 @@ export function recallDecisionsByLike(
   convId: string,
   keyword: string,
   limit: number = 5,
-  conn?: Database,
+  conn?: Database.Database,
 ): string[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -197,7 +197,7 @@ export function touchTopicsAccessedByRecall(
   projectUuid: string,
   convId: string,
   keyword: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;

@@ -48,7 +48,7 @@ export type RelevanceDecision = {
 export function getConfirmedDecisions(
   projectUuid: string,
   topicId: string,
-  conn?: Database
+  conn?: Database.Database
 ): ConfirmedDecision[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -98,7 +98,7 @@ export function getConfirmedDecisions(
 export function confirmDecision(
   projectUuid: string,
   decisionId: number,
-  conn?: Database
+  conn?: Database.Database
 ): boolean {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -124,7 +124,7 @@ export function confirmDecision(
 
 export function getTopicIdByDecision(
   decisionId: number,
-  conn?: Database
+  conn?: Database.Database
 ): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -148,7 +148,7 @@ export function decisionExists(
   projectUuid: string,
   topicId: string,
   decisionText: string,
-  conn?: Database
+  conn?: Database.Database
 ): boolean {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -170,7 +170,7 @@ export function decisionExists(
 export function supersedeUnconfirmed(
   projectUuid: string,
   topicId: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -191,7 +191,7 @@ export function supersedeUnconfirmed(
 export function getPendingDecisions(
   projectUuid: string,
   limit: number = 30,
-  conn?: Database
+  conn?: Database.Database
 ): PendingDecision[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -217,7 +217,7 @@ export function getPendingDecisions(
 export function confirmDecisionsByIds(
   decisionIds: number[],
   projectUuid: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -243,7 +243,7 @@ export function insertDecision(
   evidenceMsgIds: string,
   userConfirmed: number,
   decisionType: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -271,7 +271,7 @@ export function insertDecision(
 
 export function getDecisionConfirmed(
   decisionId: number,
-  conn?: Database
+  conn?: Database.Database
 ): boolean {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -287,7 +287,7 @@ export function getDecisionConfirmed(
 
 export function getConfirmedDecisionIds(
   projectUuid: string,
-  conn?: Database
+  conn?: Database.Database
 ): Set<number> {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -310,7 +310,7 @@ export function getRecentDecisions(
   projectUuid: string,
   topicId: string,
   limit: number = 5,
-  conn?: Database
+  conn?: Database.Database
 ): RecentDecision[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -337,7 +337,7 @@ export function getRejectedOrDeferredByRelevance(
   projectUuid: string,
   queryText: string,
   limit: number = 12,
-  conn?: Database
+  conn?: Database.Database
 ): RelevanceDecision[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -419,7 +419,7 @@ export function getRejectedOrDeferredByRelevance(
 
 export function bumpInjection(
   decisionId: number,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;

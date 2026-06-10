@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { getConn } from "./connection";
 
-export function insertFileChange(projectUuid: string, conversationId: string, fileName: string, source: string, conn?: Database): void {
+export function insertFileChange(projectUuid: string, conversationId: string, fileName: string, source: string, conn?: Database.Database): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -13,7 +13,7 @@ export function insertFileChange(projectUuid: string, conversationId: string, fi
   }
 }
 
-export function getFilesByTopic(projectUuid: string, topicId: string, conn?: Database): string[] {
+export function getFilesByTopic(projectUuid: string, topicId: string, conn?: Database.Database): string[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -31,7 +31,7 @@ export function getFilesByTopic(projectUuid: string, topicId: string, conn?: Dat
   }
 }
 
-export function getDecisionsByFile(projectUuid: string, fileName: string, conn?: Database): Array<{ id: number; decision: string; rationale: string }> {
+export function getDecisionsByFile(projectUuid: string, fileName: string, conn?: Database.Database): Array<{ id: number; decision: string; rationale: string }> {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {

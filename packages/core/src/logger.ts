@@ -16,7 +16,7 @@ const LOG_DIR = process.env.REMORA_LOG_DIR ?? path.join(os.tmpdir(), "remora", "
 const MAX_AGE_DAYS = 3;
 let traceId = process.env.REMORA_TRACE_ID ?? `s_${randomUUID().slice(0, 8)}`;
 
-const HOOKS_PROFILE_LOG =
+export const HOOKS_PROFILE_LOG =
   process.env.REMORA_HOOKS_PROFILE_LOG ??
   path.join(os.homedir(), ".remora", "data", "hooks_profile.log");
 

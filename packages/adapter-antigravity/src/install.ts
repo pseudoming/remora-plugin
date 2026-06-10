@@ -209,10 +209,56 @@ export function main(): void {
     }
   }
 
-  const pluginRoot = findPluginRoot();
-  const [dataDir, runtimeDir] = resolvePaths(pluginRoot);
-  mainReal(pluginRoot, dataDir, runtimeDir, force, dryRunFlag, uninstall);
+  const devPluginRoot = findPluginRoot();
+  const targetPluginRoot = path.join(os.homedir(), ".gemini", "config", "plugins", "remora-plugin");
+
+  let actualPluginRoot = devPluginRoot;
+  const isTest = !!(process.env.VITEST || process.env.NODE_ENV === "test");
+
+  if (!isTest && path.resolve(devPluginRoot) !== path.resolve(targetPluginRoot)) {
+    log(`\nDeploying from source: ${devPluginRoot} → target: ${targetPluginRoot}`);
+    
+    if (uninstall) {
+      actualPluginRoot = targetPluginRoot;
+    } else {
+      if (dryRunFlag) {
+        log(`[DRY-RUN] Would check and remove symlink at ${targetPluginRoot}`);
+        log(`[DRY-RUN] Would sync files via rsync from ${devPluginRoot} to ${targetPluginRoot}`);
+      } else {
+        // 1. 检查并切断符号链接
+        try {
+          const stats = fs.lstatSync(targetPluginRoot);
+          if (stats.isSymbolicLink()) {
+            log(`  Removing existing symbolic link at ${targetPluginRoot}`);
+            fs.unlinkSync(targetPluginRoot);
+          }
+        } catch (err) {
+          // 忽略不存在的错误
+        }
+
+        // 2. 确保目录存在
+        fs.mkdirSync(targetPluginRoot, { recursive: true });
+
+        // 3. 物理文件同步 (rsync)
+        const rsyncCmd = `rsync -a --exclude='.git' --exclude='scratch' --exclude='.pytest_cache' --exclude='data' --exclude='.runtime' "${devPluginRoot}/" "${targetPluginRoot}/"`;
+        log(`  Syncing files: ${rsyncCmd}`);
+        try {
+          const { execSync } = require("node:child_process");
+          execSync(rsyncCmd, { stdio: "inherit" });
+          log(`  Files synchronized successfully.`);
+        } catch (err) {
+          log(`  [WARNING] Sync via rsync failed: ${err}`);
+          throw err;
+        }
+      }
+      actualPluginRoot = targetPluginRoot;
+    }
+  }
+
+  const [dataDir, runtimeDir] = resolvePaths(actualPluginRoot);
+  mainReal(actualPluginRoot, dataDir, runtimeDir, force, dryRunFlag, uninstall);
 }
+
 
 export default {
   get dryRun(): boolean { return _dryRun; },

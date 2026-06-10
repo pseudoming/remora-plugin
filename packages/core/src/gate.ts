@@ -12,7 +12,7 @@ export function shouldFire(
   convId: string,
   key: string,
   value: unknown,
-  conn?: Database
+  conn?: Database.Database
 ): boolean {
   const prev = getRuntimeHookValue(convId, -1, key, conn);
   return String(prev) !== String(value);
@@ -25,7 +25,7 @@ export function markFired(
   convId: string,
   key: string,
   value: unknown,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   setRuntimeHookValue(convId, -1, key, String(value), conn);
 }
@@ -37,7 +37,7 @@ export function isDuplicate(
   convId: string,
   key: string,
   value: unknown,
-  conn?: Database
+  conn?: Database.Database
 ): boolean {
   const prev = getRuntimeHookValue(convId, -1, key, conn);
   return String(prev) === String(value);
@@ -50,7 +50,7 @@ export function clearStale(
   convId: string,
   key: string,
   newValue: unknown,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const prev = getRuntimeHookValue(convId, -1, key, conn);
   if (prev && String(prev) !== String(newValue)) {

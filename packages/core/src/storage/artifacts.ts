@@ -6,7 +6,7 @@ import { getConn } from "./connection";
  */
 export function getPlanChangeTime(
   projectUuid: string,
-  conn?: Database
+  conn?: Database.Database
 ): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -27,7 +27,7 @@ export function getPlanChangeTime(
 export function getUserMessagesAfter(
   timestamp: string,
   projectUuid: string,
-  conn?: Database
+  conn?: Database.Database
 ): string[] {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -49,7 +49,7 @@ export function getUserMessagesAfter(
 
 export function getPlanContent(
   projectUuid: string,
-  conn?: Database
+  conn?: Database.Database
 ): string {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -71,7 +71,7 @@ export function enqueueEvent(
   projectUuid: string,
   eventType: string,
   payload: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -87,7 +87,7 @@ export function enqueueEvent(
 }
 
 export function getPendingEvents(
-  conn?: Database
+  conn?: Database.Database
 ): Array<{
   id: number;
   project_uuid: string;
@@ -114,7 +114,7 @@ export function getPendingEvents(
 
 export function markEventProcessed(
   eventId: number,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -129,7 +129,7 @@ export function markEventProcessed(
 
 export function getArtifactHash(
   filePath: string,
-  conn?: Database
+  conn?: Database.Database
 ): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -146,7 +146,7 @@ export function getArtifactHash(
 export function upsertArtifactHash(
   filePath: string,
   fileHash: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -164,7 +164,7 @@ export function upsertArtifactHash(
 export function deleteArtifactMessages(
   syncConvId: string,
   filename: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -183,7 +183,7 @@ export function insertArtifactMessage(
   role: string,
   content: string,
   topicId: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -203,7 +203,7 @@ export function upsertArtifactTopic(
   projectUuid: string,
   topicId: string,
   summary: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;

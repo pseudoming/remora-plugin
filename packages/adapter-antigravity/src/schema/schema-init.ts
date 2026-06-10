@@ -2,18 +2,18 @@ import Database from "better-sqlite3";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { getDataDir } from "../bridge/paths";
-
-const DATA_DIR = getDataDir();
-const DB_PATH = path.join(DATA_DIR, "remora_memory.db");
-const SCHEMA_PATH = path.join(__dirname, "schema.sql");
+import { getDbPath } from "../bridge/paths";
 
 function initDb(): void {
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  const dbPath = getDbPath();
+  const schemaPath = path.join(__dirname, "schema.sql");
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
-  const db = new Database(DB_PATH, { timeout: 15000 });
+  const db = new Database(dbPath, { timeout: 15000 });
+
   try {
-    db.exec(fs.readFileSync(SCHEMA_PATH, "utf-8"));
+    db.exec(fs.readFileSync(schemaPath, "utf-8"));
+
 
     try {
       db.prepare("SELECT user_confirmed FROM topic_decisions LIMIT 1").run();

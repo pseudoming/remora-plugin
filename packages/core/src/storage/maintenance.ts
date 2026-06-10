@@ -5,7 +5,7 @@ import { getConn } from "./connection";
  * 静默清理 source='auto' 且 status='closed' 且 last_accessed_at 早于 72 小时前，
  * 且该话题下没有任何 user_confirmed = 1 的决策的话题。
  */
-export function runTopicGarbageCollection(conn?: Database): void {
+export function runTopicGarbageCollection(conn?: Database.Database): void {
   try {
     const db = conn ?? getConn();
     const ownConn = !conn;
@@ -55,7 +55,7 @@ export function runTopicGarbageCollection(conn?: Database): void {
  */
 export function pruneExpiredWatermarks(
   brainDir: string,
-  conn?: Database,
+  conn?: Database.Database,
 ): void {
   try {
     const db = conn ?? getConn();
@@ -134,7 +134,7 @@ export function pruneExpiredWatermarks(
   }
 }
 
-export function cleanupGhostMessages(conn?: Database): number {
+export function cleanupGhostMessages(conn?: Database.Database): number {
   try {
     const db = conn ?? getConn();
     const ownConn = !conn;

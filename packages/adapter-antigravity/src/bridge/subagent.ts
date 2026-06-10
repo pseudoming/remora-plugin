@@ -52,6 +52,48 @@ function getMetadata(
   ) as Record<string, unknown>;
 }
 
+function cacheSubagentTypes(dataDir: string, mainId: string): void {
+  const cacheFile = path.join(dataDir, ".runtime", "subagent_types.json");
+  let cache: Record<string, string> = {};
+  if (fs.existsSync(cacheFile)) {
+    try {
+      cache = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
+    } catch {
+      // pass
+    }
+  }
+
+  const brainDir = path.join(os.homedir(), ".gemini", "antigravity", "brain");
+  if (!fs.existsSync(brainDir)) return;
+
+  let cacheChanged = false;
+  const dirs = fs.readdirSync(brainDir);
+  for (const d of dirs) {
+    if (d.length !== 36 || d === mainId || cache[d]) {
+      continue;
+    }
+    try {
+      const metadata = getMetadata(d);
+      const subagentSpec = metadata["subagentSpec"] as Record<string, unknown> | undefined;
+      const typeName = subagentSpec?.["typeName"] as string | undefined;
+      if (typeName) {
+        cache[d] = typeName;
+        cacheChanged = true;
+      }
+    } catch {
+      // pass
+    }
+  }
+
+  if (cacheChanged) {
+    try {
+      fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2), "utf-8");
+    } catch {
+      // pass
+    }
+  }
+}
+
 export function getSubagentType(
   transcriptPath: string | undefined | null
 ): string | null {
@@ -61,6 +103,30 @@ export function getSubagentType(
   }
 
   const dataDir = getDataDir();
+  const cacheFile = path.join(dataDir, ".runtime", "subagent_types.json");
+
+  try {
+    const mainIdFile = path.join(dataDir, ".runtime", "remora_main_conv_id.txt");
+    if (fs.existsSync(mainIdFile)) {
+      const mainId = fs.readFileSync(mainIdFile, "utf-8").trim();
+      if (convId === mainId) {
+        cacheSubagentTypes(dataDir, mainId);
+      }
+    }
+  } catch {
+    // pass
+  }
+
+  if (fs.existsSync(cacheFile)) {
+    try {
+      const cache = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
+      if (cache[convId]) {
+        return cache[convId];
+      }
+    } catch {
+      // pass
+    }
+  }
 
   try {
     const metadata = getMetadata(convId);
@@ -91,3 +157,4 @@ export function getSubagentType(
   }
   return null;
 }
+

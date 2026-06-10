@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { getConn } from "./connection";
 
-export function readMode(sessionId: string, defaultMode: string = "standard", conn?: Database): string {
+export function readMode(sessionId: string, defaultMode: string = "standard", conn?: Database.Database): string {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -18,7 +18,7 @@ export function readMode(sessionId: string, defaultMode: string = "standard", co
   }
 }
 
-export function writeMode(sessionId: string, mode: string, conn?: Database): void {
+export function writeMode(sessionId: string, mode: string, conn?: Database.Database): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -32,7 +32,7 @@ export function writeMode(sessionId: string, mode: string, conn?: Database): voi
 }
 
 /** Returns (session_id, is_cold_start) or null */
-export function getLatestSession(conn?: Database): { session_id: string; is_cold_start: number } | null {
+export function getLatestSession(conn?: Database.Database): { session_id: string; is_cold_start: number } | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -48,7 +48,7 @@ export function getLatestSession(conn?: Database): { session_id: string; is_cold
   }
 }
 
-export function updateColdStart(sessionId: string, isColdStart: number, conn?: Database): void {
+export function updateColdStart(sessionId: string, isColdStart: number, conn?: Database.Database): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -58,7 +58,7 @@ export function updateColdStart(sessionId: string, isColdStart: number, conn?: D
   }
 }
 
-export function forceColdStartLatestSession(mainConvId?: string, conn?: Database): void {
+export function forceColdStartLatestSession(mainConvId?: string, conn?: Database.Database): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {
@@ -80,7 +80,7 @@ export function forceColdStartLatestSession(mainConvId?: string, conn?: Database
 }
 
 /** Returns (session_id, mode, is_cold_start, updated_at) or null. */
-export function getSession(sessionId: string, conn?: Database): { session_id: string; mode: string; is_cold_start: number; updated_at: string } | null {
+export function getSession(sessionId: string, conn?: Database.Database): { session_id: string; mode: string; is_cold_start: number; updated_at: string } | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
   try {

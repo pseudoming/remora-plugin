@@ -6,7 +6,7 @@ const USER_ROLES = ["USER", "USER_INPUT", "USER_EXPLICIT", "user"];
 export function getLatestNonUserMessages(
   convId: string,
   limit: number = 5,
-  conn?: Database
+  conn?: Database.Database
 ): Array<{ timestamp: string; role: string; content: string }> {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -44,7 +44,7 @@ export function getLatestNonUserMessages(
 export function getWatermark(
   projectUuid: string,
   conversationId: string,
-  conn?: Database
+  conn?: Database.Database
 ): number {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -64,7 +64,7 @@ export function getWatermark(
 
 export function getMaxLineNumber(
   conversationId: string,
-  conn?: Database
+  conn?: Database.Database
 ): number {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -86,7 +86,7 @@ export function insertMessage(
   timestamp: string,
   role: string,
   content: string,
-  conn?: Database
+  conn?: Database.Database
 ): number | bigint {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -104,7 +104,7 @@ export function insertMessage(
 
 export function getMaxMessageId(
   conversationId: string,
-  conn?: Database
+  conn?: Database.Database
 ): number {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -121,7 +121,7 @@ export function getMaxMessageId(
 export function getMaxMessageIdUpToLine(
   conversationId: string,
   lineNumber: number,
-  conn?: Database
+  conn?: Database.Database
 ): number {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -142,7 +142,7 @@ export function getMaxMessageIdUpToLine(
 export function deleteMessagesAboveLine(
   conversationId: string,
   lineNumber: number,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -159,7 +159,7 @@ export function deleteMessagesAboveLine(
 
 export function getDecisionsByConversation(
   conversationId: string,
-  conn?: Database
+  conn?: Database.Database
 ): Array<{ id: number; evidence_msg_ids: string }> {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -176,7 +176,7 @@ export function getDecisionsByConversation(
 
 export function deleteTopicDecision(
   decisionId: number,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -191,7 +191,7 @@ export function deleteTopicDecision(
 
 export function getMessageTimestamp(
   messageId: number,
-  conn?: Database
+  conn?: Database.Database
 ): string | null {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -208,7 +208,7 @@ export function getMessageTimestamp(
 export function deleteDecisionsByConversationAfter(
   conversationId: string,
   createdAfter: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -225,7 +225,7 @@ export function deleteDecisionsByConversationAfter(
 
 export function deletePendingEvents(
   projectUuid: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -244,7 +244,7 @@ export function updateWatermark(
   projectUuid: string,
   conversationId: string,
   msgId: number,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -262,7 +262,7 @@ export function updateWatermark(
 export function ensureWatermark(
   projectUuid: string,
   conversationId: string,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;
@@ -283,7 +283,7 @@ export function ensureWatermark(
 export function backfillMessageTopicIds(
   topicId: string,
   messageIds: Set<number>,
-  conn?: Database
+  conn?: Database.Database
 ): void {
   const db = conn ?? getConn();
   const ownConn = !conn;

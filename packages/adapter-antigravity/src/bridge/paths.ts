@@ -30,7 +30,23 @@ export function getDataDir(): string {
 }
 
 export function getDbPath(): string {
+  try {
+    if (!process.env.REMORA_DB_PATH) {
+      process.env.REMORA_DB_PATH = path.join(getDataDir(), "remora_memory.db");
+    }
+  } catch {
+    // pass
+  }
   return coreGetDbPath();
+}
+
+// Auto-bridge database path for core modules at module load time
+try {
+  if (!process.env.REMORA_DB_PATH) {
+    process.env.REMORA_DB_PATH = path.join(getDataDir(), "remora_memory.db");
+  }
+} catch {
+  // pass
 }
 
 export function extractConvId(transcriptPath: string): string | null {
