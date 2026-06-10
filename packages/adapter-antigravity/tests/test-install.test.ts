@@ -3,6 +3,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 
+vi.mock("../src/schema/schema-init", () => ({
+  initDb: vi.fn(),
+}));
+
 let tempRoot: string;
 
 beforeEach(() => {
@@ -26,13 +30,14 @@ describe("TestRenderString", () => {
   });
 
   it("test_python_substitution", () => {
+    // {PYTHON} is no longer substituted — TypeScript-only, no Python dependency
     const result = install.renderString("py={PYTHON}", "/opt/remora");
-    expect(result).toBe(`py=${process.execPath}`);
+    expect(result).toBe("py={PYTHON}");
   });
 
   it("test_both_substitutions", () => {
     const result = install.renderString("{PLUGIN_ROOT}/bin {PYTHON}", "/p");
-    expect(result).toBe(`/p/bin ${process.execPath}`);
+    expect(result).toBe("/p/bin {PYTHON}");
   });
 
   it("test_no_substitution_needed", () => {
@@ -104,7 +109,6 @@ describe("TestIdempotency", () => {
     fs.mkdirSync(flagDir);
     fs.writeFileSync(path.join(flagDir, "installed.flag"), "installed");
 
-    const mockQg = vi.spyOn(install, "runQualityGate").mockImplementation(() => {});
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     install.mainReal(
@@ -115,9 +119,6 @@ describe("TestIdempotency", () => {
       false,
       false,
     );
-
-    expect(mockQg).not.toHaveBeenCalled();
-    mockQg.mockRestore();
 
     const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(output).toContain("already installed");
@@ -129,10 +130,8 @@ describe("TestIdempotency", () => {
     fs.mkdirSync(flagDir);
     fs.writeFileSync(path.join(flagDir, "installed.flag"), "installed");
 
-    const mockQg = vi.spyOn(install, "runQualityGate").mockImplementation(() => {});
     const mockRender = vi.spyOn(install, "renderAllTemplates").mockImplementation(() => {});
     const mockWf = vi.spyOn(install, "deployWorkflows").mockImplementation(() => {});
-    const mockDb = vi.spyOn(install, "initDatabase").mockImplementation(() => {});
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     install.mainReal(
@@ -144,11 +143,8 @@ describe("TestIdempotency", () => {
       false,
     );
 
-    expect(mockQg).toHaveBeenCalledOnce();
-    mockQg.mockRestore();
     mockRender.mockRestore();
     mockWf.mockRestore();
-    mockDb.mockRestore();
 
     const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(output).not.toContain("already installed");
@@ -158,8 +154,6 @@ describe("TestIdempotency", () => {
 
 describe("TestMainEntry", () => {
   it("test_dry_run_flag", () => {
-    const mockQg = vi.spyOn(install, "runQualityGate").mockImplementation(() => {});
-    const mockDb = vi.spyOn(install, "initDatabase").mockImplementation(() => {});
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     install.mainReal(
@@ -170,9 +164,6 @@ describe("TestMainEntry", () => {
       true,
       false,
     );
-
-    mockQg.mockRestore();
-    mockDb.mockRestore();
 
     const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(output).toContain("[DRY-RUN]");

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
-import { execSync } from "node:child_process";
+import { initDb } from "./schema/schema-init";
 
 let _dryRun = false;
 
@@ -33,25 +33,36 @@ function doCopy(src: string, dst: string, skipExisting = false): void {
   log(`  Copied: ${src} → ${dst}`);
 }
 
+function findPluginRoot(): string {
+  let dir = __dirname;
+  while (dir !== "/" && dir !== "") {
+    if (fs.existsSync(path.join(dir, "package.json"))) {
+      const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf-8"));
+      if (pkg.name === "@remora/antigravity-plugin") {
+        return dir;
+      }
+    }
+    dir = path.dirname(dir);
+  }
+  throw new Error("FATAL: Cannot find @remora/antigravity-plugin package root. Are you running outside the plugin directory?");
+}
+
 function renderString(content: string, pluginRoot: string): string {
-  content = content.replace(/\{PLUGIN_ROOT\}/g, pluginRoot);
-  content = content.replace(/\{PYTHON\}/g, process.execPath);
-  return content;
+  return content.replace(/\{PLUGIN_ROOT\}/g, pluginRoot);
 }
 
 function renderTemplate(src: string, dst: string, pluginRoot: string): void {
-  if (!fs.existsSync(src)) {
-    return;
-  }
+  if (!fs.existsSync(src)) return;
   const content = renderString(fs.readFileSync(src, "utf-8"), pluginRoot);
-  api.doWrite(dst, content);
+  doWrite(dst, content);
 }
 
 function renderAllTemplates(pluginRoot: string): void {
+  const templateDir = path.join(pluginRoot, "conf", "templates");
   const templates: [string, string][] = [
-    [path.join(pluginRoot, "conf", "templates", "hooks.template.json"), path.join(pluginRoot, "hooks.json")],
-    [path.join(pluginRoot, "conf", "templates", "sidecar.template.json"), path.join(pluginRoot, "sidecars", "memory-compactor", "sidecar.json")],
-    [path.join(pluginRoot, "conf", "templates", "SKILL.template.md"), path.join(pluginRoot, "skills", "remora-architecture", "SKILL.md")],
+    [path.join(templateDir, "hooks.template.json"), path.join(pluginRoot, "hooks.json")],
+    [path.join(templateDir, "sidecar.template.json"), path.join(pluginRoot, "sidecars", "memory-compactor", "sidecar.json")],
+    [path.join(templateDir, "SKILL.template.md"), path.join(pluginRoot, "skills", "remora-architecture", "SKILL.md")],
   ];
 
   const agentsDir = path.join(pluginRoot, "agents");
@@ -63,62 +74,25 @@ function renderAllTemplates(pluginRoot: string): void {
     }
   }
 
-  log("\n[1/4] Rendering templates...");
+  log("\n[1/3] Rendering templates...");
   for (const [src, dst] of templates) {
-    api.renderTemplate(src, dst, pluginRoot);
+    renderTemplate(src, dst, pluginRoot);
   }
 }
 
 function deployWorkflows(pluginRoot: string): void {
-  const configDir = path.join(os.homedir(), ".gemini", "config");
-  const workflowsSrc = path.join(pluginRoot, "global_workflows");
-  const workflowsDst = path.join(configDir, "global_workflows");
+  const workflowsSrc = path.join(pluginRoot, "conf", "templates", "workflows");
+  const workflowsDst = path.join(os.homedir(), ".gemini", "config", "global_workflows");
 
-  if (!fs.existsSync(workflowsSrc)) {
-    return;
-  }
+  if (!fs.existsSync(workflowsSrc)) return;
 
-  log("\n[2/4] Deploying workflows...");
+  log("\n[2/3] Deploying workflows...");
   for (const f of fs.readdirSync(workflowsSrc).sort()) {
-    if (!f.endsWith(".md")) {
-      continue;
-    }
+    if (!f.endsWith(".md")) continue;
     const src = path.join(workflowsSrc, f);
     const dst = path.join(workflowsDst, f);
     const content = renderString(fs.readFileSync(src, "utf-8"), pluginRoot);
-    api.doWrite(dst, content);
-  }
-}
-
-function initDatabase(pluginRoot: string, dataDir: string): void {
-  log("\n[3/4] Initializing database schema...");
-  const schemaScript = path.join(pluginRoot, "scripts", "schema", "schema_init.py");
-  const dbPath = path.join(dataDir, "remora_memory.db");
-
-  fs.mkdirSync(dataDir, { recursive: true });
-
-  if (_dryRun) {
-    log(`[DRY-RUN] Would run: ${schemaScript} with REMORA_DB_PATH=${dbPath}`);
-    return;
-  }
-
-  execSync(
-    `${process.execPath} ${schemaScript}`,
-    { env: { ...process.env, REMORA_DB_PATH: dbPath } },
-  );
-  log(`  DB initialized: ${dbPath}`);
-}
-
-function runQualityGate(pluginRoot: string): void {
-  log("Running quality gate...");
-  try {
-    execSync(
-      `${process.execPath} -m unittest scripts.tests.test_quality_gate`,
-      { cwd: pluginRoot },
-    );
-  } catch {
-    log("FATAL: Quality gate failed. Installation aborted.");
-    process.exit(1);
+    doWrite(dst, content);
   }
 }
 
@@ -149,7 +123,7 @@ function doUninstall(dataDir: string, pluginRoot: string): void {
   log("Uninstalling Remora Plugin...");
 
   const flag = path.join(dataDir, ".runtime", "installed.flag");
-  api.doRemove(flag);
+  doRemove(flag);
 
   const rendered = [
     "hooks.json",
@@ -157,15 +131,14 @@ function doUninstall(dataDir: string, pluginRoot: string): void {
     "skills/remora-architecture/SKILL.md",
   ];
   for (const rel of rendered) {
-    const target = path.join(pluginRoot, rel);
-    api.doRemove(target);
+    doRemove(path.join(pluginRoot, rel));
   }
 
   const agentsDir = path.join(pluginRoot, "agents");
   if (fs.existsSync(agentsDir)) {
     for (const f of fs.readdirSync(agentsDir)) {
       if (f.endsWith(".json") && !f.endsWith(".template.json")) {
-        api.doRemove(path.join(agentsDir, f));
+        doRemove(path.join(agentsDir, f));
       }
     }
   }
@@ -184,7 +157,7 @@ function mainReal(
   const flagPath = path.join(runtimeDir, "installed.flag");
 
   if (uninstall) {
-    api.doUninstall(dataDir, pluginRoot);
+    doUninstall(dataDir, pluginRoot);
     return;
   }
 
@@ -195,63 +168,55 @@ function mainReal(
     return;
   }
 
-  api.runQualityGate(pluginRoot);
-  api.renderAllTemplates(pluginRoot);
-  api.deployWorkflows(pluginRoot);
-  api.initDatabase(pluginRoot, dataDir);
+  renderAllTemplates(pluginRoot);
+  deployWorkflows(pluginRoot);
 
-  log("\n[4/4] Finalizing...");
-  api.doWrite(flagPath, "installed");
+  log("\n[3/3] Initializing database...");
+  const dbPath = path.join(dataDir, "remora_memory.db");
+  process.env.REMORA_DB_PATH = dbPath;
+  fs.mkdirSync(dataDir, { recursive: true });
+  if (!_dryRun) {
+    initDb();
+    log(`  DB initialized: ${dbPath}`);
+  } else {
+    log(`[DRY-RUN] Would init DB at: ${dbPath}`);
+  }
+
+  doWrite(flagPath, "installed");
 
   log("\nInstallation complete.");
   log("Set REMORA_DB_PATH env var to customize database location.");
-  log(`Current DB path: ${path.join(dataDir, "remora_memory.db")}`);
+  log(`Current DB path: ${dbPath}`);
 }
 
-function main(): void {
+export function main(): void {
   const argv = process.argv.slice(2);
   let force = false;
   let dryRunFlag = false;
   let uninstall = false;
 
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === "--force") {
-      force = true;
-    } else if (arg === "--dry-run") {
-      dryRunFlag = true;
-    } else if (arg === "--uninstall") {
-      uninstall = true;
+  for (const arg of argv) {
+    if (arg === "--force") force = true;
+    else if (arg === "--dry-run") dryRunFlag = true;
+    else if (arg === "--uninstall") uninstall = true;
+    else if (arg === "--help" || arg === "-h") {
+      console.log("remora-install [--force] [--dry-run] [--uninstall]");
+      console.log("  --force      Reinstall (skip idempotent check)");
+      console.log("  --dry-run    Preview (no writes)");
+      console.log("  --uninstall  Uninstall");
+      return;
     }
   }
 
-  const pluginRoot = path.resolve(__dirname);
-  const [dataDir, runtimeDir] = api.resolvePaths(pluginRoot);
-
-  api.mainReal(pluginRoot, dataDir, runtimeDir, force, dryRunFlag, uninstall);
+  const pluginRoot = findPluginRoot();
+  const [dataDir, runtimeDir] = resolvePaths(pluginRoot);
+  mainReal(pluginRoot, dataDir, runtimeDir, force, dryRunFlag, uninstall);
 }
 
-const api = {
-  get dryRun(): boolean {
-    return _dryRun;
-  },
-  set dryRun(v: boolean) {
-    _dryRun = v;
-  },
-  log,
-  doWrite,
-  doCopy,
-  renderString,
-  renderTemplate,
-  renderAllTemplates,
-  deployWorkflows,
-  initDatabase,
-  runQualityGate,
-  resolvePaths,
-  doRemove,
-  doUninstall,
-  mainReal,
-  main,
+export default {
+  get dryRun(): boolean { return _dryRun; },
+  set dryRun(v: boolean) { _dryRun = v; },
+  log, doWrite, doCopy, renderString, renderTemplate,
+  renderAllTemplates, deployWorkflows, resolvePaths,
+  doRemove, doUninstall, mainReal, main, findPluginRoot,
 };
-
-export default api;
