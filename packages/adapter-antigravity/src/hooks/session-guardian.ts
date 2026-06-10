@@ -11,6 +11,7 @@ import {
   formatAlertRecallPrompt,
   formatHeartbeatTimerInjection,
   formatCumulativeReadWarning,
+  formatSubagentDispatchReminder,
   writeMode,
   getHookState,
 } from "@remora/core";
@@ -358,15 +359,33 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
       cleanup(convId);
     }
 
-    // 二级认知摩擦：检查是否软超标
+    // 二级认知摩擦：检查是否软超标或触发子代理调用关键词
     const stats = getStats(convId);
     const srcKb = Math.floor(((stats["accumulated_source_bytes"] as number) || 0) / 1024);
     const dataKb = Math.floor(((stats["accumulated_data_bytes"] as number) || 0) / 1024);
-    if (srcKb > 150 || dataKb > 50) {
-      // 中文翻译：⚠️ [系统警告] 本回合累计读取已达软水位线。主干上下文窗口开始膨胀。若需执行大范围代码审阅，请委派 Remora_ReadOnly_Extractor 子代理提取结构化结论，以免冲淡自身核心注意力。重要提示：调用子代理时，必须同时使用 schedule 工具创建 30s 定时监控（When invoking subagent, MUST also call schedule tool with DurationSeconds=30.）。
+    
+    const hasSubagentKeyword = /\b(?:subagent|diver|extractor|委派|沙盒)\b/i.test(cleanMsg);
+    const lastDispatchTurnStr = getHookState(convId, -1, "dispatch_protocol_injected_turn");
+    let currentTurnIdx = cdal.getCurrentTurnIdx();
+    let currentTurnIdxNum = 0;
+    if (currentTurnIdx !== null && currentTurnIdx !== undefined) {
+      const parsed = parseInt(String(currentTurnIdx), 10);
+      if (!isNaN(parsed)) {
+        currentTurnIdxNum = parsed;
+      }
+    }
+    const alreadyInjectedThisTurn = lastDispatchTurnStr === String(currentTurnIdxNum);
+
+    if (!alreadyInjectedThisTurn && (srcKb > 150 || dataKb > 50 || hasSubagentKeyword)) {
+      if (srcKb > 150 || dataKb > 50) {
+        injectSteps.push({
+          ephemeralMessage: formatCumulativeReadWarning(srcKb, dataKb)
+        });
+      }
       injectSteps.push({
-        ephemeralMessage: formatCumulativeReadWarning(srcKb, dataKb)
+        ephemeralMessage: formatSubagentDispatchReminder()
       });
+      markFired(convId, "dispatch_protocol_injected_turn", String(currentTurnIdxNum));
     }
   } catch {
     // pass
@@ -374,3 +393,10 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
 
   return { injectSteps: injectSteps };
 }
+
+import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
+  hookEntrypoint()(main)();
+}
+

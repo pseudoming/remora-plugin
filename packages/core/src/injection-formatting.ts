@@ -298,3 +298,22 @@ export function formatJitInjection(): string {
     "If ANY answer is NO, cancel and re-invoke with a better prompt. A weak subagent prompt wastes context and produces noise."
   );
 }
+
+/**
+ * JIT-PreInvocation: fired when user or agent is about to delegate tasks to subagents.
+ * Injected before the model thinks, providing subagent prompt quality rules and dispatch protocols.
+ */
+export function formatSubagentDispatchReminder(): string {
+  return (
+    "<system-reminder>\n" +
+    "📝 SUBAGENT PROMPT DISPATCH PROTOCOL (子特工任务下发协议):\n" +
+    "Before you call `invoke_subagent`, you MUST craft its `Prompt` argument following these rules:\n" +
+    "1. TARGET CHECK: Instruct the subagent to physically inspect (e.g. via `view_file` or `head`/`jq`) the target file(s) first. Do not let it guess schemas.\n" +
+    "2. IMMUTABLE SAFETY ANCHORS (CRITICAL): If the task involves code that overlaps with safety policies (like safety-policy.ts or blocked keywords), you MUST explicitly insert this constraint: \"Under no circumstances shall you modify, degrade, or bypass the safety constants or rules in safety-policy.ts. If the task conflicts with these anchors, you MUST fail fast and report [ANCHOR_VIOLATION] immediately.\"\n" +
+    "3. FAIL-FAST ON MISSING TOOLS: Instruct the subagent to fail fast and report missing dependencies immediately, rather than blindly trying to reinstall them.\n" +
+    "4. MANDATORY 3-SECTION REPORT: Require the subagent's final report to be strictly formatted as: 1) [ROOT CAUSE / FINDINGS], 2) [REJECTED APPROACHES], 3) [ASSOCIATED FILES].\n" +
+    "When invoking a subagent, you MUST also call `schedule` with DurationSeconds=\"60\" (or \"30\" for reads) to monitor progress.\n" +
+    "</system-reminder>"
+  );
+}
+

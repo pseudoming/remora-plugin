@@ -462,12 +462,11 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
   return { decision: "allow", reason: "All subagents are active" };
 }
 
-// CLI mode: run as standalone (e.g. subagent-monitor)
-// Hook mode: main() is exported, called by Antigravity hook protocol
-declare const __filename: string;
-if (process.argv[1] === __filename) {
-  setTraceId(`s_${randomUUID().slice(0, 8)}`);
+import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
   if (process.argv.length > 2) {
+    setTraceId(`s_${randomUUID().slice(0, 8)}`);
     const convId = process.argv[2];
     const res = runAudit(convId);
     process.stdout.write(JSON.stringify(res) + "\n");
@@ -476,6 +475,8 @@ if (process.argv[1] === __filename) {
     } else {
       process.exit(0);
     }
+  } else {
+    hookEntrypoint()(main)();
   }
-  // Hook mode: the hook runtime calls main() externally
 }
+

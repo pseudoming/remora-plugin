@@ -34,17 +34,14 @@ function doCopy(src: string, dst: string, skipExisting = false): void {
 }
 
 function findPluginRoot(): string {
-  let dir = __dirname;
+  let dir = path.resolve(__dirname);
   while (dir !== "/" && dir !== "") {
-    if (fs.existsSync(path.join(dir, "package.json"))) {
-      const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf-8"));
-      if (pkg.name === "@remora/antigravity-plugin") {
-        return dir;
-      }
+    if (fs.existsSync(path.join(dir, "plugin.json"))) {
+      return dir;
     }
     dir = path.dirname(dir);
   }
-  throw new Error("FATAL: Cannot find @remora/antigravity-plugin package root. Are you running outside the plugin directory?");
+  throw new Error("FATAL: Cannot find plugin.json to anchor PLUGIN_ROOT. Are you running outside the plugin directory?");
 }
 
 function renderString(content: string, pluginRoot: string): string {

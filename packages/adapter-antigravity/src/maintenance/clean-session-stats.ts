@@ -15,3 +15,10 @@ export function _main(context: Record<string, unknown>): Record<string, unknown>
   }
   return {};
 }
+
+import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
+  hookEntrypoint()(main)();
+}
+

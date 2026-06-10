@@ -244,6 +244,9 @@ function inspectTokens(tokens: string[], depth: number = 0): InspectionResult {
     if (exe === "npm" && args.includes("run") && args.includes("build")) {
       return ["deny", "build"];
     }
+    if (["tsc", "tsup"].includes(exe)) {
+      return ["deny", "build"];
+    }
     if (exe === "gradlew" && args.includes("build")) {
       return ["deny", "build"];
     }
@@ -277,7 +280,7 @@ export function inspectCommand(
     const fallbackTest =
       /\b(pytest|jest|vitest|gradlew\s+test|mvn\s+test|npm\s+test|npm\s+run\s+test)\b/;
     const fallbackBuild =
-      /\b(npm\s+run\s+build|gradlew\s+build|mvn\s+package|mvn\s+install)\b/;
+      /\b(npm\s+run\s+build|gradlew\s+build|mvn\s+package|mvn\s+install|tsc|tsup)\b/;
 
     if (fallbackTest.test(cmdStr)) {
       return ["deny", "test"];

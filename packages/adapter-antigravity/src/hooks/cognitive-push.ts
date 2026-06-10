@@ -388,3 +388,10 @@ function _main(context: Record<string, unknown>): { decision?: string; reason?: 
 
   return fallback;
 }
+
+import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
+  hookEntrypoint()(main)();
+}
+

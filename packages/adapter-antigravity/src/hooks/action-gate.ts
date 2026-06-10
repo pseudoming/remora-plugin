@@ -296,3 +296,10 @@ export function _main(context: Record<string, any>): { injectSteps: any[]; termi
     return { injectSteps: [], terminationBehavior: "" };
   }
 }
+
+import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
+  hookEntrypoint()(main)();
+}
+

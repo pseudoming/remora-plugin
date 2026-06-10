@@ -387,3 +387,9 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
 
     return { decision: "allow" };
 }
+
+  import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
+  hookEntrypoint()(main)();
+}

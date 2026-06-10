@@ -75,3 +75,9 @@ function _main(context: Record<string, unknown>): { injectSteps: any[] } {
 
   return { injectSteps: injectSteps };
 }
+
+import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
+  hookEntrypoint()(main)();
+}

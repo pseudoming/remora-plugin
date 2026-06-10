@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getSnapshot } from "../bridge/filesystem";
 
-export function main(context: Record<string, string>): { injectSteps: never[] } {
+export function main(context: Record<string, any>): { injectSteps: never[] } {
   try {
     return _main(context);
   } catch {
@@ -10,7 +10,7 @@ export function main(context: Record<string, string>): { injectSteps: never[] } 
   }
 }
 
-function _main(context: Record<string, string>): { injectSteps: never[] } {
+function _main(context: Record<string, any>): { injectSteps: never[] } {
   const transcriptPath = context["transcriptPath"] ?? "";
   const cwd = context["cwd"] ?? process.cwd();
 
@@ -32,3 +32,10 @@ function _main(context: Record<string, string>): { injectSteps: never[] } {
 
   return { injectSteps: [] };
 }
+
+import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
+  hookEntrypoint()(main)();
+}
+

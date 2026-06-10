@@ -16,6 +16,7 @@ export {
   formatAlertRecallPrompt,
   formatHeartbeatTimerInjection,
   formatCumulativeReadWarning,
+  formatSubagentDispatchReminder,
   makeDenyReason,
 } from "./injection-formatting";
 
@@ -55,9 +56,11 @@ export {
   resolvePhantomModifications,
 } from "./phantom";
 
-// Injector / Reader
+// Injector / Reader / Trimming
 export { truncateDecisions } from "./injector";
 export { filterUserAiRounds } from "./reader";
+export { trimStaleHookStates } from "./state-trim";
+
 
 // Command inspector
 export { inspectCommand, decodeBase64Token } from "./rules/inspector";

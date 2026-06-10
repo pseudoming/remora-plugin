@@ -144,3 +144,10 @@ function _main(context?: any): { decision?: string; reason?: string; injectSteps
         return { injectSteps: [] };
     }
 }
+
+import { hookEntrypoint } from "../bridge/context";
+
+if (typeof require !== "undefined" && require.main === module) {
+  hookEntrypoint()(main)();
+}
+
