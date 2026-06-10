@@ -38,3 +38,6 @@ __pycache__/
 # tsc/tsup build artifacts must NOT leak into src/
 packages/*/src/**/*.js
 packages/*/src/**/*.d.ts
+
+# Internal agent rules — public repo must not see these
+AGENTS.md

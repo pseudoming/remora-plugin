@@ -65,11 +65,15 @@ function renderAllTemplates(pluginRoot: string): void {
     [path.join(templateDir, "SKILL.template.md"), path.join(pluginRoot, "skills", "remora-architecture", "SKILL.md")],
   ];
 
-  const agentsDir = path.join(pluginRoot, "agents");
-  if (fs.existsSync(agentsDir)) {
-    for (const f of fs.readdirSync(agentsDir)) {
+  const agentsSrc = path.join(templateDir, "agents");
+  const agentsDst = path.join(pluginRoot, "agents");
+  if (fs.existsSync(agentsSrc)) {
+    for (const f of fs.readdirSync(agentsSrc).sort()) {
       if (f.endsWith(".template.json")) {
-        templates.push([path.join(agentsDir, f), path.join(agentsDir, f.replace(".template.json", ".json"))]);
+        const src = path.join(agentsSrc, f);
+        const dst = path.join(agentsDst, f.replace(".template.json", ".json"));
+        const content = renderString(fs.readFileSync(src, "utf-8"), pluginRoot);
+        doWrite(dst, content);
       }
     }
   }

@@ -32,7 +32,7 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
   // 0. Fail-Fast 探测环境是否已被 install.py 初始化
   const initializedFile = path.join(getDataDir(), ".runtime", "installed.flag");
   if (!fs.existsSync(initializedFile)) {
-    return { injectSteps: [{ ephemeralMessage: "🚨 **[REMORA FATAL ERROR]** Plugin uninitialized! Please run `python3 install.py` in the plugin root." }] };
+    return { injectSteps: [{ ephemeralMessage: "🚨 **[REMORA FATAL ERROR]** Plugin uninitialized! Please run `npm run build && node packages/adapter-antigravity/bin/install.js --force` in the plugin root." }] };
   }
 
   // 物理缓存 LS API 凭据以解决子代理在 Hook 沙盒中缺乏鉴权环境变量的问题
@@ -322,7 +322,7 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
   const [mode, alertWord] = detectMode(cleanMsg, relaxKws, alertKws);
 
   if (alertWord) {
-    const recallCmd = `python3 scripts/adapter/cli/remora-recall.py "${alertWord}"`;
+    const recallCmd = `npx tsx packages/adapter-antigravity/src/cli/remora-recall.ts "${alertWord}"`;
     injectSteps.push({ ephemeralMessage: formatAlertRecallPrompt(alertWord, recallCmd) });
   } else if (mode === "strict") {
     let currentTurnIdx = cdal.getCurrentTurnIdx();
@@ -342,7 +342,7 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
       }
     }
     if (currentTurnIdxNum - lastRecall >= 3) {
-      injectSteps.push({ ephemeralMessage: formatStrictRecallReminder("remora-recall.py") });
+      injectSteps.push({ ephemeralMessage: formatStrictRecallReminder("remora-recall.ts") });
       markFired(convId, "last_recall_turn", String(currentTurnIdxNum));
     }
   }

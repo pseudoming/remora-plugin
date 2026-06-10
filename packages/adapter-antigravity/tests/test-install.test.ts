@@ -226,9 +226,11 @@ describe("TestRenderAllTemplates", () => {
     const skillsDir = tmpPath("skills", "remora-architecture");
     fs.mkdirSync(skillsDir, { recursive: true });
     fs.writeFileSync(path.join(confTemplates, "SKILL.template.md"), "{PLUGIN_ROOT}");
+    const agentsTemplates = tmpPath("conf", "templates", "agents");
+    fs.mkdirSync(agentsTemplates, { recursive: true });
+    fs.writeFileSync(path.join(agentsTemplates, "test.template.json"), "{PYTHON}");
     const agentsDir = tmpPath("agents");
     fs.mkdirSync(agentsDir);
-    fs.writeFileSync(path.join(agentsDir, "test.template.json"), "{PYTHON}");
 
     install.dryRun = false;
     install.renderAllTemplates(tempRoot);

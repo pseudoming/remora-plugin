@@ -2,7 +2,6 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 import {
   warn,
   debug,
@@ -463,7 +462,10 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
   return { decision: "allow", reason: "All subagents are active" };
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// CLI mode: run as standalone (e.g. subagent-monitor)
+// Hook mode: main() is exported, called by Antigravity hook protocol
+declare const __filename: string;
+if (process.argv[1] === __filename) {
   setTraceId(`s_${randomUUID().slice(0, 8)}`);
   if (process.argv.length > 2) {
     const convId = process.argv[2];
