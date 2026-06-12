@@ -120,13 +120,13 @@ function _main(context?: any): { decision?: string; reason?: string; injectSteps
                     }
                     return {
                         decision: "deny",
-                        reason: `⚠️ 安全拦截：系统存在运行中的未托管衍生进程 ${pid}，工具执行已被临时拒绝。`
+                        reason: `⚠️ 后台僵尸进程 PID=${pid} (${Math.floor(elapsedSeconds)}s)。请 manage_task(list) 确认，确认已死则忽略，确认滞留则等 60s 后 kill。`
                     };
                 } else {
                     return {
                         injectSteps: [
                             {
-                                ephemeralMessage: `⚠️ 警告：检测到未托管衍生后台进程 ${pid} (UPTIME: ${Math.floor(elapsedSeconds)}s)。当前命令已被安全网关限制，请使用 manage_task(list) 物理清理该进程。`
+                                ephemeralMessage: `⚠️ 检测到未托管衍生后台进程 (PID: ${pid}, UPTIME: ${Math.floor(elapsedSeconds)}s, CMD: ${cmdline.slice(0, 80)})。\n请执行以下自愈流程：\n1. 调用 manage_task(list) 确认进程当前是否仍在运行。\n2. 若进程已自然退出 → 无需操作。\n3. 若进程仍在运行但确已无必要保留 → 等待 60 秒后调用 manage_task(kill, TaskId=${pid}) 物理强杀。\n4. 若进程为正常任务 → 忽略，系统稍后将重新评估。`
                             }
                         ]
                     };

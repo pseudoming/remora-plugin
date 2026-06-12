@@ -15,11 +15,6 @@ export function main(): void {
 
   const cdal = new ConversationDataAccessLayer(convId);
 
-  if (!fs.existsSync(cdal.dbPath)) {
-    console.log(JSON.stringify({ status: "not_found", message: `Subagent DB path ${cdal.dbPath} not found` }));
-    process.exit(0);
-  }
-
   let steps: Record<string, any>[];
   try {
     steps = Array.from(cdal.streamStepsReverse(200));
@@ -29,7 +24,22 @@ export function main(): void {
   }
 
   if (!steps || steps.length === 0) {
-    console.log(JSON.stringify({ status: "empty", message: "DB file is empty" }));
+    const SPAWN_TIMEOUT_SEC = 30;
+    const mtime = cdal.getDbMtime();
+    const now = Date.now() / 1000;
+    const ageSeconds = mtime > 0 ? now - mtime : 0;
+    if (mtime > 0 && ageSeconds > SPAWN_TIMEOUT_SEC) {
+      const fromPb = cdal.hasPb() && cdal.getPbStepCount() === 0;
+      console.log(JSON.stringify({
+        status: "spawn_failed",
+        conversation_id: convId,
+        parent_conversation_id: parentConvId,
+        from_pb: fromPb || undefined,
+        message: `Subagent created but produced no steps after ${Math.floor(ageSeconds)}s`,
+      }));
+      process.exit(1);
+    }
+    console.log(JSON.stringify({ status: "empty", message: "No steps recorded yet" }));
     process.exit(0);
   }
 

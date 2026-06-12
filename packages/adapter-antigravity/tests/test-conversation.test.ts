@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
+import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -20,8 +21,8 @@ vi.mock("node:fs", async (importOriginal) => {
   };
 });
 
-vi.mock("../src/bridge/proto-decoder", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/bridge/proto-decoder")>();
+vi.mock("../src/bridge/step-codec", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/bridge/step-codec")>();
   return {
     ...actual,
     extractStepPayload: vi.fn((blob: Buffer) => actual.extractStepPayload(blob)),
@@ -60,7 +61,8 @@ vi.mock("@remora/core", () => ({
 import { ConversationDataAccessLayer } from "../src/bridge/conversation";
 import { hookEntrypoint, SystemExit } from "../src/bridge/context";
 import { ProgressSentinel } from "../src/bridge/progress";
-import * as protoDecoder from "../src/bridge/proto-decoder";
+import * as stepCodec from "../src/bridge/step-codec";
+import { parseProtobuf, decodeVarint } from "../src/bridge/step-codec";
 
 // =============================
 // Helpers
@@ -82,6 +84,72 @@ function createMockDb(dbPath: string, stepsData?: Array<[number, number, Buffer]
     }
   }
   db.close();
+}
+
+const PB_KEY = Buffer.from("safeCodeiumworldKeYsecretBalloon", "utf8");
+
+function encryptPb(plaintext: Buffer): Buffer {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", PB_KEY, iv);
+  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, encrypted, tag]);
+}
+
+function buildPbRoot(tag4value: number, tag1value?: string): Buffer {
+  const tag4 = Buffer.alloc(1); tag4[0] = (4 << 3) | 0;
+  let val = tag4value;
+  const varintBytes: number[] = [];
+  while (true) {
+    let b = val & 0x7f;
+    val >>>= 7;
+    if (val) varintBytes.push(b | 0x80);
+    else { varintBytes.push(b); break; }
+  }
+  const tag4field = Buffer.concat([tag4, Buffer.from(varintBytes)]);
+
+  if (tag1value) {
+    const idBytes = Buffer.from(tag1value, "utf8");
+    const idLen = idBytes.length;
+    const tag1 = Buffer.from([(1 << 3) | 2]);
+    let len = idLen;
+    const lenBytes: number[] = [];
+    while (true) {
+      let b = len & 0x7f;
+      len >>>= 7;
+      if (len) lenBytes.push(b | 0x80);
+      else { lenBytes.push(b); break; }
+    }
+    return Buffer.concat([tag1, Buffer.from(lenBytes), idBytes, tag4field]);
+  }
+
+  return tag4field;
+}
+
+function buildPbRootWithSteps(count: number): Buffer {
+  function varintBytes(val: number): number[] {
+    const r: number[] = [];
+    while (true) {
+      let b = val & 0x7f;
+      val >>>= 7;
+      if (val) r.push(b | 0x80);
+      else { r.push(b); break; }
+    }
+    return r;
+  }
+
+  // Each step is a minimal protobuf: Tag 1 varint = 15 (PLANNER_RESPONSE)
+  const stepBlob = Buffer.from([0x08, 0x0f]);
+  const stepLen = varintBytes(stepBlob.length);
+
+  const parts: Buffer[] = [];
+  // Tag 4 = count
+  parts.push(Buffer.from([(4 << 3) | 0, ...varintBytes(count)]));
+  // Tag 2 entries
+  for (let i = 0; i < count; i++) {
+    parts.push(Buffer.from([(2 << 3) | 2, ...stepLen, ...stepBlob]));
+  }
+  return Buffer.concat(parts);
 }
 
 // =============================
@@ -211,7 +279,7 @@ describe("ConversationDataAccessLayer", () => {
     ];
     createMockDb(dp, steps);
 
-    const mockExtract = vi.mocked(protoDecoder.extractStepPayload);
+    const mockExtract = vi.mocked(stepCodec.extractStepPayload);
     mockExtract.mockImplementation((blob: Buffer) => ({ raw: blob.toString("utf-8") }));
 
     const cdal = new ConversationDataAccessLayer(convId);
@@ -246,7 +314,7 @@ describe("ConversationDataAccessLayer", () => {
     ];
     createMockDb(dp, steps);
 
-    const mockExtract = vi.mocked(protoDecoder.extractStepPayload);
+    const mockExtract = vi.mocked(stepCodec.extractStepPayload);
     mockExtract.mockImplementation((blob: Buffer) => ({ raw: blob.toString("utf-8") }));
 
     const cdal = new ConversationDataAccessLayer(convId);
@@ -281,7 +349,7 @@ describe("ConversationDataAccessLayer", () => {
 
     // Mock return values for reversed order
     // idx 2 is NOT USER_INPUT, idx 1 IS USER_INPUT
-    const mockExtract = vi.mocked(protoDecoder.extractStepPayload);
+    const mockExtract = vi.mocked(stepCodec.extractStepPayload);
     mockExtract.mockReturnValueOnce({ type: "PLANNER_RESPONSE", content: "planner message" });
     mockExtract.mockReturnValueOnce({ type: "USER_INPUT", content: "hello user" });
 
@@ -294,7 +362,7 @@ describe("ConversationDataAccessLayer", () => {
     const dp = dbPath(convId);
     createMockDb(dp, [[1, 1, Buffer.from("p1")]]);
 
-    const mockExtract = vi.mocked(protoDecoder.extractStepPayload);
+    const mockExtract = vi.mocked(stepCodec.extractStepPayload);
     mockExtract.mockReturnValue({ type: "OTHER" });
 
     const cdal = new ConversationDataAccessLayer(convId);
@@ -311,7 +379,7 @@ describe("ConversationDataAccessLayer", () => {
     ];
     createMockDb(dp, steps);
 
-    const mockExtract = vi.mocked(protoDecoder.extractStepPayload);
+    const mockExtract = vi.mocked(stepCodec.extractStepPayload);
     mockExtract.mockReturnValueOnce({ type: "PLANNER_RESPONSE", content: "planner message" });
     mockExtract.mockReturnValueOnce({ type: "USER_INPUT", content: "hello user" });
 
@@ -324,7 +392,7 @@ describe("ConversationDataAccessLayer", () => {
     const dp = dbPath(convId);
     createMockDb(dp, [[1, 1, Buffer.from("p1")]]);
 
-    const mockExtract = vi.mocked(protoDecoder.extractStepPayload);
+    const mockExtract = vi.mocked(stepCodec.extractStepPayload);
     mockExtract.mockReturnValue({ type: "OTHER" });
 
     const cdal = new ConversationDataAccessLayer(convId);
@@ -551,5 +619,320 @@ describe("hookEntrypoint", () => {
     const output = getStdoutOutput();
     const result = JSON.parse(output);
     expect(result).toEqual({});
+  });
+});
+
+describe("PB operations", () => {
+  it("hasPb returns true when .pb file exists", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(cdal.pbPath, Buffer.from([0]));
+    try {
+      expect(cdal.hasPb()).toBe(true);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("hasPb returns false when .pb file missing", () => {
+    const cdal = new ConversationDataAccessLayer("xxxxxxxx-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(cdal.hasPb()).toBe(false);
+  });
+
+  it("getPbRoot decrypts and parses valid PB with step count 5", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRoot(5, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      const root = cdal.getPbRoot();
+      expect(root).not.toBeNull();
+      expect(root![4]?.[0]).toBe(5);
+      expect(root![1]?.[0]?.toString("utf-8")).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("getPbRoot returns null for missing file", () => {
+    const cdal = new ConversationDataAccessLayer("xxxxxxxx-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(cdal.getPbRoot()).toBeNull();
+  });
+
+  it("getPbRoot returns null for corrupted PB file", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(cdal.pbPath, Buffer.from("this is garbage data not encrypted"));
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(Buffer.from("this is garbage data not encrypted"));
+    try {
+      const root = cdal.getPbRoot();
+      expect(root).toBeNull();
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("getPbStepCount returns tag-4 value; null when missing", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRoot(3);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      expect(cdal.getPbStepCount()).toBe(3);
+      const cdal2 = new ConversationDataAccessLayer("yyyyyyyy-bbbb-cccc-dddd-eeeeeeeeeeee");
+      expect(cdal2.getPbStepCount()).toBeNull();
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+});
+
+describe("PB fallback — DB missing or empty", () => {
+  beforeEach(() => {
+    vi.mocked(stepCodec.extractStepPayload).mockImplementation((_blob: Buffer) => ({}));
+  });
+
+  // --- getMaxStepIndex ---
+
+  it("getMaxStepIndex via PB when DB does not exist", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRootWithSteps(5);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      expect(cdal.getMaxStepIndex()).toBe(5);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("getMaxStepIndex via PB when DB is 0 bytes", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(cdal.dbPath, Buffer.alloc(0));
+    const plaintext = buildPbRootWithSteps(3);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      expect(cdal.getMaxStepIndex()).toBe(3);
+    } finally {
+      fs.rmSync(cdal.dbPath, { force: true });
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("getMaxStepIndex returns 0 when DB empty and no PB", () => {
+    const cdal = new ConversationDataAccessLayer("xxxxxxxx-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(cdal.getMaxStepIndex()).toBe(0);
+  });
+
+  // --- streamStepsForward ---
+
+  it("streamStepsForward via PB yields steps when DB does not exist", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRootWithSteps(3);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      const steps = Array.from(cdal.streamStepsForward());
+      expect(steps.length).toBe(3);
+      expect(steps[0]["step_index"]).toBe(1);
+      expect(steps[2]["step_index"]).toBe(3);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("streamStepsForward via PB respects startIdx", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRootWithSteps(3);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      const steps = Array.from(cdal.streamStepsForward(2));
+      expect(steps.length).toBe(2);
+      expect(steps[0]["step_index"]).toBe(2);
+      expect(steps[1]["step_index"]).toBe(3);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  // --- streamStepsReverse ---
+
+  it("streamStepsReverse via PB yields steps in reverse when DB does not exist", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRootWithSteps(5);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      const steps = Array.from(cdal.streamStepsReverse());
+      expect(steps.length).toBe(5);
+      expect(steps[0]["step_index"]).toBe(5);
+      expect(steps[4]["step_index"]).toBe(1);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("streamStepsReverse via PB respects limit parameter", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRootWithSteps(10);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      const steps = Array.from(cdal.streamStepsReverse(3));
+      expect(steps.length).toBe(3);
+      expect(steps[0]["step_index"]).toBe(10);
+      expect(steps[2]["step_index"]).toBe(8);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("streamStepsReverse via PB when DB is 0 bytes", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(cdal.dbPath, Buffer.alloc(0));
+    const plaintext = buildPbRootWithSteps(3);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      const steps = Array.from(cdal.streamStepsReverse());
+      expect(steps.length).toBe(3);
+    } finally {
+      fs.rmSync(cdal.dbPath, { force: true });
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  // --- getLastModifiedTime ---
+
+  it("getLastModifiedTime returns PB mtime when DB does not exist", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRoot(1);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    try {
+      const t = cdal.getLastModifiedTime();
+      expect(t).toBeGreaterThan(0);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("getLastModifiedTime returns max of DB and PB mtime when both exist", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(cdal.dbPath, Buffer.from("fake sqlite data"));
+    const plaintext = buildPbRoot(1);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    try {
+      const dbMtime = fs.statSync(cdal.dbPath).mtimeMs / 1000;
+      const pbMtime = fs.statSync(cdal.pbPath).mtimeMs / 1000;
+      const t = cdal.getLastModifiedTime();
+      expect(t).toBe(Math.max(dbMtime, pbMtime));
+    } finally {
+      fs.rmSync(cdal.dbPath, { force: true });
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("getLastModifiedTime returns 0 when neither DB nor PB exists", () => {
+    const cdal = new ConversationDataAccessLayer("xxxxxxxx-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(cdal.getLastModifiedTime()).toBe(0);
+  });
+
+  it("getDbMtime falls back to PB when DB not present", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRoot(1);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    try {
+      const t = cdal.getDbMtime();
+      expect(t).toBeGreaterThan(0);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  // --- Delegated methods via PB ---
+
+  it("getLatestUserMessage returns null when PB steps have no USER_INPUT type", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRootWithSteps(3);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      expect(cdal.getLatestUserMessage()).toBeNull();
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("getCurrentTurnIdx returns 0 when PB steps have no USER_INPUT", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRootWithSteps(3);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      expect(cdal.getCurrentTurnIdx()).toBe(0);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
+  });
+
+  it("getUserInputCount returns 0 when PB steps are empty blobs", () => {
+    const cdal = new ConversationDataAccessLayer("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    const tmpDir = path.dirname(cdal.pbPath);
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const plaintext = buildPbRootWithSteps(2);
+    const encrypted = encryptPb(plaintext);
+    fs.writeFileSync(cdal.pbPath, encrypted);
+    vi.mocked(fs.readFileSync).mockReturnValueOnce(encrypted);
+    try {
+      expect(cdal.getUserInputCount()).toBe(0);
+    } finally {
+      fs.rmSync(cdal.pbPath, { force: true });
+    }
   });
 });

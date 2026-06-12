@@ -1,12 +1,12 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 
 import { ConversationDataAccessLayer } from "../bridge/conversation";
 import { getProjectId } from "../bridge/agentapi";
-import { getDataDir } from "../bridge/paths";
+import { getSubagentTypeByConvId } from "../bridge/subagent";
+import { getBrainDir, getDataDir } from "../bridge/paths";
 
-const BRAIN_DIR = path.join(os.homedir(), ".gemini", "antigravity", "brain");
+const BRAIN_DIR = getBrainDir();
 const EXCLUDE_FILE = path.join(getDataDir(), "compactor_managed_conversations.json");
 
 export function loadExcludedIds(): Set<string> {
@@ -64,18 +64,7 @@ export function getActiveConversations(): Array<{ projectUuid: string; conversat
 }
 
 export function isSubagentSession(convId: string): boolean {
-  try {
-    const cdal = new ConversationDataAccessLayer(convId);
-    for (const step of cdal.streamStepsForward()) {
-      if (step["type"] === "USER_INPUT" && step["source"] === "SYSTEM") {
-        return true;
-      }
-      break;
-    }
-  } catch {
-    // pass
-  }
-  return false;
+  return getSubagentTypeByConvId(convId) !== null;
 }
 
 export function extractSubagentReport(convId: string): { changedFiles: string[]; referencedFiles: string[] } {

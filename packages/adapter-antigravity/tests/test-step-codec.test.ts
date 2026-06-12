@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decodeVarint, parseProtobuf, extractStepPayload } from "../src/bridge/proto-decoder";
+import { decodeVarint, parseProtobuf, extractStepPayload } from "../src/bridge/step-codec";
 
 // ---------------------------------------------------------------------------
 // Helpers for constructing protobuf binary test data

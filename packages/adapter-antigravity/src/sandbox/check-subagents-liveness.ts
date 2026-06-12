@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import {
@@ -20,6 +19,7 @@ import {
 } from "@remora/core";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
 import { ProgressSentinel } from "../bridge/progress";
+import { getBrainDir } from "../bridge/paths";
 
 function globSingle(
   dirPath: string,
@@ -77,10 +77,8 @@ function globSingle(
 }
 
 export function runAudit(convId: string, parentConvId?: string): Record<string, unknown> {
-  const homeDir = process.env.HOME ?? os.homedir();
-
   const shortId = convId.length >= 8 ? convId.slice(0, 8) : convId;
-  const brainDir = path.join(homeDir, ".gemini", "antigravity", "brain");
+  const brainDir = getBrainDir();
   const convDirWildcard = parentConvId || "*";
   const worktreePattern = `*${shortId}*`;
 
@@ -243,10 +241,7 @@ export function runAudit(convId: string, parentConvId?: string): Record<string, 
   if (isDead) {
     try {
       const transcriptDummy = path.join(
-        homeDir,
-        ".gemini",
-        "antigravity",
-        "brain",
+        getBrainDir(),
         convId,
         ".system_generated",
         "transcript.jsonl"

@@ -37,10 +37,19 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...actual, ...mockFs };
 });
 
-vi.mock("../src/bridge/paths", () => ({
-  getDataDir: () => testDataDir.value,
-  extractConvId: () => null,
-  getDbPath: () => path.join(testDataDir.value, "mock_remora.db"),
+vi.mock("../src/bridge/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/bridge/paths")>();
+  return {
+    ...actual,
+    getDataDir: () => testDataDir.value,
+    extractConvId: () => null,
+    getDbPath: () => path.join(testDataDir.value, "mock_remora.db"),
+  };
+});
+
+vi.mock("../src/bridge/subagent", () => ({
+  getSubagentType: vi.fn().mockReturnValue(null),
+  getSubagentTypeByConvId: vi.fn().mockReturnValue(null),
 }));
 
 vi.mock("@remora/core", async (importOriginal) => {
@@ -87,6 +96,7 @@ import { consumeEventQueue } from "../src/sidecar/consume-events";
 import { extractFactualBaseline, AgentApiError } from "../src/sidecar/extract-decisions";
 import { pruneSidecarEvents } from "../src/sidecar/compactor";
 import { ConversationDataAccessLayer } from "../src/bridge/conversation";
+import * as subagentMod from "../src/bridge/subagent";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -234,49 +244,29 @@ describe("TestExcludedIds", () => {
 // ============================================================
 
 describe("TestIsSubagentSession", () => {
-  it("test_system_first_step", () => {
-    vi.spyOn(ConversationDataAccessLayer.prototype, "streamStepsForward").mockImplementation(function* (
-      this: any,
-      _startIdx?: number
-    ) {
-      yield { type: "USER_INPUT", source: "SYSTEM" };
-    });
+  it("returns true when getSubagentTypeByConvId returns typeName", () => {
+    vi.mocked(subagentMod.getSubagentTypeByConvId).mockReturnValue("Remora_Deep_Diver");
     const result = isSubagentSession("conv1");
     expect(result).toBe(true);
-    vi.restoreAllMocks();
   });
 
-  it("test_user_first_step", () => {
-    vi.spyOn(ConversationDataAccessLayer.prototype, "streamStepsForward").mockImplementation(function* (
-      this: any,
-      _startIdx?: number
-    ) {
-      yield { type: "USER_INPUT", source: "USER" };
-    });
+  it("returns false when getSubagentTypeByConvId returns null", () => {
+    vi.mocked(subagentMod.getSubagentTypeByConvId).mockReturnValue(null);
     const result = isSubagentSession("conv1");
     expect(result).toBe(false);
-    vi.restoreAllMocks();
   });
 
-  it("test_empty_stream", () => {
-    vi.spyOn(ConversationDataAccessLayer.prototype, "streamStepsForward").mockImplementation(function* (
-      this: any,
-      _startIdx?: number
-    ) {
-      // empty
-    });
-    const result = isSubagentSession("conv1");
+  it("returns false for empty convId", () => {
+    vi.mocked(subagentMod.getSubagentTypeByConvId).mockReturnValue(null);
+    const result = isSubagentSession("");
     expect(result).toBe(false);
-    vi.restoreAllMocks();
   });
 
-  it("test_exception_returns_false", () => {
-    vi.spyOn(ConversationDataAccessLayer.prototype, "streamStepsForward").mockImplementation(() => {
+  it("handles getSubagentTypeByConvId throwing", () => {
+    vi.mocked(subagentMod.getSubagentTypeByConvId).mockImplementation(() => {
       throw new Error("boom");
     });
-    const result = isSubagentSession("conv1");
-    expect(result).toBe(false);
-    vi.restoreAllMocks();
+    expect(() => isSubagentSession("conv1")).toThrow("boom");
   });
 });
 

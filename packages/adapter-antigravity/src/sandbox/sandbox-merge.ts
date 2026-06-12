@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { execSync } from "node:child_process";
+import { getBrainDir } from "../bridge/paths";
 
 export function main(): void {
     if (process.argv.length < 3) {
@@ -24,7 +24,7 @@ export function main(): void {
         process.exit(1);
     }
 
-    const brainDir = path.join(os.homedir(), ".gemini", "antigravity", "brain");
+    const brainDir = getBrainDir();
     const worktreesRel = path.join(".system_generated", "worktrees");
 
     let wtDir: string | null = null;

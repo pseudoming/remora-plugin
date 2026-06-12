@@ -1,9 +1,8 @@
-import * as os from "node:os";
-import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { pruneExpiredWatermarks as _prune, setTraceId } from "@remora/core";
+import { getBrainDir } from "../bridge/paths";
 
-const BRAIN_DIR = path.join(os.homedir(), ".gemini", "antigravity", "brain");
+const BRAIN_DIR = getBrainDir();
 
 export function pruneExpiredWatermarks(brainDir: string = BRAIN_DIR): void {
   _prune(brainDir);

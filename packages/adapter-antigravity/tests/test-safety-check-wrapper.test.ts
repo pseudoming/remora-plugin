@@ -12,6 +12,8 @@ const mocks = vi.hoisted(() => {
     cdallGetCompactionWatermark: vi.fn<[], number>().mockReturnValue(-1),
     existsSync: vi.fn(),
     statSync: vi.fn(),
+    readFileSync: vi.fn(),
+    findPluginRoot: vi.fn(),
   };
 });
 
@@ -75,6 +77,16 @@ vi.mock("node:fs", async () => {
   return {
     existsSync: mocks.existsSync,
     statSync: mocks.statSync,
+    readFileSync: mocks.readFileSync,
+  };
+});
+
+// -- bridge/paths --
+vi.mock("../src/bridge/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/bridge/paths")>();
+  return {
+    ...actual,
+    findPluginRoot: mocks.findPluginRoot,
   };
 });
 
@@ -105,6 +117,8 @@ describe("SafetyCheckWrapper", () => {
     mocks.getSubagentType.mockReturnValue(null);
     mocks.existsSync.mockReturnValue(false);
     mocks.statSync.mockReturnValue({ size: 100 });
+    mocks.readFileSync.mockReturnValue("");
+    mocks.findPluginRoot.mockReturnValue("/tmp/plugin-root");
     coreMocks.readMode.mockReturnValue("strict");
     coreMocks.enforcePromptLengthLimit.mockReturnValue([false, null]);
     coreMocks.enforceSandboxWorkspace.mockReturnValue([false, null]);
@@ -233,6 +247,100 @@ describe("SafetyCheckWrapper", () => {
       const res = main(ctx);
       expect(res["decision"]).toBe("allow");
       expect(res["injectSteps"]).toBeUndefined();
+    });
+  });
+
+  // ----------------------------------------------------------
+  describe("define_subagent override protection", () => {
+    it("blocks built-in name with escalated write permission", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      mocks.findPluginRoot.mockReturnValue("/tmp/plugin-root");
+      mocks.existsSync.mockReturnValue(true);
+      mocks.readFileSync.mockReturnValue(
+        JSON.stringify({ enable_write_tools: false, enable_subagent_tools: false })
+      );
+      const result = main(makeCtx("define_subagent", {
+        name: "Remora_ReadOnly_Extractor",
+        enable_write_tools: true,
+      }));
+      expect(result["decision"]).toBe("deny");
+      expect(result["reason"]).toContain("CONFIG_OVERRIDE");
+      expect(result["reason"]).toContain("Remora_ReadOnly_Extractor");
+    });
+
+    it("blocks built-in name with escalated subagent permission", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      mocks.findPluginRoot.mockReturnValue("/tmp/plugin-root");
+      mocks.existsSync.mockReturnValue(true);
+      mocks.readFileSync.mockReturnValue(
+        JSON.stringify({ enable_write_tools: true, enable_subagent_tools: false })
+      );
+      const result = main(makeCtx("define_subagent", {
+        name: "Remora_Deep_Diver",
+        enable_subagent_tools: true,
+      }));
+      expect(result["decision"]).toBe("deny");
+      expect(result["reason"]).toContain("CONFIG_OVERRIDE");
+    });
+
+    it("allows built-in name with matching permissions", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      mocks.findPluginRoot.mockReturnValue("/tmp/plugin-root");
+      mocks.existsSync.mockReturnValue(true);
+      mocks.readFileSync.mockReturnValue(
+        JSON.stringify({ enable_write_tools: false, enable_subagent_tools: false })
+      );
+      const result = main(makeCtx("define_subagent", {
+        name: "Remora_ReadOnly_Extractor",
+        enable_write_tools: false,
+      }));
+      expect(result["decision"]).toBe("allow");
+    });
+
+    it("allows non-built-in name", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      const result = main(makeCtx("define_subagent", {
+        name: "My_Custom_Agent",
+        enable_write_tools: true,
+      }));
+      expect(result["decision"]).toBe("allow");
+    });
+
+    it("blocks write to parent_shared with path traversal", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Deep_Diver");
+      const result = main(makeCtx("write_to_file", {
+        TargetFile: "scratch/parent_shared/../../etc/passwd",
+        CodeContent: "malicious",
+      }));
+      expect(result["decision"]).toBe("deny");
+      expect(result["reason"]).toContain("PATH_TRAVERSAL");
+    });
+
+    it("blocks write to parent_shared with tilde escape", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Deep_Diver");
+      const result = main(makeCtx("replace_file_content", {
+        TargetFile: "scratch/parent_shared/~/escape.txt",
+      }));
+      expect(result["decision"]).toBe("deny");
+      expect(result["reason"]).toContain("PATH_TRAVERSAL");
+    });
+
+    it("blocks ReadOnly from writing to parent_shared", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_ReadOnly_Extractor");
+      const result = main(makeCtx("write_to_file", {
+        TargetFile: "scratch/parent_shared/legit_file.txt",
+        CodeContent: "hello",
+      }));
+      expect(result["decision"]).toBe("deny");
+      expect(result["reason"]).toContain("READONLY");
+    });
+
+    it("allows Deep_Diver to write to non-parent_shared path", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Deep_Diver");
+      const result = main(makeCtx("multi_replace_file_content", {
+        TargetFile: "scratch/normal_file.txt",
+      }));
+      expect(result["decision"]).toBe("allow");
     });
   });
 

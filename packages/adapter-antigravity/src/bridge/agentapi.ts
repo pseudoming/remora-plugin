@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
+import { getAntigravityDir } from "./paths";
 import { execSync, execFileSync } from "node:child_process";
 
 export function getBinary(): string {
@@ -12,7 +12,7 @@ export function getBinary(): string {
   } catch {
     // which failed, continue to fallback
   }
-  const fallback = path.join(os.homedir(), ".gemini", "antigravity", "bin", "agentapi");
+  const fallback = path.join(getAntigravityDir(), "bin", "agentapi");
   if (fs.existsSync(fallback)) {
     return fallback;
   }

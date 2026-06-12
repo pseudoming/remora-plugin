@@ -56,3 +56,23 @@ export function extractConvId(transcriptPath: string): string | null {
   const match = transcriptPath.match(/\/brain\/([^/]+)\//);
   return match ? match[1] : null;
 }
+
+function homeDir(): string {
+  return process.env.HOME ?? os.homedir();
+}
+
+export function getAntigravityDir(): string {
+  return path.join(homeDir(), ".gemini", "antigravity");
+}
+
+export function getBrainDir(): string {
+  return path.join(getAntigravityDir(), "brain");
+}
+
+export function getConversationsDir(): string {
+  return path.join(getAntigravityDir(), "conversations");
+}
+
+export function getGeminiConfigDir(): string {
+  return path.join(homeDir(), ".gemini", "config");
+}

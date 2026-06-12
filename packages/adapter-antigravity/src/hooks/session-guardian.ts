@@ -16,10 +16,9 @@ import {
   getHookState,
 } from "@remora/core";
 import { cleanup, getStats } from "../bridge/stats";
-import { getSubagentType } from "../bridge/subagent";
-import { getDataDir, extractConvId, findPluginRoot } from "../bridge/paths";
+import { getSubagentType, getSubagentTypeByConvId, getParentConvId } from "../bridge/subagent";
+import { getBrainDir, getDataDir, extractConvId, findPluginRoot } from "../bridge/paths";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
-import { getMetadata } from "../bridge/agentapi";
 
 export function main(context: Record<string, unknown>): { injectSteps: Array<Record<string, unknown>> } {
   try {
@@ -56,25 +55,63 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
 
   // 提取当前会话 ID
   const convId = extractConvId(transcriptPath) || "default";
-  if (convId !== "default") {
-    try {
-      const subType = getSubagentType(transcriptPath);
-      const mainIdFile = path.join(getDataDir(), ".runtime", "remora_main_conv_id.txt");
-      let shouldWrite = false;
-      if (subType === null) {
-        // 只有在主会话（或无 sub_type）时才考虑写入
-        if (process.env["ANTIGRAVITY_LS_ADDRESS"] || !fs.existsSync(mainIdFile)) {
-          shouldWrite = true;
-        }
+
+  // --- Shared scratch mounting ---
+  try {
+    const parentConvId = getParentConvId(convId);
+    if (parentConvId) {
+      // Subagent: mount parent's shared scratch directory
+      const sharedSrc = path.join(getBrainDir(), parentConvId, "scratch", "subagent_shared");
+      try {
+        fs.mkdirSync(sharedSrc, { recursive: true });
+      } catch {
+        // pass
       }
 
-      if (shouldWrite) {
-        fs.writeFileSync(mainIdFile, convId);
+      const scratchDst = path.join(process.cwd(), "scratch");
+      try {
+        fs.mkdirSync(scratchDst, { recursive: true });
+      } catch {
+        // pass
       }
-    } catch {
-      // pass
+
+      const linkDst = path.join(scratchDst, "parent_shared");
+
+      let linkExists = false;
+      try {
+        fs.lstatSync(linkDst);
+        linkExists = true;
+      } catch {
+        // link does not exist
+      }
+
+      if (!linkExists) {
+        try {
+          fs.symlinkSync(sharedSrc, linkDst, "dir");
+        } catch (err: any) {
+          if (err.code === "EEXIST") {
+            try {
+              fs.unlinkSync(linkDst);
+              fs.symlinkSync(sharedSrc, linkDst, "dir");
+            } catch {
+              // pass
+            }
+          }
+        }
+      }
+    } else {
+      // Main agent: initialize shared subdirectory
+      const parentScratch = path.join(getBrainDir(), convId, "scratch");
+      try {
+        fs.mkdirSync(path.join(parentScratch, "subagent_shared"), { recursive: true });
+      } catch {
+        // pass
+      }
     }
+  } catch {
+    // pass
   }
+  // --- End shared scratch ---
 
   const cdal = new ConversationDataAccessLayer(convId);
 
@@ -243,17 +280,7 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
     const pluginRoot = findPluginRoot();
     const pythonBin = "node";
 
-    // 提取子会话的角色名称 (优先通过 agentapi，其次通过历史记录)
-    let roleName: string | null = null;
-    try {
-      const metadata = getMetadata(subagentUuid) as Record<string, unknown>;
-      const subagentSpec = metadata["subagentSpec"] as Record<string, unknown> | undefined;
-      if (subagentSpec) {
-        roleName = (subagentSpec["typeName"] as string) || null;
-      }
-    } catch {
-      // pass
-    }
+    let roleName = getSubagentTypeByConvId(subagentUuid) as string | null;
 
     if (!roleName && heartbeatSteps.length > 0) {
       try {

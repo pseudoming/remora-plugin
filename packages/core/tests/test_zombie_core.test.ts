@@ -18,13 +18,13 @@ describe("TestIsInfrastructureProcess", () => {
 
 describe("TestIsProcessExpired", () => {
   it("test_expired", () => {
-    expect(isProcessExpired(20.0)).toBe(true);
+    expect(isProcessExpired(301.0)).toBe(true);
     expect(isProcessExpired(20.0, 10.0)).toBe(true);
   });
 
   it("test_not_expired", () => {
     expect(isProcessExpired(5.0)).toBe(false);
-    expect(isProcessExpired(15.0)).toBe(false);
+    expect(isProcessExpired(299.0)).toBe(false);
   });
 
   it("test_custom_threshold", () => {

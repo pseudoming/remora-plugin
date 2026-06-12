@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as os from "node:os";
 import { initDb } from "./schema/schema-init";
+import { getGeminiConfigDir } from "./bridge/paths";
 
 let _dryRun = false;
 
@@ -83,7 +83,7 @@ function renderAllTemplates(sourceRoot: string, targetRoot: string): void {
 
 function deployWorkflows(sourceRoot: string, targetRoot: string): void {
   const workflowsSrc = path.join(sourceRoot, "conf", "templates", "workflows");
-  const workflowsDst = path.join(os.homedir(), ".gemini", "config", "global_workflows");
+  const workflowsDst = path.join(getGeminiConfigDir(), "global_workflows");
 
   if (!fs.existsSync(workflowsSrc)) return;
 
@@ -227,7 +227,7 @@ export function main(): void {
   }
 
   const devPluginRoot = findPluginRoot();
-  const targetPluginRoot = path.join(os.homedir(), ".gemini", "config", "plugins", "remora-plugin");
+  const targetPluginRoot = path.join(getGeminiConfigDir(), "plugins", "remora-plugin");
 
   let actualPluginRoot = devPluginRoot;
   const isTest = !!(process.env.VITEST || process.env.NODE_ENV === "test");

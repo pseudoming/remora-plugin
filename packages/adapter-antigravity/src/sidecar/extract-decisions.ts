@@ -1,9 +1,8 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import Database from "better-sqlite3";
 
-import { getDataDir } from "../bridge/paths";
+import { getBrainDir, getDataDir } from "../bridge/paths";
 import { sendMessage, createConversation } from "../bridge/agentapi";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
 import { calculateFactualConfidence, validateIdInheritance } from "@remora/core";
@@ -30,7 +29,7 @@ import {
 import { readIncrementalLogs } from "./warm-storage-sync";
 
 const CONV_MARKER_FILE = path.join(getDataDir(), "compactor_conversation_id.txt");
-const BRAIN_DIR = path.join(os.homedir(), ".gemini", "antigravity", "brain");
+const BRAIN_DIR = getBrainDir();
 const MAX_EXECUTION_TIME = 300;
 
 export class AgentApiError extends Error {

@@ -1,7 +1,5 @@
 import {
   readMode,
-  warn,
-  error,
   makeDenyReason,
   enforcePromptLengthLimit,
   enforceSandboxWorkspace,
@@ -14,18 +12,38 @@ import {
   getHookState,
   setHookState,
   formatJitInjection,
-  formatAccumulatedLimitExceeded,
-  formatDelegationBlocked,
 } from "@remora/core";
 import { accumulate } from "../bridge/stats";
 import { getSubagentType } from "../bridge/subagent";
+import { findPluginRoot } from "../bridge/paths";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
 import * as fs from "node:fs";
+import * as path from "node:path";
 
 const _REMORA_RESTRICTED_SUBAGENT = "Remora_Deep_Diver";
 const _REMORA_VALID_WORKSPACES = new Set(["branch", "share"]);
 const _ARTIFACT_PATH = "/artifacts/";
 const _ARTIFACT_SUFFIXES = ["task.md", "implementation_plan.md", "walkthrough.md"];
+
+const BUILTIN_AGENTS: ReadonlySet<string> = new Set([
+  "Remora_Deep_Diver",
+  "Remora_ReadOnly_Extractor",
+]);
+
+function loadBuiltinAgentPerms(name: string): Record<string, boolean> | null {
+  try {
+    const pluginRoot = findPluginRoot();
+    const filePath = path.join(pluginRoot, "agents", `${name}.json`);
+    if (!fs.existsSync(filePath)) return null;
+    const def = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return {
+      enable_write_tools: !!def["enable_write_tools"],
+      enable_subagent_tools: !!def["enable_subagent_tools"],
+    };
+  } catch {
+    return null;
+  }
+}
 
 // ##########################################################
 // AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)
@@ -157,9 +175,103 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
     }
 
     // --------------------------------------------------------
-    // 针对 view_file 的拦截
+    // 针对 define_subagent 的静态权限重载拦截
     // --------------------------------------------------------
-    if (toolName === "view_file") {
+    if (toolName === "define_subagent") {
+      const name = (args["name"] as string) ?? "";
+      if (BUILTIN_AGENTS.has(name)) {
+        const perms = loadBuiltinAgentPerms(name);
+        if (perms) {
+          const reqWrite = args["enable_write_tools"] !== false;
+          const reqSubagent = args["enable_subagent_tools"] === true;
+          if (reqWrite !== perms.enable_write_tools || reqSubagent !== perms.enable_subagent_tools) {
+            return {
+              decision: "deny",
+              reason: makeDenyReason(
+                "CONFIG_OVERRIDE",
+                `Cannot override built-in agent '${name}'. enable_write_tools must be ${perms.enable_write_tools}, enable_subagent_tools must be ${perms.enable_subagent_tools}.`,
+                "Use a different name for custom agents."
+              ),
+            };
+          }
+        }
+        // Built-in name with matching permissions: allow
+      }
+    return { decision: "allow" };
+  }
+
+  // --------------------------------------------------------
+  // 针对共享目录的路径穿越防御
+  // --------------------------------------------------------
+  const WRITE_TOOLS = ["write_to_file", "replace_file_content", "multi_replace_file_content"];
+  if (WRITE_TOOLS.includes(toolName)) {
+    const tp = (args["TargetFile"] as string) ?? "";
+    if (tp.includes("parent_shared")) {
+      // ReadOnly subagent: deny all writes to shared scratch
+      if (isReadonlySub) {
+        return {
+          decision: "deny",
+          reason: makeDenyReason(
+            "READONLY",
+            "ReadOnly subagents cannot write to shared scratch.",
+            "Read scripts from parent_shared via run_command instead."
+          ),
+        };
+      }
+      // Deep_Diver: normalize path and verify it stays within shared directory
+      if (tp.includes("..") || tp.includes("~")) {
+        return {
+          decision: "deny",
+          reason: makeDenyReason(
+            "PATH_TRAVERSAL",
+            "Path traversal detected in parent_shared target.",
+            "Write only within the shared scratch directory."
+          ),
+        };
+      }
+      // Resolve real physical path to catch symlink escapes
+      let realPath: string;
+      try {
+        realPath = fs.realpathSync(tp);
+      } catch {
+        try {
+          const dirName = path.dirname(tp);
+          realPath = path.join(fs.realpathSync(dirName), path.basename(tp));
+        } catch {
+          realPath = path.resolve(tp);
+        }
+      }
+      // Resolve the real base path of the shared symlink
+      let realBase: string;
+      try {
+        realBase = fs.realpathSync(path.join(process.cwd(), "scratch", "parent_shared"));
+      } catch {
+        return {
+          decision: "deny",
+          reason: makeDenyReason(
+            "LINK_BROKEN",
+            "Shared scratch symlink is broken or missing.",
+            "The parent_shared link may need to be recreated."
+          ),
+        };
+      }
+      if (!realPath.startsWith(realBase)) {
+        return {
+          decision: "deny",
+          reason: makeDenyReason(
+            "DIRECTORY_ESCAPE",
+            "Write target resolves outside the shared scratch directory.",
+            "Write only within scratch/parent_shared/."
+          ),
+        };
+      }
+    }
+  }
+
+  // --------------------------------------------------------
+  // 针对 view_file 的拦截
+  // --------------------------------------------------------
+  if (toolName === "view_file") {
       const targetFile = (args["AbsolutePath"] as string) ?? "";
       if (targetFile) {
         // 1. 敏感后缀强力拦截 (大日志直接阻断)
@@ -289,8 +401,10 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
       } else {
         // 不含大日志特征的常规命令审计
         if (decision === "deny") {
-          // 子特工在隔离空间下，允许执行测试和构建
-          if (isSub && !isReadonlySub && (category === "test" || category === "build")) {
+          // 非只读子代理在隔离沙盒内无条件放行所有命令，防止 DELEGATION 消息误发给子代理造成自指悖论。
+          // 只读特工（Remora_ReadOnly_Extractor）不进入此分支——其 enable_write_tools=false 决定它根本调不到 run_command。
+          // 主代理继续走下游 DELEGATION BLOCKED 出口，提示委派给子代理。
+          if (isSub && !isReadonlySub) {
             return { decision: "allow" };
           }
 

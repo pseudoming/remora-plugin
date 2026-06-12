@@ -23,7 +23,7 @@ export function isInfrastructureProcess(
 
 export function isProcessExpired(
   elapsedSeconds: number,
-  threshold: number = 15.0
+  threshold: number = 300.0
 ): boolean {
   return elapsedSeconds > threshold;
 }

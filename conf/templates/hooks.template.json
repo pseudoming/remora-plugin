@@ -44,7 +44,7 @@
         ]
       },
       {
-        "matcher": "run_command|view_file|grep_search|write_to_file|multi_replace_file_content|replace_file_content",
+        "matcher": "invoke_subagent|run_command|view_file|grep_search|write_to_file|multi_replace_file_content|replace_file_content",
         "hooks": [
           {
             "type": "command",

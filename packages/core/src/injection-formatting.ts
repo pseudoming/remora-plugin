@@ -285,17 +285,18 @@ export function makeDenyReason(prefix: string, message: string, actionTip?: stri
  */
 export function formatJitInjection(): string {
   return (
-    "REMORA COORDINATOR JIT INJECTION: You have just launched subagents. You MUST simultaneously call the `schedule` tool with `DurationSeconds=\"60\"` to monitor liveness.\n" +
-    "In your public message to the user, you MUST describe the progress using the active subagent's role name (e.g. `subagent (Style Guard)`) and state that you will check back after a specific wait period. DO NOT expose technical terms like 'timer mounting' or 'schedule execution'.\n" +
-    "Exit the turn immediately after calling schedule.\n\n" +
-    "SUBAGENT PROMPT QUALITY — DID YOU WRITE A SELF-CONTAINED PROMPT?\n" +
-    "The subagent starts with ZERO context from this conversation. Before you exit, silently check:\n" +
+    "REMORA COORDINATOR JIT INJECTION: You have just launched subagents.\n\n" +
+    "STEP 1 — VERIFY YOUR PROMPT:\n" +
+    "The subagent starts with ZERO context from this conversation. Before proceeding, check:\n" +
     "1. GOAL: Does the prompt state exactly what the subagent should produce or find?\n" +
     "2. BOUNDARY: Is the task ONE thing (not \"explore and fix everything\")?\n" +
     "3. OUTPUT: Did you specify the expected format or word limit?\n" +
     "4. FILES: Did you include the exact file paths the subagent needs?\n" +
     "5. ANTI-PATTERNS: Did you warn it about known pitfalls it might hit?\n" +
-    "If ANY answer is NO, cancel and re-invoke with a better prompt. A weak subagent prompt wastes context and produces noise."
+    "If ANY answer is NO, cancel and re-invoke with a better prompt. A weak subagent prompt wastes context and produces noise.\n\n" +
+    "STEP 2 — **MANDATORY: You MUST call the `schedule` tool with `DurationSeconds=\"60\"` NOW.**\n" +
+    "In your public message to the user, describe the progress using the active subagent's role name (e.g. `subagent (Style Guard)`) and state that you will check back after 60 seconds. DO NOT expose technical terms like 'timer mounting' or 'schedule execution'.\n" +
+    "Exit the turn immediately after calling schedule."
   );
 }
 

@@ -71,13 +71,13 @@ const pathsMock = vi.hoisted(() => ({
   getDataDir: vi.fn<[], string>(),
 }));
 
-vi.mock("../src/bridge/paths", () => ({
-  getDataDir: pathsMock.getDataDir,
-}));
-
-vi.mock("../src/bridge/paths", () => ({
-  getDataDir: pathsMock.getDataDir,
-}));
+vi.mock("../src/bridge/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/bridge/paths")>();
+  return {
+    ...actual,
+    getDataDir: pathsMock.getDataDir,
+  };
+});
 
 // ============================================================
 // mock @remora/core to use the dynamic REMORA_DB_PATH env var

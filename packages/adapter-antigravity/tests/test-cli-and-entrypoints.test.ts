@@ -102,6 +102,8 @@ const bridgePathMocks = vi.hoisted(() => ({
 
 const bridgeSubagentMocks = vi.hoisted(() => ({
   getSubagentType: vi.fn(),
+  getSubagentTypeByConvId: vi.fn(),
+  getParentConvId: vi.fn(),
 }));
 
 const bridgeStatsMocks = vi.hoisted(() => ({
@@ -133,18 +135,38 @@ const extractDecisionsMocks = vi.hoisted(() => ({
   getOrCreateConversation: vi.fn(),
 }));
 
+const childProcessMocks = vi.hoisted(() => ({
+  execSync: vi.fn(),
+  execFileSync: vi.fn(),
+}));
+
 // ── module-level mocks (hoisted by vitest) ──────────────────────────
+vi.mock("node:child_process", () => ({
+  execSync: childProcessMocks.execSync,
+  execFileSync: childProcessMocks.execFileSync,
+}));
+
 vi.mock("@remora/core", () => coreMocks);
 
-vi.mock("../src/bridge/paths", () => ({
-  getDataDir: bridgePathMocks.getDataDir,
-  extractConvId: bridgePathMocks.extractConvId,
-  findPluginRoot: bridgePathMocks.findPluginRoot,
-  getDbPath: coreMocks.getDbPath,
-}));
+vi.mock("../src/bridge/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/bridge/paths")>();
+  return {
+    ...actual,
+    getDataDir: bridgePathMocks.getDataDir,
+    extractConvId: bridgePathMocks.extractConvId,
+    findPluginRoot: bridgePathMocks.findPluginRoot,
+    getDbPath: coreMocks.getDbPath,
+    getAntigravityDir: () => path.join(os.homedir(), ".gemini", "antigravity"),
+    getBrainDir: () => path.join(os.homedir(), ".gemini", "antigravity", "brain"),
+    getConversationsDir: () => path.join(os.homedir(), ".gemini", "antigravity", "conversations"),
+    getGeminiConfigDir: () => path.join(os.homedir(), ".gemini", "config"),
+  };
+});
 
 vi.mock("../src/bridge/subagent", () => ({
   getSubagentType: bridgeSubagentMocks.getSubagentType,
+  getSubagentTypeByConvId: bridgeSubagentMocks.getSubagentTypeByConvId,
+  getParentConvId: bridgeSubagentMocks.getParentConvId,
 }));
 
 vi.mock("../src/bridge/stats", () => ({
@@ -215,7 +237,8 @@ import * as cognitivePush from "../src/hooks/cognitive-push";
 import * as sessionGuardian from "../src/hooks/session-guardian";
 
 // ── CLI entrypoint imports ───────────────────────────────────────────
-import { execSync, execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
+import { getBrainDir } from "../src/bridge/paths";
 import { main as remoraRecall } from "../src/cli/remora-recall";
 import { main as remoraTopic } from "../src/cli/remora-topic";
 import { main as readSessionLog } from "../src/cli/read-session-log";
@@ -268,6 +291,7 @@ beforeEach(() => {
     return m ? m[1] : null;
   });
   bridgeSubagentMocks.getSubagentType.mockReturnValue(null);
+  bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue(null);
   bridgeStatsMocks.cleanup.mockReturnValue(undefined);
   bridgeStatsMocks.getStats.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0 });
   bridgeAgentapiMocks.getMetadata.mockReturnValue({});
@@ -286,7 +310,7 @@ beforeEach(() => {
 // =========================================================================
 describe("session_gc", () => {
   it("prune_expired_watermarks delegates to core pruneExpiredWatermarks", () => {
-    const brainDir = path.join(os.homedir(), ".gemini", "antigravity", "brain");
+    const brainDir = getBrainDir();
     sessionGc.pruneExpiredWatermarks();
     expect(coreMocks.pruneExpiredWatermarks).toHaveBeenCalledWith(brainDir);
   });
@@ -1601,11 +1625,6 @@ describe("session_guardian", () => {
       expect(envData["ANTIGRAVITY_LS_ADDRESS"]).toBe("127.0.0.1:8080");
       expect(envData["ANTIGRAVITY_CSRF_TOKEN"]).toBe("token123");
 
-      // Verify main conv id was written
-      const convFile = path.join(tmpPath, ".runtime", "remora_main_conv_id.txt");
-      expect(fs.existsSync(convFile)).toBe(true);
-      expect(fs.readFileSync(convFile, "utf-8")).toBe("conv_1");
-
       // Verify mode written
       expect(coreMocks.writeMode).toHaveBeenCalledWith("conv_1", "relax");
 
@@ -1658,14 +1677,14 @@ describe("subagent_monitor", () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Missing conversation_id"));
   });
 
-  it("db not found exits with status 0", () => {
+  it("db not found falls through to empty when no PB either", () => {
     const tmpPath = makeTmpPath();
     try {
       conversationMocks.mockInstance.dbPath = path.join(tmpPath, "nonexistent.db");
       process.argv = ["node", "subagent-monitor", "conv_1"];
       expect(() => subagentMonitor()).toThrow("EXIT");
       expect(exitSpy).toHaveBeenCalledWith(0);
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("not_found"));
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("empty"));
     } finally {
       fs.rmSync(tmpPath, { recursive: true, force: true });
     }
@@ -1829,11 +1848,8 @@ describe("session_guardian_subagent_warning", () => {
         { type: "PLANNER_RESPONSE", tool_calls: [{ name: "schedule", args: { DurationSeconds: "60", Prompt: "60s timeout for subagent 22222222-2222-2222-2222-222222222222. Run: node scripts/subagent-monitor.js 22222222-2222-2222-2222-222222222222 conv_1" } }] },
       ]);
 
-      // agentapi returns role name
-      bridgeAgentapiMocks.getMetadata.mockReturnValue({
-        parentConversationId: "conv_1",
-        subagentSpec: { typeName: "Remora_Deep_Diver" },
-      });
+      // getSubagentTypeByConvId returns role name from PB
+      bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue("Remora_Deep_Diver");
 
       // isTimerCanceled → true so heartbeat warning fires
       coreMocks.isTimerCanceled.mockReturnValue(true);
@@ -1873,8 +1889,8 @@ describe("session_guardian_subagent_warning", () => {
         ] },
       ]);
 
-      // agentapi fails → falls through to history
-      bridgeAgentapiMocks.getMetadata.mockImplementation(() => { throw new Error("api down"); });
+      // getSubagentTypeByConvId returns null → falls through to history
+      bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue(null);
 
       coreMocks.isTimerCanceled.mockReturnValue(true);
       coreMocks.detectMode.mockReturnValue(["strict", null]);
@@ -1901,110 +1917,73 @@ describe("session_guardian_get_subagent_type", () => {
   });
 
   it("no /brain/ match returns null", () => {
-    // extractConvId returns null for non-brain paths
     const result = bridgePathMocks.extractConvId("/tmp/no_brain/file.jsonl");
     expect(result).toBeNull();
   });
 
-  it("corrupt env file — falls through to agentapi", async () => {
-    const subagentMod = await vi.importActual<typeof import("../src/bridge/subagent")>("../src/bridge/subagent");
-    const tmpPath = makeTmpPath();
-    try {
-      fs.mkdirSync(path.join(tmpPath, ".runtime"), { recursive: true });
-      fs.writeFileSync(path.join(tmpPath, ".runtime", "remora_agent_env.json"), "{corrupt_json");
-      bridgePathMocks.getDataDir.mockReturnValue(tmpPath);
-      bridgePathMocks.extractConvId.mockReturnValue("c1");
-      // Override global execFileSync mock to return metadata with typeName
-      vi.mocked(execFileSync).mockReturnValueOnce(Buffer.from(JSON.stringify({
-        response: { conversationMetadata: { metadata: { parentConversationId: "p1", subagentSpec: { typeName: "X" } } } }
-      })));
-      expect(subagentMod.getSubagentType("/tmp/brain/c1/t.jsonl")).toBe("X");
-    } finally {
-      fs.rmSync(tmpPath, { recursive: true, force: true });
-      bridgePathMocks.extractConvId.mockReturnValue("conv_1");
-    }
+  it("getSubagentTypeByConvId returns typeName from PB", () => {
+    bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue("Remora_Deep_Diver");
+    const result = bridgeSubagentMocks.getSubagentTypeByConvId("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(result).toBe("Remora_Deep_Diver");
+    bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue(null);
   });
 
-  it("no_parent_id — getSubagentType returns null", async () => {
-    const subagentMod = await vi.importActual<typeof import("../src/bridge/subagent")>("../src/bridge/subagent");
-    const tmpPath = makeTmpPath();
-    try {
-      fs.mkdirSync(path.join(tmpPath, ".runtime"), { recursive: true });
-      bridgePathMocks.getDataDir.mockReturnValue(tmpPath);
-      bridgePathMocks.extractConvId.mockReturnValue("c1");
-      bridgeAgentapiMocks.getMetadata.mockReturnValue({
-        subagentSpec: { typeName: "X" }
-      });
-      expect(subagentMod.getSubagentType("/tmp/brain/c1/t.jsonl")).toBeNull();
-    } finally {
-      fs.rmSync(tmpPath, { recursive: true, force: true });
-      bridgePathMocks.extractConvId.mockReturnValue("conv_1");
-    }
+  it("getSubagentTypeByConvId returns null for missing entry", () => {
+    bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue(null);
+    const result = bridgeSubagentMocks.getSubagentTypeByConvId("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(result).toBeNull();
   });
 
-  it("api_exception — getSubagentType returns null", async () => {
+  it("getSubagentTypeByConvId — bad convId returns null", async () => {
     const subagentMod = await vi.importActual<typeof import("../src/bridge/subagent")>("../src/bridge/subagent");
-    const tmpPath = makeTmpPath();
-    try {
-      fs.mkdirSync(path.join(tmpPath, ".runtime"), { recursive: true });
-      bridgePathMocks.getDataDir.mockReturnValue(tmpPath);
-      bridgePathMocks.extractConvId.mockReturnValue("c1");
-      bridgeAgentapiMocks.getMetadata.mockImplementation(() => { throw new Error("api timeout"); });
-      expect(subagentMod.getSubagentType("/tmp/brain/c1/t.jsonl")).toBeNull();
-    } finally {
-      fs.rmSync(tmpPath, { recursive: true, force: true });
-      bridgePathMocks.extractConvId.mockReturnValue("conv_1");
-      bridgeAgentapiMocks.getMetadata.mockReturnValue(undefined);
-    }
+    expect(subagentMod.getSubagentTypeByConvId("bad-id")).toBeNull();
+    expect(subagentMod.getSubagentTypeByConvId("")).toBeNull();
+  });
+});
+
+// =========================================================================
+// session_guardian — scratch sharing
+// =========================================================================
+describe("session_guardian_scratch_sharing", () => {
+  it("getParentConvId returns parent UUID from PB", () => {
+    bridgeSubagentMocks.getParentConvId.mockReturnValue("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    const result = bridgeSubagentMocks.getParentConvId("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    expect(result).toBe("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+    bridgeSubagentMocks.getParentConvId.mockReturnValue(null);
   });
 
-  it("fallback_main_id — getSubagentType returns Remora_Subagent_Fallback", async () => {
+  it("getParentConvId returns null for bad convId", async () => {
     const subagentMod = await vi.importActual<typeof import("../src/bridge/subagent")>("../src/bridge/subagent");
-    const tmpPath = makeTmpPath();
-    try {
-      fs.mkdirSync(path.join(tmpPath, ".runtime"), { recursive: true });
-      fs.writeFileSync(path.join(tmpPath, ".runtime", "remora_main_conv_id.txt"), "main_conv");
-      bridgePathMocks.getDataDir.mockReturnValue(tmpPath);
-      bridgePathMocks.extractConvId.mockReturnValue("sub_1");
-      // Override global execFileSync mock to throw so getMetadata fails
-      vi.mocked(execFileSync).mockImplementationOnce(() => { throw new Error("api timeout"); });
-      expect(subagentMod.getSubagentType("/tmp/brain/sub_1/t.jsonl")).toBe("Remora_Subagent_Fallback");
-    } finally {
-      fs.rmSync(tmpPath, { recursive: true, force: true });
-      bridgePathMocks.extractConvId.mockReturnValue("conv_1");
-    }
+    expect(subagentMod.getParentConvId("bad-id")).toBeNull();
+    expect(subagentMod.getParentConvId("")).toBeNull();
   });
 
-  it("fallback_same_id — getSubagentType returns null", async () => {
-    const subagentMod = await vi.importActual<typeof import("../src/bridge/subagent")>("../src/bridge/subagent");
+  it("session_guardian creates subagent_shared directory for main agent", () => {
     const tmpPath = makeTmpPath();
     try {
-      fs.mkdirSync(path.join(tmpPath, ".runtime"), { recursive: true });
-      fs.writeFileSync(path.join(tmpPath, ".runtime", "remora_main_conv_id.txt"), "c1");
+      setupInstalledFlag(tmpPath);
       bridgePathMocks.getDataDir.mockReturnValue(tmpPath);
-      bridgePathMocks.extractConvId.mockReturnValue("c1");
-      bridgeAgentapiMocks.getMetadata.mockImplementation(() => { throw new Error("api timeout"); });
-      expect(subagentMod.getSubagentType("/tmp/brain/c1/t.jsonl")).toBeNull();
-    } finally {
-      fs.rmSync(tmpPath, { recursive: true, force: true });
-      bridgePathMocks.extractConvId.mockReturnValue("conv_1");
-      bridgeAgentapiMocks.getMetadata.mockReturnValue(undefined);
-    }
-  });
+      bridgePathMocks.findPluginRoot.mockReturnValue(tmpPath);
+      writeKeywordsJson(tmpPath);
 
-  it("fallback_no_main_file — getSubagentType returns null", async () => {
-    const subagentMod = await vi.importActual<typeof import("../src/bridge/subagent")>("../src/bridge/subagent");
-    const tmpPath = makeTmpPath();
-    try {
-      fs.mkdirSync(path.join(tmpPath, ".runtime"), { recursive: true });
-      bridgePathMocks.getDataDir.mockReturnValue(tmpPath);
-      bridgePathMocks.extractConvId.mockReturnValue("c1");
-      bridgeAgentapiMocks.getMetadata.mockImplementation(() => { throw new Error("api timeout"); });
-      expect(subagentMod.getSubagentType("/tmp/brain/c1/t.jsonl")).toBeNull();
+      bridgeSubagentMocks.getParentConvId.mockReturnValue(null);
+      bridgeSubagentMocks.getSubagentType.mockReturnValue(null);
+
+      conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([]);
+      coreMocks.detectMode.mockReturnValue(["strict", null]);
+
+      const homedir = path.join(tmpPath, "home");
+      osHomedirOverride.path = homedir;
+
+      try {
+        sessionGuardian.main({ transcriptPath: "/brain/conv_main_session/transcript.jsonl" });
+        const sharedDir = path.join(homedir, ".gemini", "antigravity", "brain", "conv_main_session", "scratch", "subagent_shared");
+        expect(fs.existsSync(sharedDir)).toBe(true);
+      } finally {
+        osHomedirOverride.path = null;
+      }
     } finally {
       fs.rmSync(tmpPath, { recursive: true, force: true });
-      bridgePathMocks.extractConvId.mockReturnValue("conv_1");
-      bridgeAgentapiMocks.getMetadata.mockReturnValue(undefined);
     }
   });
 });
@@ -2051,59 +2030,6 @@ describe("session_guardian_main_flow", () => {
       coreMocks.detectMode.mockReturnValue(["strict", null]);
 
       const res = sessionGuardian.main({ transcriptPath: "/tmp/no_brain/file.jsonl" });
-      expect(res.injectSteps).toEqual([]);
-    } finally {
-      fs.rmSync(tmpPath, { recursive: true, force: true });
-    }
-  });
-
-  it("should_write_false — existing main conv id prevents write", () => {
-    const tmpPath = makeTmpPath();
-    try {
-      setupInstalledFlag(tmpPath);
-      bridgePathMocks.getDataDir.mockReturnValue(tmpPath);
-      bridgePathMocks.findPluginRoot.mockReturnValue(tmpPath);
-      writeKeywordsJson(tmpPath);
-
-      // Pre-create main conv id file with different value
-      fs.writeFileSync(path.join(tmpPath, ".runtime", "remora_main_conv_id.txt"), "existing_conv");
-
-      // getSubagentType returns null (main session) → but file exists with LS_ADDRESS unset
-      // Without ANTIGRAVITY_LS_ADDRESS and with mainIdFile existing, shouldWrite stays false
-      bridgeSubagentMocks.getSubagentType.mockReturnValue(null);
-
-      conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([]);
-      coreMocks.detectMode.mockReturnValue(["strict", null]);
-
-      const res = sessionGuardian.main({ transcriptPath: "/brain/conv_1/transcript.jsonl" });
-      expect(res.injectSteps).toEqual([]);
-
-      // File should NOT be overwritten
-      const content = fs.readFileSync(path.join(tmpPath, ".runtime", "remora_main_conv_id.txt"), "utf-8");
-      expect(content).toBe("existing_conv");
-    } finally {
-      fs.rmSync(tmpPath, { recursive: true, force: true });
-    }
-  });
-
-  it("exception_writing_main_id — does not crash", () => {
-    const tmpPath = makeTmpPath();
-    try {
-      setupInstalledFlag(tmpPath);
-      bridgePathMocks.getDataDir.mockReturnValue(tmpPath);
-      bridgePathMocks.findPluginRoot.mockReturnValue(tmpPath);
-      writeKeywordsJson(tmpPath);
-
-      // getSubagentType returns null → shouldWrite = true (no LS_ADDRESS, no main file)
-      bridgeSubagentMocks.getSubagentType.mockReturnValue(null);
-
-      // Create remora_main_conv_id.txt as a directory → writeFileSync throws
-      fs.mkdirSync(path.join(tmpPath, ".runtime", "remora_main_conv_id.txt"), { recursive: true });
-
-      conversationMocks.mockInstance.streamStepsReverse = vi.fn().mockReturnValue([]);
-      coreMocks.detectMode.mockReturnValue(["strict", null]);
-
-      const res = sessionGuardian.main({ transcriptPath: "/brain/conv_1/transcript.jsonl" });
       expect(res.injectSteps).toEqual([]);
     } finally {
       fs.rmSync(tmpPath, { recursive: true, force: true });
@@ -2479,11 +2405,8 @@ describe("session_guardian_role_name", () => {
         { type: "USER_INPUT", content: "hello" },
       ]);
 
-      // agentapi returns role name
-      bridgeAgentapiMocks.getMetadata.mockReturnValue({
-        parentConversationId: "p1",
-        subagentSpec: { typeName: "SomeAgent" },
-      });
+      // getSubagentTypeByConvId returns role name from PB
+      bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue("SomeAgent");
 
       coreMocks.isTimerCanceled.mockReturnValue(true);
       coreMocks.detectMode.mockReturnValue(["strict", null]);
@@ -2514,8 +2437,8 @@ describe("session_guardian_role_name", () => {
         { type: "USER_INPUT", content: "hello" },
       ]);
 
-      // agentapi fails → falls through to history
-      bridgeAgentapiMocks.getMetadata.mockImplementation(() => { throw new Error("api down"); });
+      // getSubagentTypeByConvId returns null → falls through to history
+      bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue(null);
 
       coreMocks.isTimerCanceled.mockReturnValue(true);
       coreMocks.detectMode.mockReturnValue(["strict", null]);
@@ -2546,7 +2469,7 @@ describe("session_guardian_role_name", () => {
         { type: "USER_INPUT", content: "hello" },
       ]);
 
-      bridgeAgentapiMocks.getMetadata.mockImplementation(() => { throw new Error("api down"); });
+      bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue(null);
 
       coreMocks.isTimerCanceled.mockReturnValue(true);
       coreMocks.detectMode.mockReturnValue(["strict", null]);
@@ -2574,7 +2497,7 @@ describe("session_guardian_role_name", () => {
         { type: "USER_INPUT", content: "hello" },
       ]);
 
-      bridgeAgentapiMocks.getMetadata.mockImplementation(() => { throw new Error("api down"); });
+      bridgeSubagentMocks.getSubagentTypeByConvId.mockReturnValue(null);
 
       coreMocks.detectMode.mockReturnValue(["strict", null]);
       coreMocks.getHookState.mockReturnValue(null);

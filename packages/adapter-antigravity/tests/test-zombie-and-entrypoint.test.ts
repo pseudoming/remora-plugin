@@ -186,7 +186,7 @@ describe("TestZombieDetectorInterception", () => {
     // 1. PreToolUse stage (context has toolCall)
     const resultTool = zombieMain({ toolCall: { name: "run_command", args: { CommandLine: "ls" } } });
     expect(resultTool.decision).toBe("deny");
-    expect(resultTool.reason).toContain("安全拦截");
+    expect(resultTool.reason).toContain("后台僵尸进程 PID=1234");
     expect(resultTool.reason).toContain("1234");
 
     // 2. PreInvocation stage (context has no toolCall, has transcriptPath + invocationNum)
@@ -198,7 +198,7 @@ describe("TestZombieDetectorInterception", () => {
     const steps = resultInvoke.injectSteps!;
     expect(steps.length).toBe(1);
     const msg = steps[0].ephemeralMessage;
-    expect(msg).toContain("警告：检测到未托管衍生后台进程");
+    expect(msg).toContain("未托管衍生后台进程");
     expect(msg).toContain("1234");
   });
 

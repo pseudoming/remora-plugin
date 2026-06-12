@@ -67,13 +67,17 @@ const {
 const TEST_DB_PATH = testDbPath.value;
 const TEST_DATA_DIR = testDataDir.value;
 
-vi.mock("../src/bridge/paths", () => ({
-  getDataDir: () => testDataDir.value,
-  extractConvId: (transcriptPath: string) => {
-    const m = transcriptPath.match(/brain\/([a-f0-9-]{36})/);
-    return m ? m[1] : "";
-  },
-}));
+vi.mock("../src/bridge/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/bridge/paths")>();
+  return {
+    ...actual,
+    getDataDir: () => testDataDir.value,
+    extractConvId: (transcriptPath: string) => {
+      const m = transcriptPath.match(/brain\/([a-f0-9-]{36})/);
+      return m ? m[1] : "";
+    },
+  };
+});
 
 vi.mock("../src/bridge/agentapi", () => ({
   sendMessage: mockSendMessage,

@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import * as os from "node:os";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import { execSync } from "node:child_process";
@@ -7,7 +6,7 @@ import { randomUUID } from "node:crypto";
 
 import * as dao from "@remora/core";
 import { error, warn, info, setTraceId } from "@remora/core";
-import { getDataDir } from "../bridge/paths";
+import { getBrainDir, getDataDir } from "../bridge/paths";
 
 function forceColdStart(): void {
   let mainConvId: string | undefined = undefined;
@@ -117,7 +116,7 @@ export function main(): void {
 
         info("Checking for isolated subagent sandboxes to merge...");
         try {
-          const brainDir = path.join(os.homedir(), ".gemini", "antigravity", "brain");
+          const brainDir = getBrainDir();
           const worktrees: string[] = [];
 
           if (fs.existsSync(brainDir)) {
