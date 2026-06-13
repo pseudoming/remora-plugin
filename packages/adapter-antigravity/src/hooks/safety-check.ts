@@ -67,9 +67,17 @@ function loadBuiltinAgentPerms(name: string): Record<string, boolean> | null {
 // 设计原理二：View File 累加器与主干上下文防腐 (Anti-Context-Rot)
 // ==========================================================
 // 1. 回合级定宽累加器：在主干 (Main Context) 中追踪单一用户回合内对源码和日志的累积读取量，防止上下文因零散读取而慢速腐败。
-// 2. 三级硬阻断机制：当累加量突破绝对阈值 (Source>400KB 或 Data>150KB) 时，实施硬熔断阻断。
+// 2. 三级硬阻断机制：当累加量突破绝对阈值 (Source>400KB 或 Data>150KB) 时，实施硬熔断阻断.
 // 3. O(1) 乘算估值策略：采用行数 * 50 字节的快速常数估算，防止磁盘全表扫描导致超时。
 // 4. 进程级资源锁控制读写竞态，确保安全应对大模型高并发的读文件调用。
+
+// ==========================================================
+// 设计原理三：子代理行为规范防御 (Subagent Behavior Guard)
+// ==========================================================
+// 1. 双层提示词密度检查：对子特工 Prompt 长度进行阈值控制，限制纯文本膨胀，鼓励使用 task.md 做上下文归档。
+// 2. 工作区 JIT 动作矩阵匹配：在继承 (inherit) 工作区阻断 actionable 操作（写、构建、测试），要求切换至 branch/share。
+// 3. 数据库事实注入校验：针对数据库及召回角色，强制 Prompt 必须显式注入 REMORA_DB_PATH、project_uuid 以及插件物理根路径，防止沙箱崩溃。
+// 4. 重复派发速率限制：3 分钟内禁止对同一 Role 或哈希 Prompt 执行重复冷启动，引导任务合并。
 
 export function main(context: Record<string, unknown>): Record<string, unknown> {
   try {
@@ -164,19 +172,96 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
     // --------------------------------------------------------
     if (toolName === "invoke_subagent") {
       const subagents = (args["Subagents"] as Array<Record<string, unknown>>) ?? [];
+      const rawHistory = getHookState(convId, currentTurnIdx, "subagent_dispatch_history");
+      let history: Array<{ timestamp: number; role: string; promptHash: string }> = [];
+      if (rawHistory) {
+        try {
+          history = JSON.parse(rawHistory);
+          if (!Array.isArray(history)) {
+            history = [];
+          }
+        } catch (e) {
+          history = [];
+        }
+      }
       for (const sub of subagents) {
         const tName = (sub["TypeName"] as string) ?? "";
         const ws = (sub["Workspace"] as string) ?? "inherit";
         const promptStr = (sub["Prompt"] as string) ?? "";
+        const role = (sub["Role"] as string) ?? "";
 
-        // 增加 1500 字符强限拦截（底线防崩拦截座）
-        const [isOverLimit, deny] = enforcePromptLengthLimit(promptStr);
-        if (isOverLimit) {
+        // 中文翻译：[提示词长度极限拦截] 运行 Phase 68 对超过 1500 字符的提示词进行底线防御拦截。
+        // Rule 1: Two-Tier Prompt Density Check (Threshold 2: 1500 Chars)
+        if (promptStr.length > 1500) {
+          const [isOverLimit, deny] = enforcePromptLengthLimit(promptStr);
+          if (isOverLimit) {
+            return {
+              decision: "deny",
+              reason: makeDenyReason(deny!.prefix, deny!.message, deny!.action_tip),
+            };
+          }
+        }
+
+        // 中文翻译：[子特工提示词密度拦截] 检测到子特工提示词长度超限（500字符）。请将详细背景和上下文写入任务定义文件（例如 'scratch/task_<convId>.md'），并在下发的提示词中引用该文件路径。
+        // Rule 1: Two-Tier Prompt Density Check (Threshold 1: 500 Chars)
+        if (promptStr.length > 500 && !promptStr.includes("task.md") && !promptStr.includes("scratch/")) {
           return {
             decision: "deny",
-            reason: makeDenyReason(deny!.prefix, deny!.message, deny!.action_tip),
+            reason: `⛔ [REMORA SAFETY INTERCEPT] Subagent Prompt density violation. Prompt length is ${promptStr.length} chars (limit: 500 chars). ACTION REQUIRED: Please write details/context into a task definition file (e.g., 'scratch/task_<convId>.md') using 'write_to_file', and reference the file path in your subagent Prompt.`,
           };
         }
+
+        // 中文翻译：[工作区实时矩阵拦截] 在 'inherit' 工作区检测到写操作或测试/构建等行为。代码修改必须将 Workspace 设置为 'branch'，编译与回归测试必须将 Workspace 设置为 'share'。
+        // Rule 2: Workspace JIT Actionable Phrase Matrix Check
+        if (ws === "inherit") {
+          const actionableRegex = /write_to_file|replace_file_content|git commit|git add|git am|npm install|npm run build|vitest run|npm run test|npx vitest|modify packages\/|edit src\//;
+          if (actionableRegex.test(promptStr)) {
+            return {
+              decision: "deny",
+              reason: `⛔ [REMORA SAFETY INTERCEPT] Workspace JIT Matrix mismatch. Actionable operations detected in 'inherit' workspace. ACTION REQUIRED: For code modifications, set Workspace to 'branch'. For building and regression testing, set Workspace to 'share'.`,
+            };
+          }
+        }
+
+        // 中文翻译：[数据库事实注入拦截] 提示词中缺少必要的数据库环境变量。您必须将 (a) 'REMORA_DB_PATH'、(b) 'project_uuid' 和 (c) 当前插件根路径注入到子特工提示词中，以防止运行时初始化崩溃。
+        // Rule 3: Database Facts Injection Verification
+        const roleLower = role.toLowerCase();
+        const triggerRole = ["db", "database", "recall", "sqlite", "compactor"].some(kw => roleLower.includes(kw));
+        const triggerPrompt = ["remora_memory.db", "conversation.db", "remora-recall"].some(kw => promptStr.includes(kw));
+        if (triggerRole || triggerPrompt) {
+          const pluginRoot = findPluginRoot();
+          const hasDbPath = promptStr.includes("REMORA_DB_PATH");
+          const hasProjectUuid = promptStr.includes("project_uuid");
+          const hasPluginRoot = promptStr.includes(pluginRoot);
+          if (!hasDbPath || !hasProjectUuid || !hasPluginRoot) {
+            return {
+              decision: "deny",
+              reason: `⛔ [REMORA SAFETY INTERCEPT] Missing database environment facts in prompt. ACTION REQUIRED: You MUST inject (a) 'REMORA_DB_PATH', (b) 'project_uuid', and (c) findPluginRoot() current path, into the subagent Prompt to prevent runtime initialization crash.`,
+            };
+          }
+        }
+
+        // 中文翻译：[高频重复派发拦截] 检测到 3 分钟内重复派发了相同角色或相同提示词哈希的子特工。请合并这些任务或在提示词中使用自包含的校验指令以避免冷启动延迟。
+        // Rule 4: Duplicate Subagent Spawn Rate Limiter
+        const promptHash = promptStr.slice(0, 100);
+        const now = Date.now();
+        const duplicate = history.find((entry: any) => {
+          const isSameRole = role && entry.role === role;
+          const isSameHash = entry.promptHash === promptHash;
+          const isWithinWindow = (now - entry.timestamp) <= 180000;
+          return (isSameRole || isSameHash) && isWithinWindow;
+        });
+        if (duplicate) {
+          return {
+            decision: "deny",
+            reason: `⛔ [REMORA SAFETY INTERCEPT] High-frequency duplicate dispatch. Spawning '${role}' within 3 minutes for identical verification/extraction. ACTION REQUIRED: Please merge these tasks into a single subagent invocation (or use a self-contained verifier instruction in the developer prompt) to avoid cold startup latency.`,
+          };
+        }
+        history.push({
+          timestamp: now,
+          role,
+          promptHash,
+        });
 
         const [isViolation, deny2] = enforceSandboxWorkspace(
           tName,
@@ -191,6 +276,7 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
           };
         }
       }
+      setHookState(convId, currentTurnIdx, "subagent_dispatch_history", JSON.stringify(history));
       // 检查是否已注入过 JIT 指导
       const jitInjected = getHookState(convId, currentTurnIdx, "subagent_jit");
       if (!jitInjected) {

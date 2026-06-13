@@ -689,3 +689,233 @@ describe("GitCommitEscapeAndInheritWriteDeny", () => {
       delete process.env.REMORA_WORKSPACE;
     });
 });
+
+describe("BehaviorRulesGuard", () => {
+  it("Subagent prompt length limit enforcement with 500/1500 limit", () => {
+    mocks.getSubagentType.mockReturnValue(null);
+
+    // 1. A prompt of 600 chars without task.md gets denied
+    const prompt600 = "x".repeat(600);
+    const ctx1 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Prompt: prompt600,
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res1 = main(ctx1);
+    expect(res1["decision"]).toBe("deny");
+    expect(res1["reason"]).toContain("Subagent Prompt density violation");
+
+    // 2. A prompt of 1600 chars gets denied
+    const prompt1600 = "x".repeat(1600);
+    coreMocks.enforcePromptLengthLimit.mockReturnValue([
+      true,
+      { prefix: "PAYLOAD ENFORCEMENT", message: "prompt too long", action_tip: "shorten" },
+    ]);
+    const ctx2 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Prompt: prompt1600,
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res2 = main(ctx2);
+    expect(res2["decision"]).toBe("deny");
+    expect(res2["reason"]).toContain("PAYLOAD ENFORCEMENT");
+
+    // 3. A compliant prompt (e.g. 600 chars but containing task.md) gets allowed
+    const compliantPrompt = "x".repeat(500) + " task.md";
+    const ctx3 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Prompt: compliantPrompt,
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res3 = main(ctx3);
+    expect(res3["decision"]).toBe("allow");
+  });
+
+  it("Workspace JIT matrix with actionable phrases", () => {
+    mocks.getSubagentType.mockReturnValue(null);
+
+    // 1. Workspace: "inherit" with prompt containing "npm run build" gets denied
+    const ctx1 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Prompt: "Please run npm run build to compile the package",
+          Workspace: "inherit",
+        },
+      ],
+    });
+    const res1 = main(ctx1);
+    expect(res1["decision"]).toBe("deny");
+    expect(res1["reason"]).toContain("Workspace JIT Matrix mismatch");
+
+    // 2. Prompt containing "review vitest logs" gets allowed
+    const ctx2 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Prompt: "review vitest logs",
+          Workspace: "inherit",
+        },
+      ],
+    });
+    const res2 = main(ctx2);
+    expect(res2["decision"]).toBe("allow");
+
+    // 3. Prompt containing "analyze build logs" gets allowed
+    const ctx3 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Prompt: "analyze build logs",
+          Workspace: "inherit",
+        },
+      ],
+    });
+    const res3 = main(ctx3);
+    expect(res3["decision"]).toBe("allow");
+  });
+
+  it("Database facts roles validator", () => {
+    mocks.findPluginRoot.mockReturnValue("/tmp/plugin-root");
+    mocks.getSubagentType.mockReturnValue(null);
+
+    // 1. Role: "DB extractor" without facts gets denied
+    const ctx1 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Role: "DB extractor",
+          Prompt: "fetch something",
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res1 = main(ctx1);
+    expect(res1["decision"]).toBe("deny");
+    expect(res1["reason"]).toContain("Missing database environment facts");
+
+    // 2. Role: "git auditor" without facts gets allowed
+    const ctx2 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Role: "git auditor",
+          Prompt: "check git logs",
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res2 = main(ctx2);
+    expect(res2["decision"]).toBe("allow");
+
+    // 3. Role: "DB extractor" with facts gets allowed
+    const ctx3 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Role: "DB extractor",
+          Prompt: "REMORA_DB_PATH project_uuid /tmp/plugin-root",
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res3 = main(ctx3);
+    expect(res3["decision"]).toBe("allow");
+  });
+
+  it("Duplicate spawn rate limiter", () => {
+    mocks.getSubagentType.mockReturnValue(null);
+
+    // Local mock for hook state history storage
+    let localHistory = JSON.stringify([]);
+    coreMocks.getHookState.mockImplementation((convId: string, currentTurnIdx: number, key: string) => {
+      if (key === "subagent_dispatch_history") {
+        return localHistory;
+      }
+      return null;
+    });
+    coreMocks.setHookState.mockImplementation((convId: string, currentTurnIdx: number, key: string, val: string) => {
+      if (key === "subagent_dispatch_history") {
+        localHistory = val;
+      }
+    });
+
+    const dateSpy = vi.spyOn(Date, "now");
+
+    // 1. First dispatch at t = 1000s
+    dateSpy.mockReturnValue(1000000);
+    const ctx1 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Role: "Extractor",
+          Prompt: "Some prompt here",
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res1 = main(ctx1);
+    expect(res1["decision"]).toBe("allow");
+
+    // 2. Second dispatch (duplicate role) within 180s (t = 1000 + 50s = 1050s)
+    dateSpy.mockReturnValue(1050000);
+    const ctx2 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Role: "Extractor",
+          Prompt: "Different prompt",
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res2 = main(ctx2);
+    expect(res2["decision"]).toBe("deny");
+    expect(res2["reason"]).toContain("High-frequency duplicate dispatch");
+
+    // 3. Third dispatch (duplicate prompt hash) within 180s (t = 1000 + 100s = 1100s)
+    dateSpy.mockReturnValue(1100000);
+    const ctx3 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Role: "DifferentRole",
+          Prompt: "Some prompt here",
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res3 = main(ctx3);
+    expect(res3["decision"]).toBe("deny");
+    expect(res3["reason"]).toContain("High-frequency duplicate dispatch");
+
+    // 4. Fourth dispatch spaced out by > 180s (t = 1000 + 190s = 1190s)
+    dateSpy.mockReturnValue(1190000);
+    const ctx4 = makeCtx("invoke_subagent", {
+      Subagents: [
+        {
+          TypeName: "Remora_Deep_Diver",
+          Role: "Extractor",
+          Prompt: "Some other prompt",
+          Workspace: "branch",
+        },
+      ],
+    });
+    const res4 = main(ctx4);
+    expect(res4["decision"]).toBe("allow");
+
+    dateSpy.mockRestore();
+  });
+});
