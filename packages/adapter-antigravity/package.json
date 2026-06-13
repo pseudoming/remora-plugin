@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "main": "./dist/index.js",
   "bin": {
-    "remora-install": "./bin/install.js"
+    "remora-install": "./bin/install.js",
+    "remora-gate": "./bin/remora-gate.js"
   },
   "files": [
     "dist/",

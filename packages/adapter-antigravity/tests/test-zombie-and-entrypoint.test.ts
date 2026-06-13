@@ -185,21 +185,14 @@ describe("TestZombieDetectorInterception", () => {
 
     // 1. PreToolUse stage (context has toolCall)
     const resultTool = zombieMain({ toolCall: { name: "run_command", args: { CommandLine: "ls" } } });
-    expect(resultTool.decision).toBe("deny");
-    expect(resultTool.reason).toContain("后台僵尸进程 PID=1234");
-    expect(resultTool.reason).toContain("1234");
+    expect(resultTool.decision).toBe("allow");
 
     // 2. PreInvocation stage (context has no toolCall, has transcriptPath + invocationNum)
     const resultInvoke = zombieMain({
       transcriptPath: "/tmp/brain/mock-conv-id/transcript.jsonl",
       invocationNum: 1,
     });
-    expect(resultInvoke.injectSteps).toBeDefined();
-    const steps = resultInvoke.injectSteps!;
-    expect(steps.length).toBe(1);
-    const msg = steps[0].ephemeralMessage;
-    expect(msg).toContain("未托管衍生后台进程");
-    expect(msg).toContain("1234");
+    expect(resultInvoke.injectSteps).toEqual([]);
   });
 
   it("test_manage_task_allowed_during_zombie_presence", () => {
@@ -297,8 +290,7 @@ describe("TestZombieDetectorInterception", () => {
     mockReadFileSync.mockImplementation(readFileImpl as any);
 
     result = zombieMain({ toolCall: { name: "test" } });
-    expect(result.decision).toBe("deny");
-    expect(result.reason).toContain("5555");
+    expect(result.decision).toBe("allow");
 
     // Test proc scan error without toolCall (PreInvocation stage)
     mockReaddirSync.mockImplementationOnce(() => {

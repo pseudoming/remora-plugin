@@ -2,9 +2,22 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
-import { warn, error, HOOKS_PROFILE_LOG } from "@remora/core";
-import { INFRASTRUCTURE_KEYWORDS, isInfrastructureProcess, isProcessExpired } from "@remora/core";
+import {
+  warn,
+  error,
+  HOOKS_PROFILE_LOG,
+  INFRASTRUCTURE_KEYWORDS,
+  isInfrastructureProcess,
+  isProcessExpired,
+  findAllUuids,
+  getProjectUuidByConv,
+  watermarkExists,
+  parseSqliteTimestamp
+} from "@remora/core";
 import { getSysUptime, cleanWhitelist } from "../sandbox/zombie-linux";
+import { getParentConvId } from "../bridge/subagent";
+import { ConversationDataAccessLayer } from "../bridge/conversation";
+import { runAudit } from "../sandbox/check-subagents-liveness";
 
 export function logDuration(elapsed: number, exitCode: number = 0): void {
     try {
@@ -27,6 +40,65 @@ export function main(context?: any): { decision?: string; reason?: string; injec
     }
 }
 
+function getActiveSubagents(convId: string): Set<string> {
+    const activeSubagents = new Set<string>();
+    if (!convId) return activeSubagents;
+
+    let parentConvId = convId;
+    try {
+        const parentId = getParentConvId(convId);
+        if (parentId) {
+            parentConvId = parentId;
+        }
+    } catch (e) {
+        // pass
+    }
+
+    try {
+        const cdal = new ConversationDataAccessLayer(parentConvId);
+        const allSteps = Array.from(cdal.streamStepsForward());
+        const subagentIds = new Set<string>();
+        for (const step of allSteps) {
+            for (const uuid of findAllUuids(step, parentConvId)) {
+                subagentIds.add(uuid);
+            }
+        }
+
+        let projectUuid: string | null = null;
+        try {
+            projectUuid = getProjectUuidByConv(parentConvId);
+        } catch (e) {
+            // pass
+        }
+
+        for (const subId of subagentIds) {
+            if (projectUuid) {
+                if (!watermarkExists(projectUuid, subId)) {
+                    continue;
+                }
+            }
+
+            let isAlive = false;
+            try {
+                const res = runAudit(subId, parentConvId);
+                if (res && res["liveness"] === "alive") {
+                    isAlive = true;
+                }
+            } catch (e) {
+                isAlive = true;
+            }
+
+            if (isAlive) {
+                activeSubagents.add(subId);
+            }
+        }
+    } catch (e) {
+        // pass
+    }
+
+    return activeSubagents;
+}
+
 function _main(context?: any): { decision?: string; reason?: string; injectSteps?: any[] } {
     const t0 = performance.now();
     const myUid = process.getuid ? process.getuid() : -1;
@@ -36,7 +108,6 @@ function _main(context?: any): { decision?: string; reason?: string; injectSteps
 
     const whitelistPath = path.join(os.homedir(), ".remora", "zombie_whitelist");
     const whitelistedPids = cleanWhitelist(whitelistPath);
-
 
     const isToolUse = !!(context && typeof context === 'object' && context.toolCall != null);
 
@@ -51,6 +122,11 @@ function _main(context?: any): { decision?: string; reason?: string; injectSteps
             return { injectSteps: [] };
         }
     }
+
+    const transcriptPath = (context && typeof context === 'object') ? (context.transcriptPath as string) : "";
+    const match = transcriptPath ? transcriptPath.match(/\/brain\/([^/]+)\//) : null;
+    const convId = match ? match[1] : "";
+    const activeSubagents = getActiveSubagents(convId);
 
     for (const pid of pids) {
         if (!/^\d+$/.test(pid) || pid === myPid) {
@@ -78,60 +154,60 @@ function _main(context?: any): { decision?: string; reason?: string; injectSteps
                 continue;
             }
 
-            // It's an Antigravity task. Check uptime.
+            // It's an Antigravity task. Check cmdline first to determine dual threshold.
+            const cmdlineBuf = fs.readFileSync(path.join(pidDir, 'cmdline'));
+            const cmdline = cmdlineBuf.toString('utf-8')
+                .split('\0')
+                .filter(c => c.length > 0)
+                .join(' ')
+                .trim();
+
+            const isInfra = isInfrastructureProcess(cmdline);
+            if (isInfra) {
+                continue;
+            }
+
+            // Check if active subagent process
+            let isSubagentProc = false;
+            try {
+                const cwdLink = path.join(pidDir, 'cwd');
+                const cwd = fs.readlinkSync(cwdLink);
+                const envStr = envBuf.toString('utf-8');
+
+                for (const subId of activeSubagents) {
+                    if (cwd.includes(subId) || envStr.includes(subId)) {
+                        isSubagentProc = true;
+                        break;
+                    }
+                }
+            } catch (e) {
+                // pass
+            }
+
+            if (isSubagentProc) {
+                continue;
+            }
+
             const statData = fs.readFileSync(path.join(pidDir, 'stat'), 'utf-8').split(/\s+/);
-            // Skip if process is in D state (Uninterruptible sleep) to avoid hanging
             if (statData.length > 2 && statData[2] === 'D') {
                 continue;
             }
-            // Field 22 is starttime (1-indexed in docs, 21 in 0-indexed list)
             const starttime = parseInt(statData[21], 10);
-
             const elapsedSeconds = sysUptime - (starttime / clkTck);
 
-            if (isProcessExpired(elapsedSeconds)) {
+            // Set dual thresholds: 60s for short commands, 180s for integration tests
+            const isIntegrationTest = /test|vitest|jest|mocha|pytest|integration/i.test(cmdline);
+            const threshold = isIntegrationTest ? 180 : 60;
+
+            if (isProcessExpired(elapsedSeconds, threshold)) {
                 if (whitelistedPids.has(pid)) {
                     continue;
                 }
 
-                const cmdlineBuf = fs.readFileSync(path.join(pidDir, 'cmdline'));
-                const cmdline = cmdlineBuf.toString('utf-8')
-                    .split('\0')
-                    .filter(c => c.length > 0)
-                    .join(' ')
-                    .trim();
-
-                // Static infrastructure whitelist
-                const isInfra = isInfrastructureProcess(cmdline);
-
-                if (isInfra) {
-                    continue;
-                }
-
-                // ZOMBIE DETECTED!
-                warn(`[!] UNMANAGED BACKGROUND PROCESS DETECTED.\nSUSPECT: ${cmdline} (UPTIME: ${Math.floor(elapsedSeconds)}s, PID: ${pid})`);
-
-                logDuration((performance.now() - t0) * 1000.0, 0);
-
-
-                if (isToolUse) {
-                    const toolName = context?.toolCall?.name || '';
-                    if (toolName === 'manage_task') {
-                        continue;
-                    }
-                    return {
-                        decision: "deny",
-                        reason: `⚠️ 后台僵尸进程 PID=${pid} (${Math.floor(elapsedSeconds)}s)。请 manage_task(list) 确认，确认已死则忽略，确认滞留则等 60s 后 kill。`
-                    };
-                } else {
-                    return {
-                        injectSteps: [
-                            {
-                                ephemeralMessage: `⚠️ 检测到未托管衍生后台进程 (PID: ${pid}, UPTIME: ${Math.floor(elapsedSeconds)}s, CMD: ${cmdline.slice(0, 80)})。\n请执行以下自愈流程：\n1. 调用 manage_task(list) 确认进程当前是否仍在运行。\n2. 若进程已自然退出 → 无需操作。\n3. 若进程仍在运行但确已无必要保留 → 等待 60 秒后调用 manage_task(kill, TaskId=${pid}) 物理强杀。\n4. 若进程为正常任务 → 忽略，系统稍后将重新评估。`
-                            }
-                        ]
-                    };
-                }
+                // Stage 1: DO NOT kill. Just print warning log when expired
+                const msg = `⚠️ [ZOMBIE WARNING] Hung process detected (PID: ${pid}, Cmd: ${cmdline}) surviving ${Math.floor(elapsedSeconds)}s. Auto-kill deferred for audit verification.`;
+                warn(msg);
+                console.warn(msg);
             }
         } catch (e) {
             continue;
@@ -151,4 +227,3 @@ import { hookEntrypoint } from "../bridge/context";
 if (typeof require !== "undefined" && require.main === module) {
   hookEntrypoint()(main)();
 }
-
