@@ -200,6 +200,63 @@ function inspectTokens(tokens: string[], depth: number = 0): InspectionResult {
           }
         }
       }
+    } else if (exe === "npx") {
+      const testCmds = ["vitest", "jest", "pytest", "mocha"];
+      const buildCmds = ["tsup", "tsc", "esbuild", "webpack"];
+      if (args.some(arg => testCmds.includes(arg) || testCmds.some(cmd => arg.startsWith(cmd + "@")))) {
+        return ["deny", "test"];
+      }
+      if (args.some(arg => buildCmds.includes(arg) || buildCmds.some(cmd => arg.startsWith(cmd + "@")))) {
+        return ["deny", "build"];
+      }
+      if (args.includes("run")) {
+        if (args.includes("build")) {
+          return ["deny", "build"];
+        }
+        if (args.includes("test")) {
+          return ["deny", "test"];
+        }
+      }
+    } else if (exe === "pnpm") {
+      const testCmds = ["vitest", "jest", "pytest", "mocha"];
+      const buildCmds = ["tsup", "tsc", "esbuild", "webpack"];
+      if (args.some(arg => testCmds.includes(arg) || testCmds.some(cmd => arg.startsWith(cmd + "@")))) {
+        return ["deny", "test"];
+      }
+      if (args.some(arg => buildCmds.includes(arg) || buildCmds.some(cmd => arg.startsWith(cmd + "@")))) {
+        return ["deny", "build"];
+      }
+      if (args.includes("run")) {
+        if (args.includes("build")) {
+          return ["deny", "build"];
+        }
+        if (args.includes("test")) {
+          return ["deny", "test"];
+        }
+      }
+    } else if (exe === "bun") {
+      const testCmds = ["vitest", "jest", "pytest", "mocha"];
+      const buildCmds = ["tsup", "tsc", "esbuild", "webpack"];
+      if (args.some(arg => testCmds.includes(arg) || testCmds.some(cmd => arg.startsWith(cmd + "@")))) {
+        return ["deny", "test"];
+      }
+      if (args.some(arg => buildCmds.includes(arg) || buildCmds.some(cmd => arg.startsWith(cmd + "@")))) {
+        return ["deny", "build"];
+      }
+      if (args.includes("run")) {
+        if (args.includes("build")) {
+          return ["deny", "build"];
+        }
+        if (args.includes("test")) {
+          return ["deny", "test"];
+        }
+      }
+      if (args.includes("test")) {
+        return ["deny", "test"];
+      }
+      if (args.includes("run") && args.includes("build")) {
+        return ["deny", "build"];
+      }
     }
 
     // 标准规则审计

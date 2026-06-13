@@ -340,3 +340,71 @@ describe("DelimiterEdgeCases", () => {
         expect(inspectCommand("echo 1 ;")).toEqual(["allow", ""]);
     });
 });
+
+describe("NpxCheck", () => {
+    it("npx vitest denied", () => {
+        expect(inspectCommand("npx vitest")).toEqual(["deny", "test"]);
+    });
+
+    it("npx jest@latest denied", () => {
+        expect(inspectCommand("npx jest@latest")).toEqual(["deny", "test"]);
+    });
+
+    it("npx tsup denied", () => {
+        expect(inspectCommand("npx tsup")).toEqual(["deny", "build"]);
+    });
+
+    it("npx run test denied", () => {
+        expect(inspectCommand("npx run test")).toEqual(["deny", "test"]);
+    });
+
+    it("npx run build denied", () => {
+        expect(inspectCommand("npx run build")).toEqual(["deny", "build"]);
+    });
+
+    it("npx tsc -w denied", () => {
+        expect(inspectCommand("npx tsc -w")).toEqual(["deny", "build"]);
+    });
+
+    it("npx prettier allowed", () => {
+        expect(inspectCommand("npx prettier --write .")).toEqual(["allow", ""]);
+    });
+});
+
+describe("PnpmAndBunCheck", () => {
+    it("pnpm vitest denied", () => {
+        expect(inspectCommand("pnpm vitest")).toEqual(["deny", "test"]);
+    });
+
+    it("pnpm run test denied", () => {
+        expect(inspectCommand("pnpm run test")).toEqual(["deny", "test"]);
+    });
+
+    it("pnpm tsup denied", () => {
+        expect(inspectCommand("pnpm tsup")).toEqual(["deny", "build"]);
+    });
+
+    it("pnpm run build denied", () => {
+        expect(inspectCommand("pnpm run build")).toEqual(["deny", "build"]);
+    });
+
+    it("pnpm prettier allowed", () => {
+        expect(inspectCommand("pnpm prettier --write .")).toEqual(["allow", ""]);
+    });
+
+    it("bun test denied", () => {
+        expect(inspectCommand("bun test")).toEqual(["deny", "test"]);
+    });
+
+    it("bun run build denied", () => {
+        expect(inspectCommand("bun run build")).toEqual(["deny", "build"]);
+    });
+
+    it("bun vitest denied", () => {
+        expect(inspectCommand("bun vitest")).toEqual(["deny", "test"]);
+    });
+
+    it("bun prettier allowed", () => {
+        expect(inspectCommand("bun prettier --write .")).toEqual(["allow", ""]);
+    });
+});

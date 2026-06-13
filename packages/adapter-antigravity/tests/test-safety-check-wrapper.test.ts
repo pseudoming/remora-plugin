@@ -70,6 +70,12 @@ const coreMocks = vi.hoisted(() => ({
   inspectCommand: vi.fn().mockReturnValue(["allow", ""]),
   getHookState: vi.fn().mockReturnValue(null),
   setHookState: vi.fn(),
+  info: vi.fn(),
+  RuleEngine: vi.fn().mockImplementation(() => {
+    return {
+      evaluate: vi.fn().mockReturnValue({ status: "ALLOW" }),
+    };
+  }),
 }));
 
 vi.mock("@remora/core", () => coreMocks);

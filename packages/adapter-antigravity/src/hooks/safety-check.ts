@@ -17,6 +17,7 @@ import { accumulate } from "../bridge/stats";
 import { getSubagentType } from "../bridge/subagent";
 import { findPluginRoot } from "../bridge/paths";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
+import { globalRuleRunner } from "./rule-runner";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -71,6 +72,9 @@ function loadBuiltinAgentPerms(name: string): Record<string, boolean> | null {
 // 4. 进程级资源锁控制读写竞态，确保安全应对大模型高并发的读文件调用。
 
 export function main(context: Record<string, unknown>): Record<string, unknown> {
+  try {
+    globalRuleRunner.runDarkRead("PreToolUse", context);
+  } catch (e) {}
   try {
     return _main(context);
   } catch {

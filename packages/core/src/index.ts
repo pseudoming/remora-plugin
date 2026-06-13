@@ -64,6 +64,9 @@ export { trimStaleHookStates } from "./state-trim";
 
 // Command inspector
 export { inspectCommand, decodeBase64Token } from "./rules/inspector";
+export * from "./rules/types";
+export * from "./rules/facts";
+export * from "./rules/engine";
 
 // Storage (via DAO)
 export * from "./dao";
