@@ -408,3 +408,14 @@ describe("PnpmAndBunCheck", () => {
         expect(inspectCommand("bun prettier --write .")).toEqual(["allow", ""]);
     });
 });
+
+describe("PbFileCheck", () => {
+    it("denies command with .pb in tokens", () => {
+        expect(inspectCommand("cat data.pb")).toEqual(["deny", "pb_read"]);
+        expect(inspectCommand("python unpack.py --file=my_model.pb")).toEqual(["deny", "pb_read"]);
+    });
+
+    it("denies command with .pb in fallback regex", () => {
+        expect(inspectCommand('cat "my_data.pb')).toEqual(["deny", "pb_read"]);
+    });
+});

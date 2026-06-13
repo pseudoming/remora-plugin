@@ -177,3 +177,7 @@ export function main(): void {
     process.exit(1);
   }
 }
+
+if (typeof require !== "undefined" && require.main === module) {
+  main();
+}

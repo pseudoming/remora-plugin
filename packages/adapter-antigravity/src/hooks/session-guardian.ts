@@ -35,6 +35,11 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
     return { injectSteps: [{ ephemeralMessage: "🚨 **[REMORA FATAL ERROR]** Plugin uninitialized! Please run `npm run build && node packages/adapter-antigravity/bin/install.js --force` in the plugin root." }] };
   }
 
+  const isTest = !!(process.env.VITEST || process.env.NODE_ENV === "test");
+  if (!isTest && !fs.existsSync(path.join(findPluginRoot(), "packages", "core", "dist"))) {
+    return { injectSteps: [{ ephemeralMessage: "🚨 **[MONOREPO_BUILD_ERROR]** Core package not built. Please run npm run build in packages/core." }] };
+  }
+
   // 物理缓存 LS API 凭据以解决子代理在 Hook 沙盒中缺乏鉴权环境变量的问题
   const lsAddr = process.env["ANTIGRAVITY_LS_ADDRESS"];
   const csrfToken = process.env["ANTIGRAVITY_CSRF_TOKEN"];

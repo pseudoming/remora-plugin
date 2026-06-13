@@ -96,6 +96,12 @@ function inspectTokens(tokens: string[], depth: number = 0): InspectionResult {
     return ["deny", "syntax_error"];
   }
 
+  for (const token of tokens) {
+    if (token.includes(".pb")) {
+      return ["deny", "pb_read"];
+    }
+  }
+
   const subCommands: string[][] = [];
   let currentSub: string[] = [];
   const delimiters = new Set([";", "&&", "||", "|"]);
@@ -339,6 +345,9 @@ export function inspectCommand(
     const fallbackBuild =
       /\b(npm\s+run\s+build|gradlew\s+build|mvn\s+package|mvn\s+install|tsc|tsup)\b/;
 
+    if (cmdStr.includes(".pb")) {
+      return ["deny", "pb_read"];
+    }
     if (fallbackTest.test(cmdStr)) {
       return ["deny", "test"];
     }

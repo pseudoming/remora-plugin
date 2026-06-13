@@ -78,4 +78,31 @@ describe("Architecture", () => {
       expect(offenders).toEqual([]);
     }
   });
+
+  it("cli files must contain require.main === module or import.meta.url", () => {
+    const cliDir = path.join(PACKAGES_ROOT, "adapter-antigravity", "src", "cli");
+    if (!fs.existsSync(cliDir)) {
+      expect.fail(`CLI directory not found at: ${cliDir}`);
+    }
+    const files = fs.readdirSync(cliDir).filter((file) => {
+      return (file.startsWith("remora-") || file.startsWith("read-")) && file.endsWith(".ts");
+    });
+    expect(files.length).toBeGreaterThan(0);
+
+    const missingGuards: string[] = [];
+    for (const file of files) {
+      const fullPath = path.join(cliDir, file);
+      const content = fs.readFileSync(fullPath, "utf-8");
+      if (!content.includes("require.main === module") && !content.includes("import.meta.url")) {
+        missingGuards.push(file);
+      }
+    }
+
+    if (missingGuards.length > 0) {
+      expect.fail(
+        "❌ CLI ENTRY GUARD VIOLATION: The following CLI files lack require.main === module or import.meta.url:\n" +
+        missingGuards.map((f) => `  • ${f}`).join("\n")
+      );
+    }
+  });
 });

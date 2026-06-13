@@ -557,6 +557,17 @@ describe("SafetyCheckWrapper", () => {
       const res = main(ctx);
       expect(res["decision"]).toBe("allow");
     });
+
+    it("denies pb_read category with PB_READ_DENY error", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      coreMocks.inspectCommand.mockReturnValue(["deny", "pb_read"]);
+
+      const ctx = makeCtx("run_command", { CommandLine: "cat file.pb" });
+      const res = main(ctx);
+      expect(res["decision"]).toBe("deny");
+      expect(res["reason"]).toContain("PB_READ_DENY");
+      expect(res["reason"]).toContain("Direct reading or unpacking of .pb binary files is strictly prohibited.");
+    });
   });
 
   // ----------------------------------------------------------

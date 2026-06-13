@@ -41,3 +41,4 @@ packages/*/src/**/*.d.ts
 
 # Internal agent rules — public repo must not see these
 AGENTS.md
+CLAUDE.md

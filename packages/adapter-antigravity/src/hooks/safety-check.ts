@@ -418,7 +418,18 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
           }
 
 
-          if (category === "test" || category === "build") {
+          if (category === "pb_read") {
+            // 中文翻译：[PB 读取拦截] 严禁直接读取或解包 .pb 二进制文件。请使用 remora-recall CLI 或 CDAL 接口提取历史摘要。
+            // 英文对照：Direct reading or unpacking of .pb binary files is strictly prohibited. / Please use remora-recall CLI or CDAL interface to extract historical summaries.
+            return {
+              decision: "deny",
+              reason: makeDenyReason(
+                "PB_READ_DENY",
+                "Direct reading or unpacking of .pb binary files is strictly prohibited.",
+                "Please use remora-recall CLI or CDAL interface to extract historical summaries."
+              ),
+            };
+          } else if (category === "test" || category === "build") {
             // 中文翻译：
             // ⛔ [安全限制 - 阻断委派] 命令行直接运行已被拦截！
             // ============================================================

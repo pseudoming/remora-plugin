@@ -87,3 +87,7 @@ export function main(): void {
   setTraceId(`c_${randomUUID().slice(0, 8)}`);
   initEnvironment();
 }
+
+if (typeof require !== "undefined" && require.main === module) {
+  main();
+}

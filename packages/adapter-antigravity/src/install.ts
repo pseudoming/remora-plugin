@@ -200,6 +200,25 @@ function mainReal(
   }
 
 
+  const isTest = !!(process.env.VITEST || process.env.NODE_ENV === "test");
+  if (!isTest) {
+    const coreDistPath = path.join(pluginRoot, "packages", "core", "dist");
+    if (!fs.existsSync(coreDistPath)) {
+      log(`  packages/core/dist not found. Building workspace packages/core...`);
+      try {
+        const { execSync } = require("node:child_process");
+        execSync("npm run build --workspace=packages/core", {
+          cwd: pluginRoot,
+          stdio: "inherit",
+        });
+        log(`  packages/core built successfully.`);
+      } catch (err) {
+        log(`  [ERROR] Failed to build packages/core: ${err}`);
+        throw err;
+      }
+    }
+  }
+
   doWrite(flagPath, "installed");
 
   log("\nInstallation complete.");

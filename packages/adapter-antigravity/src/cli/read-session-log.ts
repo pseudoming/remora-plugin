@@ -45,3 +45,7 @@ export function main(): void {
   const r = process.argv.length > 3 ? parseInt(process.argv[3], 10) : 10;
   readLastUserAiRounds(arg, r);
 }
+
+if (typeof require !== "undefined" && require.main === module) {
+  main();
+}
