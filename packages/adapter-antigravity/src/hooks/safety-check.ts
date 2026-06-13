@@ -369,6 +369,11 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
     if (toolName === "run_command") {
       const cmd = (args["CommandLine"] as string) ?? "";
 
+      // 优先放行 git commit 动作，避免其提交信息（如 Changelog 中包含大日志文件名如 remora-recall.ts）被误拦截
+      if (cmd.trim().startsWith("git commit")) {
+        return { decision: "allow" };
+      }
+
       // 1. 高吞吐量特征拦截 (Anti-Context-Rot)
       const rotPattern =
         /\b(?:cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.(?:py|ts)\b/i;
