@@ -26,6 +26,26 @@ describe("enforcePromptLengthLimit", () => {
     expect(reason!.prefix).toBe("PAYLOAD ENFORCEMENT");
     expect(reason!.message).toContain("2000");
   });
+
+  it("should pass when raw prompt exceeds maxChars but stripped prompt is within limit", () => {
+    const prompt = "x".repeat(1000) + "```" + "y".repeat(1000);
+    const result = enforcePromptLengthLimit(prompt, 1500);
+    expect(result).toEqual([false, null]);
+  });
+
+  it("should deny when stripped prompt exceeds maxChars", () => {
+    const prompt = "x".repeat(1600) + "```code block```";
+    const [isOver, reason] = enforcePromptLengthLimit(prompt, 1500);
+    expect(isOver).toBe(true);
+    expect(reason!.prefix).toBe("PAYLOAD ENFORCEMENT");
+    expect(reason!.message).toBe("Subagent Prompt stripped length (1600 chars) exceeds 1500 limit. (Raw length: 1616 chars)");
+  });
+
+  it("should filter unclosed code block extending to EOF", () => {
+    const prompt = "xyz```unclosed block";
+    const result = enforcePromptLengthLimit(prompt, 1500);
+    expect(result).toEqual([false, null]);
+  });
 });
 
 describe("enforceSandboxWorkspace", () => {

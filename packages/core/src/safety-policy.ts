@@ -23,6 +23,10 @@ export interface AccumulatedStats {
   accumulated_data_bytes: number;
 }
 
+export function stripMarkdownCodeBlocks(text: string): string {
+  return text.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/~~~[\s\S]*?(?:~~~|$)/g, "");
+}
+
 /**
  * Returns (isOverLimit, denyReason) tuple.
  * Checks whether the subagent prompt exceeds the maximum character limit.
@@ -31,12 +35,13 @@ export function enforcePromptLengthLimit(
   prompt: string,
   maxChars: number = 1500
 ): [boolean, DenyReason | null] {
-  if (prompt.length > maxChars) {
+  const stripped = stripMarkdownCodeBlocks(prompt);
+  if (stripped.length > maxChars) {
     return [
       true,
       {
         prefix: "PAYLOAD ENFORCEMENT",
-        message: `Subagent Prompt length (${prompt.length} chars) exceeds ${maxChars} limit.`,
+        message: `Subagent Prompt stripped length (${stripped.length} chars) exceeds ${maxChars} limit. (Raw length: ${prompt.length} chars)`,
         action_tip: "Please partition the task and simplify the description.",
       },
     ];
