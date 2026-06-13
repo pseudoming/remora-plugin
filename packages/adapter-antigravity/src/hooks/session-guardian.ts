@@ -23,7 +23,10 @@ import { ConversationDataAccessLayer } from "../bridge/conversation";
 export function main(context: Record<string, unknown>): { injectSteps: Array<Record<string, unknown>> } {
   try {
     return _main(context);
-  } catch {
+  } catch (err) {
+    const error = err as any; if (error && error.message && error.message.includes("[MONOREPO_BUILD_ERROR]")) {
+      throw err;
+    }
     return { injectSteps: [{ ephemeralMessage: "<system-reminder>⚠️ Remora Session Guardian 发生异常。状态同步防线已降级，但不影响正常对话。</system-reminder>" }] };
   }
 }
@@ -35,9 +38,45 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
     return { injectSteps: [{ ephemeralMessage: "🚨 **[REMORA FATAL ERROR]** Plugin uninitialized! Please run `npm run build && node packages/adapter-antigravity/bin/install.js --force` in the plugin root." }] };
   }
 
+  const transcriptPath = context["transcriptPath"] as string;
+  const pluginRoot = findPluginRoot();
+  const sandboxedCoreDist = path.join(pluginRoot, "packages", "core", "dist");
+  const subagentType = getSubagentType(transcriptPath);
+  const isSub = subagentType !== null;
+  const gitPath = path.join(pluginRoot, ".git");
+  const isBranchSandbox = isSub && fs.existsSync(gitPath) && fs.statSync(gitPath).isFile();
+
+  if (isBranchSandbox && !fs.existsSync(sandboxedCoreDist)) {
+    let parentDir = "";
+    try {
+      const gitContent = fs.readFileSync(gitPath, "utf-8").trim();
+      const parts = gitContent.split("/.git/worktrees/");
+      if (parts.length > 1) {
+        parentDir = parts[0].replace("gitdir:", "").trim();
+      }
+    } catch {
+      // pass
+    }
+
+    if (parentDir) {
+      const parentCoreDist = path.join(parentDir, "packages", "core", "dist");
+      if (fs.existsSync(parentCoreDist)) {
+        try {
+          fs.symlinkSync(parentCoreDist, sandboxedCoreDist);
+        } catch {
+          // pass
+        }
+      } else {
+        throw new Error(
+          `[MONOREPO_BUILD_ERROR] Core package not built in parent workspace. Please run: cd ${parentDir} && npm run build`
+        );
+      }
+    }
+  }
+
   const isTest = !!(process.env.VITEST || process.env.NODE_ENV === "test");
-  if (!isTest && !fs.existsSync(path.join(findPluginRoot(), "packages", "core", "dist"))) {
-    return { injectSteps: [{ ephemeralMessage: "🚨 **[MONOREPO_BUILD_ERROR]** Core package not built. Please run npm run build in packages/core." }] };
+  if (!isTest && !fs.existsSync(sandboxedCoreDist)) {
+    return { injectSteps: [{ ephemeralMessage: `🚨 **[MONOREPO_BUILD_ERROR]** Core package not built. Please run: cd ${pluginRoot} && npm run build` }] };
   }
 
   // 物理缓存 LS API 凭据以解决子代理在 Hook 沙盒中缺乏鉴权环境变量的问题
@@ -55,8 +94,6 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
       // pass
     }
   }
-
-  const transcriptPath = context["transcriptPath"] as string;
 
   // 提取当前会话 ID
   const convId = extractConvId(transcriptPath) || "default";

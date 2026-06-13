@@ -85,4 +85,4 @@ function initDb(): void {
   }
 }
 
-export { DATA_DIR, DB_PATH, initDb };
+export { initDb };

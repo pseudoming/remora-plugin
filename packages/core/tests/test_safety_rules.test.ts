@@ -419,3 +419,20 @@ describe("PbFileCheck", () => {
         expect(inspectCommand('cat "my_data.pb')).toEqual(["deny", "pb_read"]);
     });
 });
+describe("GitCommitEscapeCheck", () => {
+    it("allows normal git commit", () => {
+        expect(inspectCommand('git commit -m "feat: login functionality"')).toEqual(["allow", ""]);
+    });
+
+    it("denies git commit with newline escape", () => {
+        expect(inspectCommand('git commit -m "feat: login\\nbreak"')).toEqual(["deny", "git_escape"]);
+    });
+
+    it("denies git commit with real newline", () => {
+        expect(inspectCommand('git commit -m "feat: login\nbreak"')).toEqual(["deny", "git_escape"]);
+    });
+
+    it("denies git commit with consecutive asterisks", () => {
+        expect(inspectCommand('git commit -m "feat: login ** critical"')).toEqual(["deny", "git_escape"]);
+    });
+});

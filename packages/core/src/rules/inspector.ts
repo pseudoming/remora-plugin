@@ -91,7 +91,7 @@ function shellSplit(cmdStr: string): string[] {
  */
 export type InspectionResult = ["deny", string] | ["allow", ""];
 
-function inspectTokens(tokens: string[], depth: number = 0): InspectionResult {
+function inspectTokens(tokens: string[], depth: number = 0, cmdStr: string = ""): InspectionResult {
   if (depth > 10) {
     return ["deny", "syntax_error"];
   }
@@ -152,6 +152,18 @@ function inspectTokens(tokens: string[], depth: number = 0): InspectionResult {
 
     const exe = processedSub[0];
     const args = processedSub.slice(1);
+
+    if (exe === "git" && args.includes("commit") && args.includes("-m")) {
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === "-m" && i + 1 < args.length) {
+          const msg = args[i + 1];
+          if (msg.includes("\n") || msg.includes("\\n") || msg.includes("**") ||
+              (cmdStr && (cmdStr.includes("\\n") || cmdStr.includes("\n") || cmdStr.includes("**")))) {
+            return ["deny", "git_escape"];
+          }
+        }
+      }
+    }
 
     // Base64 审计
     for (const token of processedSub) {
@@ -361,5 +373,5 @@ export function inspectCommand(
     return ["allow", ""];
   }
 
-  return inspectTokens(tokens, depth);
+  return inspectTokens(tokens, depth, cmdStr);
 }

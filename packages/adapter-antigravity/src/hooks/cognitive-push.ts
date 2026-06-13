@@ -104,7 +104,7 @@ function _handlePreInvocation(context: Record<string, unknown>, convId: string, 
 
   if (decisions && decisions.length > 0) {
     debug(`session resumed: ${convId}, injecting ${decisions.length} decisions`);
-    injectSteps.push({ ephemeralMessage: formatDecisionsForSessionResume(decisions as import("@remora/core").Decision[], topicId!) });
+    injectSteps.push({ ephemeralMessage: formatDecisionsForSessionResume(decisions as unknown as import("@remora/core").Decision[], topicId!) });
     for (const d of decisions) {
       bumpInjection(Number(d.id ?? 0));
     }
@@ -185,7 +185,7 @@ function _runLineC(context: Record<string, unknown>, convId: string, currentTurn
     llmOutput = getOrCreateConversation(prompt);
   } catch (_e1) {
     try {
-      const resp = createConversation(prompt, 15, "flash_lite");
+      const resp = createConversation(prompt, 15, "flash_lite") as any;
       llmOutput = resp?.response?.newConversation?.reply ?? JSON.stringify(resp);
     } catch (_e2) {
       markFired(convId, windowKey, String(turnInterval));
@@ -235,8 +235,8 @@ function _runLineC(context: Record<string, unknown>, convId: string, currentTurn
 
     const isRepeat = getHookState(convId, -1, conflictKey) !== null;
     injectStepsResult.push({ ephemeralMessage: formatConflictInjectionMessage(
-      d as import("@remora/core").Decision,
-      c as import("@remora/core").ConflictInfo,
+      d as unknown as import("@remora/core").Decision,
+      c as unknown as import("@remora/core").ConflictInfo,
       isRepeat,
     ) });
     markFired(convId, conflictKey, String(turnInterval));

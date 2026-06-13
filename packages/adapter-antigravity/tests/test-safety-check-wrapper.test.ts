@@ -653,3 +653,39 @@ describe("SafetyCheckWrapper", () => {
     });
   });
 });
+describe("GitCommitEscapeAndInheritWriteDeny", () => {
+    it("git_escape category blocks git commit with escape", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      coreMocks.inspectCommand.mockReturnValue(["deny", "git_escape"]);
+
+      const ctx = makeCtx("run_command", { CommandLine: "git commit -m 'a\\nb'" });
+      const res = main(ctx);
+      expect(res["decision"]).toBe("deny");
+      expect(res["reason"]).toContain("GIT_COMMIT_ESCAPE");
+    });
+
+    it("inherit write block for subagent write_to_file", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Deep_Diver");
+      process.env.REMORA_WORKSPACE = "inherit";
+
+      const ctx = makeCtx("write_to_file", { TargetFile: "test.txt", CodeContent: "hello" });
+      const res = main(ctx);
+      expect(res["decision"]).toBe("deny");
+      expect(res["reason"]).toContain("INHERIT_WRITE_DENY");
+
+      delete process.env.REMORA_WORKSPACE;
+    });
+
+    it("inherit write block for subagent run_command non-allow", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Deep_Diver");
+      process.env.REMORA_WORKSPACE = "inherit";
+      coreMocks.inspectCommand.mockReturnValue(["deny", "build"]);
+
+      const ctx = makeCtx("run_command", { CommandLine: "npm run build" });
+      const res = main(ctx);
+      expect(res["decision"]).toBe("deny");
+      expect(res["reason"]).toContain("INHERIT_WRITE_DENY");
+
+      delete process.env.REMORA_WORKSPACE;
+    });
+});

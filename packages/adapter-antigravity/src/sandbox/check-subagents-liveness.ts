@@ -123,7 +123,7 @@ export function runAudit(convId: string, parentConvId?: string): Record<string, 
   try {
     const conn = getConn();
     try {
-      const rows = getLatestNonUserMessages(conn, convId, 5);
+      const rows = getLatestNonUserMessages(convId, 5, conn);
       if (rows.length > 0) {
         const tsVal = rows[0].timestamp;
         const role = rows[0].role;

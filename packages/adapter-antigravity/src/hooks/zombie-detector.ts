@@ -29,7 +29,7 @@ export function main(context?: any): { decision?: string; reason?: string; injec
 
 function _main(context?: any): { decision?: string; reason?: string; injectSteps?: any[] } {
     const t0 = performance.now();
-    const myUid = process.getuid();
+    const myUid = process.getuid ? process.getuid() : -1;
     const myPid = String(process.pid);
     const sysUptime = getSysUptime();
     const clkTck = 100;  // os.sysconf('SC_CLK_TCK') hardcoded Linux default

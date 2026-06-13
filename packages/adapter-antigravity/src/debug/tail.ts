@@ -86,11 +86,11 @@ export function main(): void {
     strict: false,
   });
 
-  const level = args.values.level ? args.values.level.toUpperCase() : undefined;
-  const grep = args.values.grep || undefined;
-  const linesVal = parseInt(args.values.lines || "20", 10);
-  const asc = args.values.asc || false;
-  const today = args.values.today || false;
+  const level = typeof args.values.level === "string" ? args.values.level.toUpperCase() : undefined;
+  const grep = typeof args.values.grep === "string" ? args.values.grep : undefined;
+  const linesVal = parseInt(typeof args.values.lines === "string" ? args.values.lines : "20", 10);
+  const asc = !!args.values.asc;
+  const today = !!args.values.today;
 
   const logFiles = getLogFiles(today);
   if (logFiles.length === 0) {

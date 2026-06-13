@@ -112,6 +112,39 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
     const isReadonlySub = subagentType === "Remora_ReadOnly_Extractor";
     const isDeepDiverSub = subagentType === "Remora_Deep_Diver";
 
+    // Detect Workspace: "inherit" write block
+    const isWriteTool = ["write_to_file", "replace_file_content", "multi_replace_file_content"].includes(toolName);
+    const isNonAllowRunCommand = toolName === "run_command" && inspectCommand((args["CommandLine"] as string) ?? "")[0] !== "allow";
+    const isWriteOperation = isWriteTool || isNonAllowRunCommand;
+
+    let targetDir = "";
+    if (toolName === "run_command") {
+      targetDir = (args["Cwd"] as string) ?? "";
+    } else if (isWriteTool) {
+      targetDir = (args["TargetFile"] as string) ?? "";
+    }
+
+    const isBrainPath = targetDir.includes("/brain/");
+    const isBranch = targetDir.includes(".system_generated/worktrees") || isBrainPath || process.env.REMORA_WORKSPACE === "branch";
+    const workspaceEnv = process.env.REMORA_WORKSPACE;
+    const isInherit = isSub && (
+      workspaceEnv === "inherit" ||
+      (!workspaceEnv && !isBranch && !process.env.VITEST && process.env.NODE_ENV !== "test")
+    );
+
+    if (isInherit && isWriteOperation) {
+      // 中文翻译：[继承写操作拦截] 阻断子代理在继承主干工作区中执行物理写或测试/构建高危操作。请将子代理委派在隔离沙盒内运行！
+      // 英文对照：⛔ REMORA SAFETY INTERCEPT [INHERIT_WRITE_DENY]: Subagent execution in inherited workspace is restricted from performing physical writes or unsafe commands.
+      return {
+        decision: "deny",
+        reason: makeDenyReason(
+          "INHERIT_WRITE_DENY",
+          "Subagent execution in inherited workspace is restricted from performing physical writes or unsafe commands.",
+          "Please delegate the subagent under Workspace: branch to execute this operation."
+        ),
+      };
+    }
+
     // --------------------------------------------------------
     // Anti-Context-Rot: 统一的返回模板
     // 中文翻译：[防上下文腐败拦截] 禁止在主干上下文中直接对大日志文件（.jsonl/.log）使用 cat/grep 或 view_file，以防止上下文爆炸。请使用子代理进行隔离执行：
@@ -305,10 +338,7 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
 
             const isDataLog = /\.(?:jsonl|log|sqlite|csv)$/.test(targetFile);
             const incBytes = estimateReadBytes(
-              {
-                StartLine: args["StartLine"],
-                EndLine: args["EndLine"],
-              },
+              args as any,
               targetFile
             );
 
@@ -375,6 +405,19 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
 
       // 优先放行 git commit 动作，避免其提交信息（如 Changelog 中包含大日志文件名如 remora-recall.ts）被误拦截
       if (cmd.trim().startsWith("git commit")) {
+        const [decision, category] = inspectCommand(cmd);
+        if (decision === "deny" && category === "git_escape") {
+          // 中文翻译：[Git 转义拦截] 检测到 Git 提交消息中包含换行符或连续星号，已被硬拦截以防止字符转义。
+          // 英文对照：Git commit message containing newline characters or consecutive asterisks is blocked to prevent escape vulnerabilities.
+          return {
+            decision: "deny",
+            reason: makeDenyReason(
+              "GIT_COMMIT_ESCAPE",
+              "Git commit message containing newline characters or consecutive asterisks is blocked to prevent escape vulnerabilities.",
+              "Avoid using newline characters or consecutive asterisks in git commit message."
+            ),
+          };
+        }
         return { decision: "allow" };
       }
 
@@ -427,6 +470,17 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
                 "PB_READ_DENY",
                 "Direct reading or unpacking of .pb binary files is strictly prohibited.",
                 "Please use remora-recall CLI or CDAL interface to extract historical summaries."
+              ),
+            };
+          } else if (category === "git_escape") {
+            // 中文翻译：[Git 转义拦截] 检测到 Git 提交消息中包含换行符或连续星号，已被硬拦截以防止字符转义。
+            // 英文对照：Git commit message containing newline characters or consecutive asterisks is blocked to prevent escape vulnerabilities.
+            return {
+              decision: "deny",
+              reason: makeDenyReason(
+                "GIT_COMMIT_ESCAPE",
+                "Git commit message containing newline characters or consecutive asterisks is blocked to prevent escape vulnerabilities.",
+                "Avoid using newline characters or consecutive asterisks in git commit message."
               ),
             };
           } else if (category === "test" || category === "build") {

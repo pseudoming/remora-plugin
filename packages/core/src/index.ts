@@ -18,6 +18,8 @@ export {
   formatCumulativeReadWarning,
   formatSubagentDispatchReminder,
   makeDenyReason,
+  Decision,
+  ConflictInfo,
 } from "./injection-formatting";
 
 // Safety policy
@@ -35,6 +37,7 @@ export {
 export {
   scanApprovalSignals,
   buildConflictDetectionPrompt,
+  ConflictCandidate,
 } from "./text-analysis";
 
 // Liveness

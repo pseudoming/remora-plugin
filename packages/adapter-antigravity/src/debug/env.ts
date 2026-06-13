@@ -19,7 +19,7 @@ function humanSize(sizeBytes: number | null): string {
   return `${bytes.toFixed(1)} PB`;
 }
 
-function safeCount(conn: Database, table: string): number | string {
+function safeCount(conn: Database.Database, table: string): number | string {
   try {
     const row = conn.prepare(`SELECT COUNT(*) FROM ${table}`).get() as { "COUNT(*)": number } | undefined;
     return row ? row["COUNT(*)"] : 0;

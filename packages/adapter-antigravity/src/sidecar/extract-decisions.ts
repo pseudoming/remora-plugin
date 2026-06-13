@@ -151,7 +151,7 @@ export function extractFactualBaseline(convId: string, startLine: number): [stri
   return [[...baselineFiles], [...baselineActions]];
 }
 
-function _getActiveTopic(projectUuid: string, conn: Database): string | null {
+function _getActiveTopic(projectUuid: string, conn: Database.Database): string | null {
   try {
     return getOpenTopic(projectUuid, conn);
   } catch (e) {

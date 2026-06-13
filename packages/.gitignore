@@ -2,3 +2,7 @@ coverage*
 *.js
 *.d.ts
 *.d.mts
+
+# Allow build and installation entry scripts (aligned with doc spec)
+!/*/build.js
+!/*/bin/install.js

@@ -3,7 +3,7 @@ import { getPendingEvents, markEventProcessed } from "@remora/core";
 import { getPendingDecisions, confirmDecisionsByIds } from "@remora/core";
 import { getOrCreateConversation, AgentApiError } from "./extract-decisions";
 
-export function consumeEventQueue(startTime: number, conn?: Database): void {
+export function consumeEventQueue(startTime: number, conn?: Database.Database): void {
   const events = getPendingEvents(conn);
   if (!events.length) {
     return;

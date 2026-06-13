@@ -23,10 +23,10 @@ function loadApprovalConfig(): Record<string, unknown> {
       approvalConfig = {};
     }
   }
-  return approvalConfig;
+  return approvalConfig || {};
 }
 
-export function checkPlanApproval(projectUuid: string, conn?: Database): void {
+export function checkPlanApproval(projectUuid: string, conn?: Database.Database): void {
   // [P0] Plan approval detection window scan
   const tPlanChange = getPlanChangeTime(projectUuid, conn);
   if (!tPlanChange) {
