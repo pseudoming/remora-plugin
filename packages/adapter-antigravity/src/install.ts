@@ -122,11 +122,86 @@ function doRemove(filePath: string): void {
   }
 }
 
-function doUninstall(dataDir: string, pluginRoot: string): void {
+function doUninstall(dataDir: string, pluginRoot: string, purge: boolean): void {
   log("Uninstalling Remora Plugin...");
 
   const flag = path.join(dataDir, ".runtime", "installed.flag");
   doRemove(flag);
+
+  // 1. Terminate compactor process
+  const lockFile = path.join(dataDir, "compactor.lock");
+  if (fs.existsSync(lockFile)) {
+    const pidStr = fs.readFileSync(lockFile, "utf-8").trim();
+    const pid = parseInt(pidStr, 10);
+    if (!isNaN(pid)) {
+      let cmdline = "";
+      let exists = false;
+      try {
+        cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, "utf-8");
+        exists = true;
+      } catch (err) {
+        log(`[WARNING] Process with PID ${pid} cmdline read failed: ${err}`);
+      }
+      if (exists && cmdline && cmdline.includes("node") && (cmdline.includes("compactor") || cmdline.includes("remora-plugin"))) {
+        log(`Terminating background compactor (PID: ${pid})...`);
+        if (_dryRun) {
+          log(`[DRY-RUN] Would terminate background compactor (PID: ${pid})`);
+        } else {
+          try {
+            process.kill(pid, "SIGTERM");
+            let alive = true;
+            for (let i = 0; i < 6; i++) {
+              try {
+                process.kill(pid, 0);
+              } catch {
+                alive = false;
+                break;
+              }
+              try {
+                require("node:child_process").execSync("sleep 0.5");
+              } catch {}
+            }
+            if (alive) {
+              log(`Compactor process ${pid} did not exit in 3s. Sending SIGKILL...`);
+              try {
+                process.kill(pid, "SIGKILL");
+              } catch {}
+            }
+          } catch (err) {
+            log(`[WARNING] Error trying to kill compactor PID ${pid}: ${err}`);
+          }
+        }
+        doRemove(lockFile);
+      } else {
+        log(`[WARNING] PID ${pid} in lock file does not match compactor process. Skipping termination.`);
+      }
+    }
+  }
+
+  // 2. Remove workflows
+  const workflowsDir = path.join(pluginRoot, "conf", "templates", "workflows");
+  let workflowsList: string[] = [];
+  try {
+    if (fs.existsSync(workflowsDir)) {
+      workflowsList = fs.readdirSync(workflowsDir).filter(f => f.endsWith(".md"));
+    }
+  } catch (err) {
+    log(`[WARNING] Failed to read workflows directory: ${err}. Falling back to static list.`);
+  }
+
+  if (workflowsList.length === 0) {
+    workflowsList = ["confirm.md", "remora_coordinator.md", "topic.md", "retro.md"];
+  }
+
+  const globalWorkflowsDir = path.join(getGeminiConfigDir(), "global_workflows");
+  for (const wf of workflowsList) {
+    const p = path.join(globalWorkflowsDir, wf);
+    doRemove(p);
+  }
+
+  // 3. Remove virtual project config
+  const projectConfig = path.join(getGeminiConfigDir(), "projects", "11111111-1111-1111-1111-111111111111.json");
+  doRemove(projectConfig);
 
   const rendered = [
     "hooks.json",
@@ -146,7 +221,29 @@ function doUninstall(dataDir: string, pluginRoot: string): void {
     }
   }
 
-  log("Uninstall complete. Database and workflows preserved.");
+  // 4. Data directory --purge
+  if (purge) {
+    if (_dryRun) {
+      log(`[DRY-RUN] Would purge data directory: ${dataDir}`);
+    } else {
+      if (fs.existsSync(dataDir)) {
+        fs.rmSync(dataDir, { recursive: true, force: true });
+        log(`  Purged data directory: ${dataDir}`);
+      }
+    }
+  }
+
+  // 5. Target directory self-cleaning
+  if (_dryRun) {
+    log(`[DRY-RUN] Would remove plugin root directory: ${pluginRoot}`);
+  } else {
+    if (fs.existsSync(pluginRoot)) {
+      fs.rmSync(pluginRoot, { recursive: true, force: true });
+      log(`  Removed plugin root directory: ${pluginRoot}`);
+    }
+  }
+
+  log("Uninstall complete.");
 }
 
 function mainReal(
@@ -157,11 +254,12 @@ function mainReal(
   dryRunParam = false,
   uninstall = false,
   sourcePluginRoot?: string,
+  purge = false,
 ): void {
   const flagPath = path.join(runtimeDir, "installed.flag");
 
   if (uninstall) {
-    doUninstall(dataDir, pluginRoot);
+    doUninstall(dataDir, pluginRoot, purge);
     return;
   }
 
@@ -211,6 +309,7 @@ function mainReal(
         execSync("npm run build --workspace=packages/core", {
           cwd: pluginRoot,
           stdio: "inherit",
+          env: process.env,
         });
         log(`  packages/core built successfully.`);
       } catch (err) {
@@ -232,109 +331,113 @@ export function main(): void {
   let force = false;
   let dryRunFlag = false;
   let uninstall = false;
+  let purge = false;
 
   for (const arg of argv) {
     if (arg === "--force") force = true;
     else if (arg === "--dry-run") dryRunFlag = true;
     else if (arg === "--uninstall") uninstall = true;
+    else if (arg === "--purge") purge = true;
     else if (arg === "--help" || arg === "-h") {
-      console.log("remora-install [--force] [--dry-run] [--uninstall]");
+      console.log("remora-install [--force] [--dry-run] [--uninstall] [--purge]");
       console.log("  --force      Reinstall (skip idempotent check)");
       console.log("  --dry-run    Preview (no writes)");
       console.log("  --uninstall  Uninstall");
+      console.log("  --purge      Purge database and data directory during uninstall");
       return;
     }
   }
 
-  const devPluginRoot = findPluginRoot();
   const targetPluginRoot = path.join(getGeminiConfigDir(), "plugins", "remora-plugin");
+  let actualPluginRoot = targetPluginRoot;
+  let devPluginRoot: string | undefined = undefined;
 
-  let actualPluginRoot = devPluginRoot;
+  if (!uninstall) {
+    devPluginRoot = findPluginRoot();
+    actualPluginRoot = devPluginRoot;
+  }
+
   const isTest = !!(process.env.VITEST || process.env.NODE_ENV === "test");
 
-  if (!isTest && path.resolve(devPluginRoot) !== path.resolve(targetPluginRoot)) {
+  if (!uninstall && !isTest && devPluginRoot && path.resolve(devPluginRoot) !== path.resolve(targetPluginRoot)) {
     log(`\nDeploying from source: ${devPluginRoot} → target: ${targetPluginRoot}`);
     
-    if (uninstall) {
-      actualPluginRoot = targetPluginRoot;
+    if (dryRunFlag) {
+      log(`[DRY-RUN] Would check and remove symlink at ${targetPluginRoot}`);
+      log(`[DRY-RUN] Would sync files via rsync from ${devPluginRoot} to ${targetPluginRoot}`);
     } else {
-      if (dryRunFlag) {
-        log(`[DRY-RUN] Would check and remove symlink at ${targetPluginRoot}`);
-        log(`[DRY-RUN] Would sync files via rsync from ${devPluginRoot} to ${targetPluginRoot}`);
-      } else {
-        // 1. 检查并切断符号链接
-        try {
-          const stats = fs.lstatSync(targetPluginRoot);
-          if (stats.isSymbolicLink()) {
-            log(`  Removing existing symbolic link at ${targetPluginRoot}`);
-            fs.unlinkSync(targetPluginRoot);
-          }
-        } catch (err) {
-          // 忽略不存在的错误
+      // 1. 检查并切断符号链接
+      try {
+        const stats = fs.lstatSync(targetPluginRoot);
+        if (stats.isSymbolicLink()) {
+          log(`  Removing existing symbolic link at ${targetPluginRoot}`);
+          fs.unlinkSync(targetPluginRoot);
         }
-
-        // 2. 确保目录存在
-        fs.mkdirSync(targetPluginRoot, { recursive: true });
-
-        const rsyncCmd = `rsync -a --delete --exclude='.git' --exclude='scratch' --exclude='.pytest_cache' --exclude='data' --exclude='.runtime' --exclude='__pycache__/' --exclude='*.md' --exclude='docs/' --exclude='.agents/' --exclude='tests/' --exclude='src/' --exclude='tsconfig*.json' --exclude='tsconfig.build.json' --exclude='vitest.config.ts' --exclude='build.js' --exclude='conf/templates/' --exclude='.gitignore' --exclude='deploy.sh' --exclude='**/*.d.ts' --exclude='node_modules/.vite/' --exclude='node_modules/.vitest/' "${devPluginRoot}/" "${targetPluginRoot}/"`;
-
-        log(`  Syncing files: ${rsyncCmd}`);
-        try {
-          const { execSync } = require("node:child_process");
-          execSync(rsyncCmd, { stdio: "inherit" });
-          log(`  Files synchronized successfully.`);
-
-          // 物理清除目标运行目录中的开发期多余文件与源码
-          const obsoleteItems = [
-            "packages/adapter-antigravity/src",
-            "packages/adapter-antigravity/tests",
-            "packages/core/src",
-            "packages/core/tests",
-            "packages/adapter-antigravity/tsconfig.json",
-            "packages/adapter-antigravity/tsconfig.build.json",
-            "packages/adapter-antigravity/vitest.config.ts",
-            "packages/adapter-antigravity/build.js",
-            "packages/core/tsconfig.json",
-            "packages/core/vitest.config.ts",
-            "node_modules/.vite"
-          ];
-          for (const rel of obsoleteItems) {
-            const p = path.join(targetPluginRoot, rel);
-            if (fs.existsSync(p)) {
-              fs.rmSync(p, { recursive: true, force: true });
-              log(`  Cleaned obsolete deployment asset: ${rel}`);
-            }
-          }
-
-          // 递归清理 packages 内的类型声明 .d.ts 文件 (排除 node_modules)
-          const cleanDts = (dir: string): void => {
-            if (!fs.existsSync(dir)) return;
-            for (const f of fs.readdirSync(dir)) {
-              const p = path.join(dir, f);
-              if (fs.statSync(p).isDirectory()) {
-                if (f !== "node_modules") {
-                  cleanDts(p);
-                }
-              } else if (f.endsWith(".d.ts")) {
-                fs.unlinkSync(p);
-                log(`  Cleaned obsolete type declaration: ${p.slice(targetPluginRoot.length + 1)}`);
-              }
-            }
-          };
-          cleanDts(path.join(targetPluginRoot, "packages"));
-
-        } catch (err) {
-          log(`  [WARNING] Sync via rsync failed: ${err}`);
-          throw err;
-        }
+      } catch (err) {
+        // 忽略不存在的错误
       }
 
-      actualPluginRoot = targetPluginRoot;
+      // 2. 确保目录存在
+      fs.mkdirSync(targetPluginRoot, { recursive: true });
+
+      const rsyncCmd = `rsync -a --delete --exclude='.git' --exclude='scratch' --exclude='.pytest_cache' --exclude='data' --exclude='.runtime' --exclude='__pycache__/' --exclude='*.md' --exclude='docs/' --exclude='.agents/' --exclude='tests/' --exclude='src/' --exclude='tsconfig*.json' --exclude='tsconfig.build.json' --exclude='vitest.config.ts' --exclude='build.js' --exclude='conf/templates/' --exclude='.gitignore' --exclude='deploy.sh' --exclude='**/*.d.ts' --exclude='node_modules/.vite/' --exclude='node_modules/.vitest/' "${devPluginRoot}/" "${targetPluginRoot}/"`;
+
+      log(`  Syncing files: ${rsyncCmd}`);
+      try {
+        const { execSync } = require("node:child_process");
+        execSync(rsyncCmd, { stdio: "inherit" });
+        log(`  Files synchronized successfully.`);
+
+        // 物理清除目标运行目录中的开发期多余文件与源码
+        const obsoleteItems = [
+          "packages/adapter-antigravity/src",
+          "packages/adapter-antigravity/tests",
+          "packages/core/src",
+          "packages/core/tests",
+          "packages/adapter-antigravity/tsconfig.json",
+          "packages/adapter-antigravity/tsconfig.build.json",
+          "packages/adapter-antigravity/vitest.config.ts",
+          "packages/adapter-antigravity/build.js",
+          "packages/core/tsconfig.json",
+          "packages/core/vitest.config.ts",
+          "node_modules/.vite"
+        ];
+        for (const rel of obsoleteItems) {
+          const p = path.join(targetPluginRoot, rel);
+          if (fs.existsSync(p)) {
+            fs.rmSync(p, { recursive: true, force: true });
+            log(`  Cleaned obsolete deployment asset: ${rel}`);
+          }
+        }
+
+        // 递归清理 packages 内的类型声明 .d.ts 文件 (排除 node_modules)
+        const cleanDts = (dir: string): void => {
+          if (!fs.existsSync(dir)) return;
+          for (const f of fs.readdirSync(dir)) {
+            const p = path.join(dir, f);
+            if (fs.statSync(p).isDirectory()) {
+              if (f !== "node_modules") {
+                cleanDts(p);
+              }
+            } else if (f.endsWith(".d.ts")) {
+              fs.unlinkSync(p);
+              log(`  Cleaned obsolete type declaration: ${p.slice(targetPluginRoot.length + 1)}`);
+            }
+          }
+        };
+        cleanDts(path.join(targetPluginRoot, "packages"));
+
+      } catch (err) {
+        log(`  [WARNING] Sync via rsync failed: ${err}`);
+        throw err;
+      }
     }
+
+    actualPluginRoot = targetPluginRoot;
   }
 
   const [dataDir, runtimeDir] = resolvePaths(actualPluginRoot);
-  mainReal(actualPluginRoot, dataDir, runtimeDir, force, dryRunFlag, uninstall, devPluginRoot);
+  mainReal(actualPluginRoot, dataDir, runtimeDir, force, dryRunFlag, uninstall, devPluginRoot, purge);
 
 }
 

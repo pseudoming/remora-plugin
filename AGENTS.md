@@ -142,3 +142,10 @@ if (process.env.REMORA_SEED_DEV_MODE !== "1") {
 - **防止 Ghost Completion (幽灵完成)**：防范子特工在极短步骤内虚假声称已在沙盒内修改文件。目前通过 `extractSubagentReport`（提取声称更改）+ `sandbox-merge`（验证双向覆盖）双向防线拦截，作为影子旁路持续观测。
 - **物理截断 (Prompt Truncation) 防卫**：在 Prompt 拼装中加入完整性特征校验，防止消息通道截断导致子代理指令偏航。
 - **避免 `cognitive-push` 提示词注入越界覆盖**：在 PreInvocation 提示词拼接中采用严格的括号隔离，防止动态注入文本意外覆盖主任务指令（目前已采用 `<system-reminder>`/`<system-discipline>` 原生标签隔离，持续观察）。
+
+## ACTIVE DATA BACKUPS (活跃数据备份)
+- **2026-06-15 备份 (卸载功能测试前置保护)**：
+  - 备份根路径：`~/.remora_data_backup_safeguard_20260615/`
+  - 全局数据库备份：`~/.remora_data_backup_safeguard_20260615/dot_remora_data/remora_memory.db`
+  - 工作区数据库备份：`~/.remora_data_backup_safeguard_20260615/workspace_data/remora_memory.db`
+  - 状态：✅ 已全量物理备份同步，随时可用于秒级恢复。
