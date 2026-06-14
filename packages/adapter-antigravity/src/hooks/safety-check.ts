@@ -7,6 +7,8 @@ import {
   isRotSensitivePath,
   estimateReadBytes,
   isAccumulatedLimitExceeded,
+  isPlanningArtifact,
+  validatePromptSyntax,
   trimStaleHookStates,
   inspectCommand,
   getHookState,
@@ -262,6 +264,15 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
         const ws = (sub["Workspace"] as string) ?? "inherit";
         const promptStr = (sub["Prompt"] as string) ?? "";
         const role = (sub["Role"] as string) ?? "";
+
+        // [提示词截断语法校验] 检测 Prompt 是否由于被截断导致括号/引号/XML标签未闭合
+        const syntaxResult = validatePromptSyntax(promptStr);
+        if (!syntaxResult.isValid) {
+          return {
+            decision: "deny",
+            reason: `⛔ [REMORA SAFETY INTERCEPT] Subagent Prompt syntax truncation detected. ${syntaxResult.errorReason}. Action required: Verify prompt completeness.`,
+          };
+        }
 
         // 中文翻译：[提示词长度极限拦截] 运行 Phase 68 对超过 1500 字符的提示词进行底线防御拦截。
         // Rule 1: Two-Tier Prompt Density Check (Threshold 2: 1500 Chars)

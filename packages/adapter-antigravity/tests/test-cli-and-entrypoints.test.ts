@@ -64,6 +64,7 @@ const coreMocks = vi.hoisted(() => ({
   formatRelaxDisciplinePrompt: vi.fn(),
   formatDecisionsForSessionResume: vi.fn(),
   formatConflictInjectionMessage: vi.fn(),
+  formatWorkTrackingPrompt: vi.fn(),
   formatFileDecisionsInjection: vi.fn(),
   formatWriteGateDenyPrompt: vi.fn(),
   formatStrictTonePrompt: vi.fn(),
@@ -95,7 +96,9 @@ const coreMocks = vi.hoisted(() => ({
 }));
 
 const bridgePathMocks = vi.hoisted(() => ({
-  getDataDir: vi.fn(),
+  getConversationsDir: vi.fn(),
+  getDataDir: vi.fn().mockReturnValue("/tmp/remora-test-data"),
+  getGeminiConfigDir: vi.fn(),
   extractConvId: vi.fn(),
   findPluginRoot: vi.fn(),
 }));
@@ -273,6 +276,7 @@ beforeEach(() => {
   coreMocks.getDecisionsByFile.mockReturnValue([]);
   coreMocks.formatStrictTonePrompt.mockReturnValue("STRICT TONE");
   coreMocks.formatRelaxDisciplinePrompt.mockReturnValue("COORDINATOR BEHAVIORAL DISCIPLINE");
+  coreMocks.formatWorkTrackingPrompt.mockReturnValue("<system-discipline>WORK TRACKING</system-discipline>");
   coreMocks.formatDecisionsForSessionResume.mockReturnValue("SESSION RESUMED — 历史决策供参考");
   coreMocks.formatConflictInjectionMessage.mockReturnValue("SEMANTIC CONFLICT");
   coreMocks.formatFileDecisionsInjection.mockReturnValue("");

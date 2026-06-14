@@ -149,3 +149,80 @@ export function isPlanningArtifact(
   }
   return false;
 }
+
+export function validatePromptSyntax(prompt: string): { isValid: boolean; errorReason?: string } {
+  const stripped = stripMarkdownCodeBlocks(prompt);
+
+  const tagsToCheck = ["system-reminder", "system-discipline"];
+  for (const tag of tagsToCheck) {
+    const openTag = `<${tag}>`;
+    const closeTag = `</${tag}>`;
+    
+    const openCount = (stripped.match(new RegExp(openTag, "g")) || []).length;
+    const closeCount = (stripped.match(new RegExp(closeTag, "g")) || []).length;
+    
+    if (openCount !== closeCount) {
+      return {
+        isValid: false,
+        errorReason: `XML tag '<${tag}>' is not properly closed (open count: ${openCount}, close count: ${closeCount})`
+      };
+    }
+  }
+
+  const stack: string[] = [];
+  const matchingBrackets: Record<string, string> = {
+    ")": "(",
+    "]": "[",
+    "}": "{",
+  };
+  const openBrackets = new Set(Object.values(matchingBrackets));
+  const closeBrackets = new Set(Object.keys(matchingBrackets));
+
+  const processedText = stripped.replace(/[a-zA-Z]'(?=[a-zA-Z])/g, "");
+
+  let singleQuoteCount = 0;
+  let doubleQuoteCount = 0;
+
+  for (let i = 0; i < processedText.length; i++) {
+    const char = processedText[i];
+    if (char === "'") {
+      singleQuoteCount++;
+    } else if (char === '"') {
+      doubleQuoteCount++;
+    } else if (openBrackets.has(char)) {
+      stack.push(char);
+    } else if (closeBrackets.has(char)) {
+      const top = stack.pop();
+      if (top !== matchingBrackets[char]) {
+        return {
+          isValid: false,
+          errorReason: `Unbalanced bracket detected. Expected matching bracket for '${char}' but got '${top || "none"}'`
+        };
+      }
+    }
+  }
+
+  if (stack.length > 0) {
+    return {
+      isValid: false,
+      errorReason: `Unclosed bracket '${stack[stack.length - 1]}' detected at the end of prompt`
+    };
+  }
+
+  if (singleQuoteCount % 2 !== 0) {
+    return {
+      isValid: false,
+      errorReason: "Unclosed single quote (') detected"
+    };
+  }
+
+  if (doubleQuoteCount % 2 !== 0) {
+    return {
+      isValid: false,
+      errorReason: "Unclosed double quote (\") detected"
+    };
+  }
+
+  return { isValid: true };
+}
+

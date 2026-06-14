@@ -113,15 +113,6 @@ export function setHookState(
   setRuntimeHookValue(sessionId, turnIdx, key, value, conn);
 }
 
-export function deleteHookState(
-  sessionId: string,
-  turnIdx: number,
-  key: string,
-  conn?: Database.Database,
-): void {
-  deleteRuntimeHookValue(sessionId, turnIdx, key, conn);
-}
-
 export function trimHookStates(
   sessionId: string,
   currentTurnIdx: number,

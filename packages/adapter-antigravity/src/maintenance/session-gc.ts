@@ -8,15 +8,15 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { execSync } from "node:child_process";
 
-const BRAIN_DIR = getBrainDir();
-
-export function pruneExpiredWatermarks(brainDir: string = BRAIN_DIR): void {
-  _prune(brainDir);
+export function pruneExpiredWatermarks(brainDir?: string): void {
+  const dir = brainDir ?? getBrainDir();
+  _prune(dir);
 }
 
-export function pruneDeadSubagentWorktrees(brainDir: string = BRAIN_DIR): void {
-  if (!fs.existsSync(brainDir)) return;
-  const entries = fs.readdirSync(brainDir, { withFileTypes: true });
+export function pruneDeadSubagentWorktrees(brainDir?: string): void {
+  const dir = brainDir ?? getBrainDir();
+  if (!fs.existsSync(dir)) return;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const convId = entry.name;
@@ -97,6 +97,6 @@ export function pruneDeadSubagentWorktrees(brainDir: string = BRAIN_DIR): void {
 
 export function main(): void {
   setTraceId(`c_${randomUUID().slice(0, 8)}`);
-  pruneExpiredWatermarks(BRAIN_DIR);
-  pruneDeadSubagentWorktrees(BRAIN_DIR);
+  pruneExpiredWatermarks();
+  pruneDeadSubagentWorktrees();
 }

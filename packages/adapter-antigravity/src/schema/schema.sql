@@ -23,9 +23,12 @@ CREATE TABLE IF NOT EXISTS topic_decisions (
     conversation_id TEXT NOT NULL,        -- 对话会话 ID，追踪决策发生在哪次具体交互中
     decision TEXT NOT NULL,               -- 做出的核心架构或实现决策
     rationale TEXT NOT NULL,              -- 做出该决策的深层原因（为什么做，或者为什么不做）
-    evidence_msg_ids TEXT,                -- JSON 数组格式的自增消息 ID 记录（用于温存储防篡改溯源）
+    evidence_msg_ids TEXT,                -- JSON 数组格式 of 自增消息 ID 记录（用于温存储防篡改溯源）
     user_confirmed INTEGER DEFAULT 0,     -- 用户是否已物理确认（1 为确认，100% 压缩强保留）
     decision_type TEXT DEFAULT 'approved',-- 决策类型（核准等）
+    injected_count INTEGER DEFAULT 0,     -- 注入次数统计，用于 C2/C3 的压缩和平衡依据
+    last_injected_at TEXT,                -- 上次被注入上下文的时间戳
+    compressed_summary TEXT,              -- 存放 LLM 生成的单行压缩决策摘要
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 最后更新时间
     FOREIGN KEY(project_uuid, topic_id) REFERENCES project_topics(uuid, topic_id)

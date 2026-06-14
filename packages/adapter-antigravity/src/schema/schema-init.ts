@@ -30,6 +30,11 @@ function initDb(): void {
     } catch {
       db.exec("ALTER TABLE topic_decisions ADD COLUMN last_injected_at TEXT");
     }
+    try {
+      db.prepare("SELECT compressed_summary FROM topic_decisions LIMIT 1").run();
+    } catch {
+      db.exec("ALTER TABLE topic_decisions ADD COLUMN compressed_summary TEXT");
+    }
 
     for (const [col, colDef] of [
       ["source", "TEXT DEFAULT 'auto'"],

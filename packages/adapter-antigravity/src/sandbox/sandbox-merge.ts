@@ -3,6 +3,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { execSync } from "node:child_process";
 import { getBrainDir } from "../bridge/paths";
+import { extractSubagentReport } from "../sidecar/scan-sessions";
 
 export function main(): void {
     if (process.argv.length < 3) {
@@ -62,16 +63,30 @@ export function main(): void {
         console.log(`Merging branch ${branchName} from worktree ${wtDir} ...`);
 
         console.log("[Remora] Detecting physical changed files in sandbox...");
+        const physicalFiles: string[] = [];
         try {
             const diffOutput = execSync(`git diff --name-only main...${branchName}`, { cwd: targetCwd, encoding: "utf-8" });
             for (const line of diffOutput.split("\n")) {
                 const trimmed = line.trim();
                 if (trimmed) {
+                    physicalFiles.push(trimmed);
                     console.log(`[PHYSICAL_CHANGES] ${trimmed}`);
                 }
             }
         } catch (e: unknown) {
             console.log(`Failed to detect physical changes: ${e}`);
+        }
+
+        try {
+            const { changedFiles } = extractSubagentReport(subagentId);
+            if (changedFiles.length > 0 && physicalFiles.length === 0) {
+                console.warn(
+                    `[Remora Warning] [GHOST_COMPLETION_SUSPECTED] Subagent ${subagentId} ` +
+                    `claimed changed files (${changedFiles.join(", ")}) but git diff showed 0 physical files changed.`
+                );
+            }
+        } catch (err: unknown) {
+            console.log(`Failed to perform ghost completion audit: ${err}`);
         }
 
         execSync(`git merge ${branchName} -m "Merge sandbox changes from subagent ${subagentId}"`, {

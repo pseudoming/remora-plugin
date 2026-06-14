@@ -5,6 +5,7 @@ import {
   markFired,
   isDuplicate,
   formatRelaxDisciplinePrompt,
+  formatWorkTrackingPrompt,
   formatDecisionsForSessionResume,
   formatConflictInjectionMessage,
   formatFileDecisionsInjection,
@@ -64,11 +65,7 @@ function _handlePreInvocation(context: Record<string, unknown>, convId: string, 
   if (!isDuplicate(convId, "work_tracking", "injected")) {
     markFired(convId, "work_tracking", "injected");
     injectSteps.push({
-      ephemeralMessage:
-        "WORK TRACKING:\n" +
-        "If your current task requires more than 3 steps, break it into discrete subtasks.\n" +
-        "After each step completes, briefly confirm what was done before moving to the next.\n" +
-        "Don't batch completions — mark done as soon as verified."
+      ephemeralMessage: formatWorkTrackingPrompt()
     });
   }
 
@@ -106,7 +103,7 @@ function _handlePreInvocation(context: Record<string, unknown>, convId: string, 
     debug(`session resumed: ${convId}, injecting ${decisions.length} decisions`);
     injectSteps.push({ ephemeralMessage: formatDecisionsForSessionResume(decisions as unknown as import("@remora/core").Decision[], topicId!) });
     for (const d of decisions) {
-      bumpInjection(Number(d.id ?? 0));
+      _safeBumpInjection(Number(d.id ?? 0), convId, currentTurnIdx);
     }
   }
 
@@ -247,7 +244,7 @@ function _runLineC(context: Record<string, unknown>, convId: string, currentTurn
     for (const c of conflicts) {
       const cid = c.decision_id;
       if (cid) {
-        bumpInjection(cid);
+        _safeBumpInjection(cid, convId, currentTurnIdx);
       }
     }
   }
@@ -305,7 +302,7 @@ function _handlePreToolUse(context: Record<string, unknown>, convId: string, cur
           injectSteps.push({ ephemeralMessage: formatFileDecisionsInjection(fileName, fileDecisions as unknown as import("@remora/core").Decision[]) });
           markFired(convId, dedupKey, String(currentTurnIdx));
           for (const d of fileDecisions) {
-            bumpInjection(d.id);
+            _safeBumpInjection(d.id, convId, currentTurnIdx);
           }
         }
       }
@@ -387,6 +384,21 @@ function _main(context: Record<string, unknown>): { decision?: string; reason?: 
   }
 
   return fallback;
+}
+
+function _safeBumpInjection(decisionId: number, convId: string, turnIdx: number): void {
+  try {
+    bumpInjection(decisionId);
+  } catch (e) {
+    warn(`[REMORA WARNING] Failed to bump injection count for decision ${decisionId}: ${e}`);
+    try {
+      const stateKey = "injection_bump_failures";
+      const currentFailures = Number(getHookState(convId, turnIdx, stateKey) ?? 0);
+      setHookState(convId, turnIdx, stateKey, String(currentFailures + 1));
+    } catch (stateErr) {
+      // Fail-safe fallback
+    }
+  }
 }
 
 import { hookEntrypoint } from "../bridge/context";

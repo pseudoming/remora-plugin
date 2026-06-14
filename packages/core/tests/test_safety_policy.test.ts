@@ -11,6 +11,7 @@ import {
   estimateReadBytes,
   isAccumulatedLimitExceeded,
   isPlanningArtifact,
+  validatePromptSyntax,
 } from "../src/safety-policy";
 
 describe("enforcePromptLengthLimit", () => {
@@ -245,5 +246,66 @@ describe("isPlanningArtifact", () => {
 
   it("test_is_planning_artifact_both_none", () => {
     expect(isPlanningArtifact("task.md")).toBe(false);
+  });
+});
+
+describe("validatePromptSyntax", () => {
+  it("should pass valid prompts", () => {
+    const prompt = "This is a valid prompt without any unclosed brackets or quotes.";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("should pass prompts with properly closed XML tags", () => {
+    const prompt = "<system-reminder>This is a warning</system-reminder> and <system-discipline>Follow rules</system-discipline>";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("should fail on unclosed system-reminder tags", () => {
+    const prompt = "<system-reminder>Unclosed reminder tag";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(false);
+    expect(result.errorReason).toContain("XML tag '<system-reminder>' is not properly closed");
+  });
+
+  it("should fail on unclosed system-discipline tags", () => {
+    const prompt = "<system-discipline>Unclosed discipline tag";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(false);
+    expect(result.errorReason).toContain("XML tag '<system-discipline>' is not properly closed");
+  });
+
+  it("should pass code blocks even if they contain unbalanced brackets/quotes (exemption)", () => {
+    const prompt = "Please modify this function:\n```javascript\nfunction foo() {\n  return [1, 2];\n}\n```\nIt is now complete.";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("should fail on unbalanced brackets outside code blocks", () => {
+    const prompt = "This has a closed parenthesis (like this) and double quotes \"but nothing else.";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(false);
+    expect(result.errorReason).toContain("Unclosed double quote");
+  });
+
+  it("should fail on unclosed brackets outside code blocks", () => {
+    const prompt = "This has an unclosed bracket [like this at the end";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(false);
+    expect(result.errorReason).toContain("Unclosed bracket '[' detected");
+  });
+
+  it("should pass English apostrophes/撇号 like don't, user's", () => {
+    const prompt = "I don't think it's a bug. Let's verify the user's issue.";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(true);
+  });
+
+  it("should fail on unclosed double quotes", () => {
+    const prompt = "He said: \"It is broken.";
+    const result = validatePromptSyntax(prompt);
+    expect(result.isValid).toBe(false);
+    expect(result.errorReason).toContain("Unclosed double quote");
   });
 });

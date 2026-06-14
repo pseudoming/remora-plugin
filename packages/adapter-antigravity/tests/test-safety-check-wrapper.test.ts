@@ -71,6 +71,7 @@ const coreMocks = vi.hoisted(() => ({
   isRotSensitivePath: vi.fn().mockReturnValue(false),
   estimateReadBytes: vi.fn().mockReturnValue(0),
   isAccumulatedLimitExceeded: vi.fn().mockReturnValue(false),
+  validatePromptSyntax: vi.fn().mockReturnValue({ isValid: true }),
   trimStaleHookStates: vi.fn(),
   inspectCommand: vi.fn().mockReturnValue(["allow", ""]),
   getHookState: vi.fn().mockReturnValue(null),
@@ -142,6 +143,7 @@ describe("SafetyCheckWrapper", () => {
     coreMocks.isRotSensitivePath.mockReturnValue(false);
     coreMocks.estimateReadBytes.mockReturnValue(0);
     coreMocks.isAccumulatedLimitExceeded.mockReturnValue(false);
+    coreMocks.validatePromptSyntax.mockReturnValue({ isValid: true });
     coreMocks.inspectCommand.mockReturnValue(["allow", ""]);
     coreMocks.getHookState.mockReturnValue(null);
     mocks.accumulate.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0 });

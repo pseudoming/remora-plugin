@@ -6,19 +6,25 @@ import { getProjectId } from "../bridge/agentapi";
 import { getSubagentTypeByConvId } from "../bridge/subagent";
 import { getBrainDir, getDataDir } from "../bridge/paths";
 
-const BRAIN_DIR = getBrainDir();
-const EXCLUDE_FILE = path.join(getDataDir(), "compactor_managed_conversations.json");
+function getBrainDirValue(): string {
+  return getBrainDir();
+}
+
+function getExcludeFile(): string {
+  return path.join(getDataDir(), "compactor_managed_conversations.json");
+}
 
 export function loadExcludedIds(): Set<string> {
-  if (fs.existsSync(EXCLUDE_FILE)) {
-    const data = fs.readFileSync(EXCLUDE_FILE, "utf-8");
+  const excludeFile = getExcludeFile();
+  if (fs.existsSync(excludeFile)) {
+    const data = fs.readFileSync(excludeFile, "utf-8");
     return new Set(JSON.parse(data));
   }
   return new Set();
 }
 
 export function saveExcludedIds(ids: Set<string>): void {
-  fs.writeFileSync(EXCLUDE_FILE, JSON.stringify([...ids]));
+  fs.writeFileSync(getExcludeFile(), JSON.stringify([...ids]));
 }
 
 function getProjectIdForConv(convId: string): string {
@@ -27,14 +33,15 @@ function getProjectIdForConv(convId: string): string {
 
 export function getActiveConversations(): Array<{ projectUuid: string; conversationId: string }> {
   const activeSessions: Array<{ projectUuid: string; conversationId: string }> = [];
-  if (!fs.existsSync(BRAIN_DIR)) {
+  const brainDir = getBrainDirValue();
+  if (!fs.existsSync(brainDir)) {
     return [];
   }
 
   const excludedIds = loadExcludedIds();
   const currentTime = Date.now() / 1000;
 
-  for (const convId of fs.readdirSync(BRAIN_DIR)) {
+  for (const convId of fs.readdirSync(brainDir)) {
     if (excludedIds.has(convId)) {
       continue;
     }

@@ -13,24 +13,6 @@ export function insertFileChange(projectUuid: string, conversationId: string, fi
   }
 }
 
-export function getFilesByTopic(projectUuid: string, topicId: string, conn?: Database.Database): string[] {
-  const db = conn ?? getConn();
-  const ownConn = !conn;
-  try {
-    const rows = db.prepare(
-      `SELECT DISTINCT fc.file_name FROM file_changes fc
-       JOIN topic_decisions td ON fc.conversation_id = td.conversation_id
-       WHERE td.project_uuid = ? AND td.topic_id = ?`
-    ).all(projectUuid, topicId) as { file_name: string }[];
-    return rows.map((row) => row.file_name);
-  } catch (e) {
-    console.warn(`getFilesByTopic: ${e}`);
-    return [];
-  } finally {
-    if (ownConn) db.close();
-  }
-}
-
 export function getDecisionsByFile(projectUuid: string, fileName: string, conn?: Database.Database): Array<{ id: number; decision: string; rationale: string }> {
   const db = conn ?? getConn();
   const ownConn = !conn;

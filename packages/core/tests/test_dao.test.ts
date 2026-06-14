@@ -670,8 +670,6 @@ describe("test_runtime_hook_operations", () => {
     expect(dao.getHookState("s1", 0, "k")).toBe("v0");
     dao.setHookState("s1", 0, "k", "alias");
     expect(dao.getHookState("s1", 0, "k")).toBe("alias");
-    dao.deleteHookState("s1", 0, "k");
-    expect(dao.getHookState("s1", 0, "k")).toBeNull();
     dao.trimHookStates("s1", 0);
 
     conn.close();
@@ -863,10 +861,6 @@ describe("test_file_changes_insert_and_query", () => {
     conn.close();
 
     const queryConn = createConn();
-    const files = dao.getFilesByTopic("proj_1", "topic_A");
-    expect(files.includes("auth.py")).toBe(true);
-    expect(files.includes("middleware.py")).toBe(true);
-    expect(files.includes("logger.py")).toBe(false);
 
     const decisions = dao.getDecisionsByFile("proj_1", "auth.py");
     expect(decisions.length).toBe(1);

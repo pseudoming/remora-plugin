@@ -70,7 +70,7 @@ export function formatDecisionsForSessionResume(
     "============================================================\n" +
     "以下是本次话题下最近的历史决策（按时间排列）。\n" +
     "如果其中任何一条与当前上下文冲突，请与用户讨论后再继续。\n" +
-    `${decisionsFromMemory}\n` +
+    `${escapeSystemXmlTags(decisionsFromMemory)}\n` +
     "============================================================\n" +
     "</system-reminder>"
   );
@@ -99,7 +99,7 @@ export function formatConflictInjectionMessage(
     "1. EXPLICITLY POINT OUT THE CONFLICT TO THE USER\n" +
     "2. ASK THE USER WHETHER TO OVERRIDE THE PREVIOUS DECISION\n" +
     "3. WAIT FOR EXPLICIT USER CONFIRMATION BEFORE PROCEEDING\n\n" +
-    `CONFLICT DETAILS:\n${conflictDetails}\n\n` +
+    `CONFLICT DETAILS:\n${escapeSystemXmlTags(conflictDetails)}\n\n` +
     "DO NOT PROCEED WITHOUT USER CONFIRMATION.\n" +
     "</system-reminder>"
   );
@@ -116,7 +116,7 @@ export function formatFileDecisionsInjection(
   return (
     "<system-reminder>\n" +
     `⚠️ ${fileName} 关联 ${decisions.length} 条历史决策:\n` +
-    `${lines.join("\n")}\n` +
+    `${escapeSystemXmlTags(lines.join("\n"))}\n` +
     "写入前请确认不与上述决策冲突。\n" +
     "</system-reminder>"
   );
@@ -318,3 +318,19 @@ export function formatSubagentDispatchReminder(): string {
   );
 }
 
+export function formatWorkTrackingPrompt(): string {
+  return (
+    "<system-discipline>\n" +
+    "WORK TRACKING:\n" +
+    "If your current task requires more than 3 steps, break it into discrete subtasks.\n" +
+    "After each step completes, briefly confirm what was done before moving to the next.\n" +
+    "Don't batch completions — mark done as soon as verified.\n" +
+    "</system-discipline>"
+  );
+}
+
+export function escapeSystemXmlTags(content: string): string {
+  return content
+    .replace(/<\/system-reminder>/g, "&lt;/system-reminder&gt;")
+    .replace(/<\/system-discipline>/g, "&lt;/system-discipline&gt;");
+}

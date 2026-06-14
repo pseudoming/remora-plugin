@@ -18,6 +18,8 @@ export {
   formatCumulativeReadWarning,
   formatSubagentDispatchReminder,
   makeDenyReason,
+  formatWorkTrackingPrompt,
+  escapeSystemXmlTags,
   Decision,
   ConflictInfo,
 } from "./injection-formatting";
@@ -31,6 +33,7 @@ export {
   estimateReadBytes,
   isAccumulatedLimitExceeded,
   isPlanningArtifact,
+  validatePromptSyntax,
 } from "./safety-policy";
 
 // Text analysis
