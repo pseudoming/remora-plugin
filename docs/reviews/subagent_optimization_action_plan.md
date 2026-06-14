@@ -44,8 +44,8 @@
 *   **现象**：主代理为了安抚子代理去读大日志，在 Prompt 中使用欺骗性断言：“作为子特工你已经获得了豁免限制”。但在物理框架层面此豁免并未被激活，导致子特工在读取时依然被 Hook 拦截误杀，产生严重的信息不对称（见 NOVEL 失败模式 16）。
 *   **动作**：严禁在指派 Prompt 中写入任何带有主观假设豁免的欺骗性话术。主代理必须根据真实的物理权限边界（如只读特工不能跑 shell 终端，主代理不能跑大日志 view_file）组装指令。
 
-### 6. 【P1 ⏳ 待观察】 主代理消费链去重校验 (Consuming Deduplication)
-*   **状态**：已由心跳探活、JIT 注入、subagent-monitor 等基础设施覆盖。10% 重复派发来自早期会话数据，当前机制应已抑制。待观察确认。
+### 6. 【P1 ✅ 已完成】 主代理消费链去重校验 (Consuming Deduplication)
+*   **状态**：已于 Phase 71 通过实现 Rule 4 Duplicate Spawn Rate Limiter 物理限流拦截机制完成，限制 180 秒内相同任务或角色的重复派发，规避冷启动开销。
 *   **规则**：避免 10% 的重复派发浪费。
 *   **动作**：主代理在启动新子特工前，必须核查历史 context 缓存，若已有类似子特工的输出未被引用消费，禁止重复派发相同任务。
 
@@ -104,7 +104,7 @@
     - `subagent-monitor.ts`: 删除 early `not_found` exit，空步 + 30s 超时 → spawn_failed
     - 测试: +21 个 PB fallback 测试
 
-### 4. 【P0 ⏳ 待观察】 修复 Stop Hook Idle Guard (退出阻断悬挂) 逻辑缺陷
+### 4. 【P0 ✅ 已完成】 修复 Stop Hook Idle Guard (退出阻断悬挂) 逻辑缺陷
 *   **实施**：`remora_coordinator.md` 新增 Prompt 子任务上限规则；`remora_deep_diver.template.json` Rule 13 (W12)；`remora_readonly_extractor.template.json` 同 W12。
 *   **NOVEL 模式 6**：子代理事实上已经执行完毕并完成工作，但被 “no message sent” 阻断 Hook 卡住，必须经历 3-5 步的反复超时尝试才能强行退出，造成资源空转。
 *   **修复动作**：重构退出拦截钩子逻辑，检测到子特工工具调用流已清空且上报结果就绪时，**强制绕过**空闲守卫（Idle Guard），实现毫秒级快速闭环退出。
@@ -123,7 +123,7 @@
 *   **NOVEL 模式 7**：由于消息通道响应长度或语法截断，导致主代理派发的 Prompt 在半空中被切断（句中截断），子代理基于残破文本偏航。
 *   **修复动作**：在 Prompt 通道拼装中加入完整性特征校验，对于未闭合的括号或句式直接拒绝发送并重新握手。
 
-### 8. 【P1 ⏳ 待观察】 修复工作区 branch 状态解析崩溃 (Fix got 2 workspaces)
+### 8. 【P1 ✅ 已完成】 修复工作区 branch 状态解析崩溃 (Fix got 2 workspaces)
 *   **修复动作**：修改 Hook 工作目录解析，采用符号链接归一化解析，消除因多路径漂移引起的 `got 2` 报错崩溃。
 
 ### 9. 【P1 ✅ 已完成】 防范子代理配置动态篡改与越权 (Prevent Subagent Configuration Overriding)
@@ -133,7 +133,7 @@
     - `safety-check.ts`: +`BUILTIN_AGENTS` 常量 + `loadBuiltinAgentPerms()` + `define_subagent` 拦截块
     - `test-safety-check-wrapper.test.ts`: +4 个测试用例
 
-### 10. 【P0 ⏳ 待观察】 子代理启动时定时监控检查挂载失效故障排查与修复 (Fix Missing Scheduled Monitors)
+### 10. 【P0 ✅ 已完成】 子代理启动时定时监控检查挂载失效故障排查与修复 (Fix Missing Scheduled Monitors)
 *   **现象**：最近若干轮指派子代理执行任务时，原有的 Cron/Timeout 定时探活和自动回收守护程序未能在后台成功挂载与唤醒，导致子代理失去定时保护网。
 *   **修复动作**：核查 `subagent-monitor` 状态机与插件注册生命周期钩子，确保 `schedule` 或定时器在 `invoke_subagent` 发起后 100% 成功注入并建立心跳监听，若注册失败则抛出告警并限制执行。
 *   **实施**：`formatJitInjection()` 提示词重排序——Prompt 质量检查前置，schedule 调用后置且标记为独立强制步骤，消除与"不合格则重来"的指令冲突。链路已有 session-guardian 二次注入兜底，持续观察模型服从度。

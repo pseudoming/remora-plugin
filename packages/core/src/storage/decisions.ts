@@ -435,3 +435,28 @@ export function bumpInjection(
     if (ownConn) db.close();
   }
 }
+
+export function getDecisionsByTopic(
+  projectUuid: string,
+  topicId: string,
+  conn?: Database.Database
+): { id: number; decision: string; rationale: string; user_confirmed: number; decision_type: string; created_at: string }[] {
+  const db = conn ?? getConn();
+  const ownConn = !conn;
+  try {
+    const rows = db
+      .prepare(
+        `SELECT id, decision, rationale, user_confirmed, decision_type, created_at
+         FROM topic_decisions
+         WHERE project_uuid = ? AND topic_id = ?
+         ORDER BY created_at ASC`
+      )
+      .all(projectUuid, topicId) as any[];
+    return rows;
+  } catch (e) {
+    console.warn(`getDecisionsByTopic: ${e}`);
+    return [];
+  } finally {
+    if (ownConn) db.close();
+  }
+}

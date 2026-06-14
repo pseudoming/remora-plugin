@@ -54,6 +54,24 @@ import * as path from "node:path";
         }
       }
     }
+    // Ensure virtual project config for 'remora-system' exists
+    try {
+      const homeDir = process.env.HOME || process.env.USERPROFILE || "";
+      if (homeDir) {
+        const projectDir = path.join(homeDir, ".gemini", "config", "projects");
+        const configPath = path.join(projectDir, "11111111-1111-1111-1111-111111111111.json");
+        if (!fs.existsSync(configPath)) {
+          fs.mkdirSync(projectDir, { recursive: true });
+          fs.writeFileSync(configPath, JSON.stringify({
+            id: "11111111-1111-1111-1111-111111111111",
+            name: "remora-system",
+            projectResources: { resources: [] }
+          }, null, 2), "utf-8");
+        }
+      }
+    } catch (e) {
+      // pass
+    }
   } catch (e) {
     // pass
   }
@@ -73,6 +91,10 @@ import {
   formatSubagentDispatchReminder,
   writeMode,
   getHookState,
+  getConn,
+  getProjectUuidByConv,
+  getActiveTopic,
+  getDecisionsByTopic,
 } from "@remora/core";
 import { cleanup, getStats } from "../bridge/stats";
 import { getSubagentType, getSubagentTypeByConvId, getParentConvId } from "../bridge/subagent";
@@ -214,6 +236,32 @@ function _main(context: Record<string, unknown>): { injectSteps: Array<Record<st
       try {
         fs.mkdirSync(path.join(parentScratch, "subagent_shared"), { recursive: true });
       } catch {
+        // pass
+      }
+
+      // 导出活跃 Topic 决策到 subagent_shared 供子代理共享
+      try {
+        const conn = getConn();
+        try {
+          const projectUuid = getProjectUuidByConv(convId, conn);
+          if (projectUuid) {
+            const activeTopicId = getActiveTopic(projectUuid, conn);
+            if (activeTopicId) {
+              const decisions = getDecisionsByTopic(projectUuid, activeTopicId, conn);
+              const exportData = {
+                project_uuid: projectUuid,
+                topic_id: activeTopicId,
+                decisions: decisions,
+                exported_at: new Date().toISOString()
+              };
+              const exportPath = path.join(parentScratch, "subagent_shared", "active_decisions.json");
+              fs.writeFileSync(exportPath, JSON.stringify(exportData, null, 2), "utf-8");
+            }
+          }
+        } finally {
+          if (conn) conn.close();
+        }
+      } catch (e) {
         // pass
       }
     }

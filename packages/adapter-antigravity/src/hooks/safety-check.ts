@@ -14,8 +14,8 @@ import {
   formatJitInjection,
 } from "@remora/core";
 import { accumulate } from "../bridge/stats";
-import { getSubagentType } from "../bridge/subagent";
-import { findPluginRoot } from "../bridge/paths";
+import { getSubagentType, getSubagentTypeByConvId } from "../bridge/subagent";
+import { findPluginRoot, resolveSecurePath } from "../bridge/paths";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
 import { globalRuleRunner } from "./rule-runner";
 import * as fs from "node:fs";
@@ -79,6 +79,22 @@ function loadBuiltinAgentPerms(name: string): Record<string, boolean> | null {
 // 3. 数据库事实注入校验：针对数据库及召回角色，强制 Prompt 必须显式注入 REMORA_DB_PATH、project_uuid 以及插件物理根路径，防止沙箱崩溃。
 // 4. 重复派发速率限制：3 分钟内禁止对同一 Role 或哈希 Prompt 执行重复冷启动，引导任务合并。
 
+function isPathSensitive(target: string): boolean {
+  const secure = resolveSecurePath(target);
+  try {
+    const cwd = fs.realpathSync(process.cwd());
+    // If path is inside our sandboxed workspace, validate its relative sub-path to avoid false positives on sandbox worktree path fragments
+    if (secure.startsWith(cwd)) {
+      const relPath = secure.slice(cwd.length);
+      return isRotSensitivePath(relPath) || isRotSensitiveFile(relPath);
+    }
+  } catch (e) {
+    // pass
+  }
+  // If path escapes our workspace (or fails workspace prefix match), perform strict core checks on full physical path
+  return isRotSensitivePath(secure) || isRotSensitiveFile(secure);
+}
+
 export function main(context: Record<string, unknown>): Record<string, unknown> {
   try {
     globalRuleRunner.runDarkRead("PreToolUse", context);
@@ -120,6 +136,39 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
     const isReadonlySub = subagentType === "Remora_ReadOnly_Extractor";
     const isDeepDiverSub = subagentType === "Remora_Deep_Diver";
 
+    // --------------------------------------------------------
+    // 针对 send_message 的只读子代理回合数限制拦截 (Phase 73)
+    // --------------------------------------------------------
+    if (toolName === "send_message") {
+      const recipient = (args["Recipient"] as string) ?? "";
+      if (recipient) {
+        let subagentType = getHookState(convId, 0, `subagent_type_${recipient}`);
+        if (!subagentType) {
+          try {
+            const resolvedType = getSubagentTypeByConvId(recipient);
+            if (resolvedType) {
+              subagentType = resolvedType;
+              setHookState(convId, 0, `subagent_type_${recipient}`, subagentType);
+            }
+          } catch (e) {
+            // pass
+          }
+        }
+        if (subagentType === "Remora_ReadOnly_Extractor") {
+          const stateKey = `subagent_turn_limit_${recipient}`;
+          const currentCount = parseInt(getHookState(convId, 0, stateKey) || "0", 10);
+          if (currentCount >= 4) {
+            return {
+              decision: "deny",
+              reason: `⛔ [SUBAGENT_CONTEXT_ROT] ReadOnly subagent ${recipient} has exceeded the 4-turn limit. Please kill and respawn a new one to prevent context pollution.`,
+              decision_reason: `⛔ [SUBAGENT_CONTEXT_ROT] ReadOnly subagent ${recipient} has exceeded the 4-turn limit. Please kill and respawn a new one to prevent context pollution.`
+            };
+          }
+          setHookState(convId, 0, stateKey, (currentCount + 1).toString());
+        }
+      }
+    }
+
     // Detect Workspace: "inherit" write block
     const isWriteTool = ["write_to_file", "replace_file_content", "multi_replace_file_content"].includes(toolName);
     const isNonAllowRunCommand = toolName === "run_command" && inspectCommand((args["CommandLine"] as string) ?? "")[0] !== "allow";
@@ -131,9 +180,21 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
     } else if (isWriteTool) {
       targetDir = (args["TargetFile"] as string) ?? "";
     }
+    if (targetDir) {
+      targetDir = resolveSecurePath(targetDir);
+    }
 
     const isBrainPath = targetDir.includes("/brain/");
-    const isBranch = targetDir.includes(".system_generated/worktrees") || isBrainPath || process.env.REMORA_WORKSPACE === "branch";
+    let hasWorktreesInCwd = false;
+    try {
+      const realCwd = fs.realpathSync(process.cwd());
+      if (realCwd.includes(".system_generated/worktrees")) {
+        hasWorktreesInCwd = true;
+      }
+    } catch {
+      // pass
+    }
+    const isBranch = targetDir.includes(".system_generated/worktrees") || hasWorktreesInCwd || isBrainPath || process.env.REMORA_WORKSPACE === "branch";
     const workspaceEnv = process.env.REMORA_WORKSPACE;
     const isInherit = isSub && (
       workspaceEnv === "inherit" ||
@@ -353,17 +414,7 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
         };
       }
       // Resolve real physical path to catch symlink escapes
-      let realPath: string;
-      try {
-        realPath = fs.realpathSync(tp);
-      } catch {
-        try {
-          const dirName = path.dirname(tp);
-          realPath = path.join(fs.realpathSync(dirName), path.basename(tp));
-        } catch {
-          realPath = path.resolve(tp);
-        }
-      }
+      const realPath = resolveSecurePath(tp);
       // Resolve the real base path of the shared symlink
       let realBase: string;
       try {
@@ -398,11 +449,53 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
       const targetFile = (args["AbsolutePath"] as string) ?? "";
       if (targetFile) {
         // 1. 敏感后缀强力拦截 (大日志直接阻断)
-        if (isRotSensitiveFile(targetFile)) {
+        if (isPathSensitive(targetFile)) {
           if (isReadonlySub) {
             // pass  // 只读特工大日志读取显式放行
           } else if (!isSub) {
             return { decision: "deny", reason: rotReason };
+          }
+        }
+
+        // 3. 针对主干的 view_file 代码/文本文件区间硬拦截 (防止全量读取 15KB 以上文件导致上下文爆炸)
+        if (!isSub && !isPathSensitive(targetFile)) {
+          try {
+            if (fs.existsSync(targetFile)) {
+              const fileStats = fs.statSync(targetFile);
+              if (fileStats.isFile() && fileStats.size > 15 * 1024) {
+                const startLine = args["StartLine"];
+                const endLine = args["EndLine"];
+                let block = false;
+                let reasonSuffix = "";
+                
+                if (startLine === undefined || endLine === undefined) {
+                  block = true;
+                  reasonSuffix = "StartLine or EndLine parameters are missing (defaulting to full file read).";
+                } else {
+                  const s = typeof startLine === "number" ? startLine : parseInt(String(startLine), 10);
+                  const e = typeof endLine === "number" ? endLine : parseInt(String(endLine), 10);
+                  if (isNaN(s) || isNaN(e) || (e - s + 1) > 300) {
+                    block = true;
+                    reasonSuffix = `Requested line range (${s} to ${e}) exceeds the 300-line safety limit.`;
+                  }
+                }
+                
+                if (block) {
+                  // 中文翻译：[文件大小限制拦截] 试图在主干中全量读取超过 15KB 的源码文件或单次读取超过 300 行。
+                  // 英文对照：⛔ REMORA SAFETY INTERCEPT [VIEW_LIMIT_EXCEEDED]: Direct reading of files larger than 15KB must specify a line range of 300 lines or less.
+                  return {
+                    decision: "deny",
+                    reason: makeDenyReason(
+                      "VIEW_LIMIT_EXCEEDED",
+                      `Direct reading of files larger than 15KB must specify a line range of 300 lines or less.`,
+                      reasonSuffix + " Please specify StartLine and EndLine to view a sub-range of the file."
+                    ),
+                  };
+                }
+              }
+            }
+          } catch {
+            // pass
           }
         }
 
@@ -511,11 +604,29 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
       const rotPattern =
         /\b(?:cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.(?:py|ts)\b/i;
       const hasRotFeature = rotPattern.test(cmd);
+      const isRecallCall = /\bremora-recall\b/i.test(cmd);
 
       // 2. 安全性拦截与审计分流 (调用抽离出的 safety_rules)
       const [decision, category] = inspectCommand(cmd);
 
       if (hasRotFeature) {
+        // 放行 remora-recall 只读调用
+        if (isRecallCall) {
+          if (isReadonlySub && decision !== "allow") {
+            // 中文翻译：[只读安全拦截] 限制只读特工。Remora_ReadOnly_Extractor 仅被授权进行只读检索，严禁运行 any 物理写操作、构建或测试命令！
+            // 英文对照：⛔ REMORA SAFETY INTERCEPT [READONLY]: Remora_ReadOnly_Extractor is strictly read-only.\nACTION REQUIRED: Do not run write/test/build commands!
+            return {
+              decision: "deny",
+              reason: makeDenyReason(
+                "READONLY",
+                "Remora_ReadOnly_Extractor is strictly read-only.",
+                "Do not run write/test/build commands!"
+              ),
+            };
+          }
+          return { decision: "allow" };
+        }
+
         // 子会话大日志查询特许放行
         if (isSub) {
           // 若为只读特工，除日志外不可含有任何写或测试构建高危特征（必须为 allow）
@@ -643,14 +754,8 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
     if (toolName === "grep_search") {
       const searchPath = (args["SearchPath"] as string) ?? "";
       if (searchPath) {
-        // 1. 敏感后缀拦截
-        if (isRotSensitiveFile(searchPath)) {
-          if (!isSub) {
-            return { decision: "deny", reason: rotReason };
-          }
-        }
-        // 2. 敏感目录拦截 (如 Orchestrator 的日志目录)
-        if (isRotSensitivePath(searchPath)) {
+        // 1. 敏感后缀/目录拦截
+        if (isPathSensitive(searchPath)) {
           if (!isSub) {
             return { decision: "deny", reason: rotReason };
           }

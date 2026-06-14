@@ -76,3 +76,24 @@ export function getConversationsDir(): string {
 export function getGeminiConfigDir(): string {
   return path.join(homeDir(), ".gemini", "config");
 }
+
+/**
+ * Physical secure path resolution:
+ * 1. Try resolving physical path with fs.realpathSync to resolve symlinks and relative path traversal.
+ * 2. If path doesn't exist (e.g. before file creation), resolve its physical parent dir and join with basename.
+ * 3. Fallback to path.resolve(targetPath) if parent dir also doesn't exist.
+ */
+export function resolveSecurePath(targetPath: string): string {
+  try {
+    return fs.realpathSync(targetPath);
+  } catch (e) {
+    try {
+      const parentDir = path.dirname(targetPath);
+      const realParent = fs.realpathSync(parentDir);
+      return path.join(realParent, path.basename(targetPath));
+    } catch (err) {
+      return path.resolve(targetPath);
+    }
+  }
+}
+

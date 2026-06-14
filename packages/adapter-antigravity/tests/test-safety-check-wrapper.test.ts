@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => {
   return {
     getSubagentType: vi.fn<[string], string | null>(),
+    getSubagentTypeByConvId: vi.fn<[string], string | null>(),
     accumulate: vi.fn(),
     cleanup: vi.fn(),
     cdallGetCurrentTurnIdx: vi.fn<[], number>().mockReturnValue(0),
@@ -13,6 +14,9 @@ const mocks = vi.hoisted(() => {
     existsSync: vi.fn(),
     statSync: vi.fn(),
     readFileSync: vi.fn(),
+    mkdirSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    realpathSync: vi.fn(),
     findPluginRoot: vi.fn(),
   };
 });
@@ -20,6 +24,7 @@ const mocks = vi.hoisted(() => {
 // -- bridge/subagent --
 vi.mock("../src/bridge/subagent", () => ({
   getSubagentType: mocks.getSubagentType,
+  getSubagentTypeByConvId: mocks.getSubagentTypeByConvId,
 }));
 
 // -- bridge/stats --
@@ -86,6 +91,9 @@ vi.mock("node:fs", async () => {
     existsSync: mocks.existsSync,
     statSync: mocks.statSync,
     readFileSync: mocks.readFileSync,
+    mkdirSync: mocks.mkdirSync,
+    writeFileSync: mocks.writeFileSync,
+    realpathSync: mocks.realpathSync,
   };
 });
 
@@ -124,7 +132,7 @@ describe("SafetyCheckWrapper", () => {
     // restore default return values
     mocks.getSubagentType.mockReturnValue(null);
     mocks.existsSync.mockReturnValue(false);
-    mocks.statSync.mockReturnValue({ size: 100 });
+    mocks.statSync.mockReturnValue({ size: 100, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => false });
     mocks.readFileSync.mockReturnValue("");
     mocks.findPluginRoot.mockReturnValue("/tmp/plugin-root");
     coreMocks.readMode.mockReturnValue("strict");
@@ -137,6 +145,9 @@ describe("SafetyCheckWrapper", () => {
     coreMocks.inspectCommand.mockReturnValue(["allow", ""]);
     coreMocks.getHookState.mockReturnValue(null);
     mocks.accumulate.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0 });
+    mocks.mkdirSync.mockImplementation(() => {});
+    mocks.writeFileSync.mockImplementation(() => {});
+    mocks.realpathSync.mockImplementation((p) => p);
   });
 
   // ----------------------------------------------------------
@@ -917,5 +928,232 @@ describe("BehaviorRulesGuard", () => {
     expect(res4["decision"]).toBe("allow");
 
     dateSpy.mockRestore();
+  });
+
+
+  describe("Virtual Project Self-healing Test", () => {
+    it("creates virtual project config if it does not exist during bootstrap", async () => {
+      mocks.existsSync.mockImplementation((p) => {
+        if (p.includes("11111111-1111-1111-1111-111111111111.json")) {
+          return false;
+        }
+        return true;
+      });
+
+      // Clear module cache and re-import session-guardian
+      vi.resetModules();
+      await import("../src/hooks/session-guardian");
+
+      expect(mocks.mkdirSync).toHaveBeenCalled();
+      expect(mocks.writeFileSync).toHaveBeenCalledWith(
+        expect.stringContaining("11111111-1111-1111-1111-111111111111.json"),
+        expect.stringContaining("remora-system"),
+        "utf-8"
+      );
+    });
+  });
+
+  describe("Symlink Escape Interception Test", () => {
+    it("blocks view_file if target is a symlink pointing to sensitive path", () => {
+      const fsReal = require("node:fs");
+      const pathReal = require("node:path");
+      const osReal = require("node:os");
+
+      const tempDir = pathReal.join(osReal.tmpdir(), `remora-symlink-test-${Date.now()}`);
+      fsReal.mkdirSync(tempDir, { recursive: true });
+
+      const sensitiveFile = pathReal.join(tempDir, "large_log.jsonl");
+      fsReal.writeFileSync(sensitiveFile, "some log content", "utf-8");
+
+      const symlinkFile = pathReal.join(tempDir, "link_to_log.ts");
+      try {
+        fsReal.symlinkSync(sensitiveFile, symlinkFile);
+      } catch (e) {
+        // If symlink fails, skip or warn
+      }
+
+      // Configure mocks to resolve real path
+      mocks.realpathSync.mockImplementation((p) => {
+        try {
+          return fsReal.realpathSync(p);
+        } catch {
+          return p;
+        }
+      });
+      mocks.existsSync.mockReturnValue(true);
+
+      // We expect it to be blocked because the real path of the file resolved to 'large_log.jsonl' (which is rot-sensitive)
+      coreMocks.isRotSensitiveFile.mockImplementation((p) => p.endsWith(".jsonl"));
+      mocks.getSubagentType.mockReturnValue(null); // main context
+
+      const ctx = makeCtx("view_file", { AbsolutePath: symlinkFile });
+      const res = main(ctx);
+
+      // Clean up
+      try {
+        fsReal.unlinkSync(symlinkFile);
+      } catch {}
+      try {
+        fsReal.unlinkSync(sensitiveFile);
+      } catch {}
+      try {
+        fsReal.rmdirSync(tempDir);
+      } catch {}
+
+      expect(res["decision"]).toBe("deny");
+      expect(res["reason"]).toContain("prohibited to prevent context explosion");
+    });
+  });
+
+  describe("send_message turn limit check (Phase 73)", () => {
+    it("blocks send_message to ReadOnly extractor when turn limit exceeds 4", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      mocks.getSubagentTypeByConvId.mockReturnValue("Remora_ReadOnly_Extractor");
+
+      // Local mock state store for turns count
+      const localStore: Record<string, string> = {};
+      coreMocks.getHookState.mockImplementation((convId: string, turnIdx: number, key: string) => {
+        return localStore[key] || null;
+      });
+      coreMocks.setHookState.mockImplementation((convId: string, turnIdx: number, key: string, val: string) => {
+        localStore[key] = val;
+      });
+
+      const recipient = "subagent-123";
+
+      // 1st, 2nd, 3rd, 4th turns should be allowed
+      for (let i = 0; i < 4; i++) {
+        const res = main(makeCtx("send_message", { Recipient: recipient }));
+        expect(res["decision"]).toBe("allow");
+      }
+
+      // 5th turn should be denied
+      const res5 = main(makeCtx("send_message", { Recipient: recipient }));
+      expect(res5["decision"]).toBe("deny");
+      expect(res5["reason"]).toContain("exceeded the 4-turn limit");
+    });
+
+    it("allows send_message to other agent types even after 4 turns", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      mocks.getSubagentTypeByConvId.mockReturnValue("Remora_Deep_Diver");
+
+      const localStore: Record<string, string> = {};
+      coreMocks.getHookState.mockImplementation((convId: string, turnIdx: number, key: string) => {
+        return localStore[key] || null;
+      });
+      coreMocks.setHookState.mockImplementation((convId: string, turnIdx: number, key: string, val: string) => {
+        localStore[key] = val;
+      });
+
+      const recipient = "subagent-deep";
+
+      for (let i = 0; i < 6; i++) {
+        const res = main(makeCtx("send_message", { Recipient: recipient }));
+        expect(res["decision"]).toBe("allow");
+      }
+    });
+  });
+
+  describe("Phase 74 enhancements", () => {
+    describe("remora-recall whitelist bypass", () => {
+      it("allows remora-recall.ts query command for main agent even when matching rotPattern", () => {
+        mocks.getSubagentType.mockReturnValue(null); // main agent
+        coreMocks.inspectCommand.mockReturnValue(["allow", ""]);
+
+        // Command with remora-recall.ts normally matches rotPattern and gets denied
+        const cmd = "node packages/adapter-antigravity/bin/remora-recall.ts --query 'something'";
+        const ctx = makeCtx("run_command", { CommandLine: cmd });
+
+        const res = main(ctx);
+        expect(res["decision"]).toBe("allow");
+      });
+
+      it("allows remora-recall query command for subagent and keeps readonly check", () => {
+        mocks.getSubagentType.mockReturnValue("Remora_ReadOnly_Extractor");
+        mocks.getSubagentTypeByConvId.mockReturnValue("Remora_ReadOnly_Extractor");
+        
+        // Allowed recall call
+        coreMocks.inspectCommand.mockReturnValue(["allow", ""]);
+        const ctx1 = makeCtx("run_command", { CommandLine: "remora-recall --query 'test'" });
+        expect(main(ctx1)["decision"]).toBe("allow");
+
+        // Denied write call even with recall in it
+        coreMocks.inspectCommand.mockReturnValue(["deny", "write"]);
+        const ctx2 = makeCtx("run_command", { CommandLine: "remora-recall --query 'test' && touch foo" });
+        const res2 = main(ctx2);
+        expect(res2["decision"]).toBe("deny");
+        expect(res2["reason"]).toContain("is strictly read-only");
+      });
+    });
+
+    describe("isBranch process.cwd() adaptation", () => {
+      it("recognizes branch workspace when process.cwd() resolves to worktrees", () => {
+        mocks.getSubagentType.mockReturnValue("Remora_Deep_Diver");
+        mocks.getSubagentTypeByConvId.mockReturnValue("Remora_Deep_Diver");
+
+        // targetDir has no branch flag and no REMORA_WORKSPACE env
+        const targetDir = "/home/agent/scratch";
+        // mock process.cwd() using realpathSync mock
+        const originalCwd = process.cwd;
+        process.cwd = () => "/home/agent/.system_generated/worktrees/branch-123";
+        mocks.realpathSync.mockReturnValue("/home/agent/.system_generated/worktrees/branch-123");
+
+        const ctx = makeCtx("write_to_file", { TargetFile: targetDir + "/file.txt" });
+        const res = main(ctx);
+        process.cwd = originalCwd; // restore
+
+        // Should be allowed because isBranch is determined via cwd
+        expect(res["decision"]).toBe("allow");
+      });
+    });
+
+    describe("view_file range-limit hard block", () => {
+      it("blocks main agent reading source file > 15KB when StartLine/EndLine are missing", () => {
+        mocks.getSubagentType.mockReturnValue(null); // main agent
+        mocks.existsSync.mockReturnValue(true);
+        // mock file stats with size 20KB
+        mocks.statSync.mockReturnValue({ size: 20 * 1024, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false });
+
+        const ctx = makeCtx("view_file", { AbsolutePath: "/path/to/code.ts" });
+        const res = main(ctx);
+
+        expect(res["decision"]).toBe("deny");
+        expect(res["reason"]).toContain("VIEW_LIMIT_EXCEEDED");
+      });
+
+      it("blocks main agent reading source file > 15KB when range > 300 lines", () => {
+        mocks.getSubagentType.mockReturnValue(null); // main agent
+        mocks.existsSync.mockReturnValue(true);
+        mocks.statSync.mockReturnValue({ size: 20 * 1024, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false });
+
+        const ctx = makeCtx("view_file", { AbsolutePath: "/path/to/code.ts", StartLine: 1, EndLine: 400 });
+        const res = main(ctx);
+
+        expect(res["decision"]).toBe("deny");
+        expect(res["reason"]).toContain("VIEW_LIMIT_EXCEEDED");
+      });
+
+      it("allows main agent reading source file > 15KB when range <= 300 lines", () => {
+        mocks.getSubagentType.mockReturnValue(null); // main agent
+        mocks.existsSync.mockReturnValue(true);
+        mocks.statSync.mockReturnValue({ size: 20 * 1024, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false });
+
+        const ctx = makeCtx("view_file", { AbsolutePath: "/path/to/code.ts", StartLine: 1, EndLine: 150 });
+        const res = main(ctx);
+
+        expect(res["decision"]).toBe("allow");
+      });
+
+      it("allows subagent reading source file > 15KB with no range restrictions", () => {
+        mocks.getSubagentType.mockReturnValue("Remora_Deep_Diver"); // subagent
+        mocks.existsSync.mockReturnValue(true);
+        mocks.statSync.mockReturnValue({ size: 20 * 1024, isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false });
+
+        const ctx = makeCtx("view_file", { AbsolutePath: "/path/to/code.ts" });
+        const res = main(ctx);
+
+        expect(res["decision"]).toBe("allow");
+      });
+    });
   });
 });
