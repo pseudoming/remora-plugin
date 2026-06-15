@@ -220,7 +220,8 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
     (!workspaceEnv && !isBranch && !process.env.VITEST && process.env.NODE_ENV !== "test")
   );
 
-  if (isInherit && isWriteOperation) {
+  const isMergerSub = subagentType === "Remora_Merger";
+  if (isInherit && isWriteOperation && !isMergerSub) {
     // 中文翻译：[继承写操作拦截] 阻断子代理在继承主干工作区中执行物理写或测试/构建高危操作。请将子代理委派在隔离沙盒内运行！
     // 英文对照：⛔ REMORA SAFETY INTERCEPT [INHERIT_WRITE_DENY]: Subagent execution in inherited workspace is restricted from performing physical writes or unsafe commands.
     return {
@@ -623,6 +624,33 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
   if (toolName === "run_command") {
     const cmd = (args["CommandLine"] as string) ?? "";
 
+    // 针对专职特权合并特工 Remora_Merger 的专职命令审计与过滤
+    if (subagentType === "Remora_Merger") {
+      const trimmed = cmd.trim();
+      const isGitAllowed = [
+        "git checkout", "git merge", "git am", "git apply",
+        "git add", "git commit", "git diff", "git status"
+      ].some(prefix => trimmed.startsWith(prefix));
+
+      // 绝对强力拦截任何测试构建、编译或脚本调用指令
+      const hasRestrictedKeywords = [
+        "npm run", "vitest", "npm test", "jest", "pytest",
+        "sh ", "bash ", "./", "source ", "exec "
+      ].some(kw => trimmed.includes(kw));
+
+      if (!isGitAllowed || hasRestrictedKeywords) {
+        return {
+          decision: "deny",
+          reason: makeDenyReason(
+            "MERGER_DENY",
+            "Remora_Merger is strictly restricted to approved version control actions.",
+            "Only approved git commands (checkout, merge, am, apply, add, commit, diff, status) are allowed."
+          ),
+        };
+      }
+      return { decision: "allow" };
+    }
+
     // 优先放行 git commit 动作，避免其提交信息（如 Changelog 中包含大日志文件名如 remora-recall.ts）被误拦截
     if (cmd.trim().startsWith("git commit")) {
       const [decision, category] = inspectCommand(cmd);
@@ -761,6 +789,22 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
               "============================================================",
           };
         } else {
+          const trimmed = cmd.trim();
+          const isGitMergeOrControl = [
+            "git checkout", "git merge", "git am", "git apply", "git cherry-pick", "git rebase"
+          ].some(prefix => trimmed.startsWith(prefix));
+
+          if (isGitMergeOrControl) {
+            return {
+              decision: "deny",
+              reason: makeDenyReason(
+                "DELEGATION",
+                "Version control merge or checkout commands cannot be run directly in main context.",
+                "Please delegate to 'Remora_Merger' subagent with Workspace: 'inherit' to perform merging safely."
+              ),
+            };
+          }
+
           // 中文翻译：[命令验证拦截] 命令行语法解析校验未通过。可能包含潜在命令绕过风险。请将其委派给子代理在隔离沙盒内执行！
           // 英文对照：⛔ REMORA SAFETY INTERCEPT [DELEGATION]: Command verification failed due to syntax parser error.\nACTION REQUIRED: Please delegate to a subagent under (Workspace: 'branch')!
           return {

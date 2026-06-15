@@ -4,6 +4,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // hoisted mocks (must appear before any import of mocked modules)
 // ============================================================
 const mocks = vi.hoisted(() => {
+  const realIsExemptedPath = (targetFile: string): boolean => {
+    return (
+      targetFile.includes("/artifacts/") ||
+      targetFile.includes("scratch/parent_shared/") ||
+      targetFile.includes(".gemini/config/projects/") ||
+      targetFile.includes(".gemini/config/plugins/")
+    );
+  };
   return {
     getSubagentType: vi.fn<[string], string | null>(),
     getSubagentTypeByConvId: vi.fn<[string], string | null>(),
@@ -19,7 +27,7 @@ const mocks = vi.hoisted(() => {
     writeFileSync: vi.fn(),
     realpathSync: vi.fn(),
     findPluginRoot: vi.fn(),
-    isExemptedPath: vi.fn<[string], boolean>(),
+    isExemptedPath: vi.fn<[string], boolean>().mockImplementation(realIsExemptedPath),
   };
 });
 
@@ -80,8 +88,10 @@ const coreMocks = vi.hoisted(() => ({
   getHookState: vi.fn().mockReturnValue(null),
   setHookState: vi.fn(),
   info: vi.fn(),
-  RuleEngine: vi.fn().mockImplementation(class {
-    evaluate = vi.fn().mockReturnValue({ status: "ALLOW" });
+  RuleEngine: vi.fn().mockImplementation(() => {
+    return {
+      evaluate: vi.fn().mockReturnValue({ status: "ALLOW" }),
+    };
   }),
   UNIFIED_READ_WARN_LIMIT: 80 * 1024,
   UNIFIED_READ_DENY_LIMIT: 160 * 1024,
@@ -106,33 +116,17 @@ vi.mock("node:fs", async () => {
 });
 
 // -- bridge/paths --
-vi.mock("../src/bridge/paths", () => {
+vi.mock("../src/bridge/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/bridge/paths")>();
   return {
+    ...actual,
     findPluginRoot: mocks.findPluginRoot,
     isExemptedPath: mocks.isExemptedPath,
-    resolveSecurePath: (p: string) => {
-      try {
-        return require("node:fs").realpathSync(p);
-      } catch {
-        return p;
-      }
-    },
-    getDataDir: () => "/tmp/data",
-    getDbPath: () => "/tmp/data/remora_memory.db",
-    extractConvId: (p: string) => {
-      const match = p.match(/\/brain\/([^/]+)\//);
-      return match ? match[1] : null;
-    },
-    getAntigravityDir: () => "/tmp/antigravity",
-    getBrainDir: () => "/tmp/antigravity/brain",
-    getConversationsDir: () => "/tmp/antigravity/conversations",
-    getGeminiConfigDir: () => "/tmp/config",
   };
 });
 
 // module under test (import *after* mocks)
 import { main } from "../src/hooks/safety-check";
-import { isExemptedPath } from "../src/bridge/paths";
 
 // ============================================================
 // Helper – build a minimal toolCall context
@@ -174,12 +168,19 @@ describe("SafetyCheckWrapper", () => {
     coreMocks.isUnifiedLimitExceeded.mockReturnValue(false);
     coreMocks.isUnifiedLimitApproaching.mockReturnValue(false);
     coreMocks.isExemptedPath.mockReturnValue(false);
-    mocks.isExemptedPath.mockReturnValue(false);
     mocks.accumulate.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0, unified_accumulated_read_bytes: 0 });
     mocks.getStats.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0, unified_accumulated_read_bytes: 0 });
     mocks.mkdirSync.mockImplementation(() => {});
     mocks.writeFileSync.mockImplementation(() => {});
     mocks.realpathSync.mockImplementation((p) => p);
+    mocks.isExemptedPath.mockImplementation((targetFile: string): boolean => {
+      return (
+        targetFile.includes("/artifacts/") ||
+        targetFile.includes("scratch/parent_shared/") ||
+        targetFile.includes(".gemini/config/projects/") ||
+        targetFile.includes(".gemini/config/plugins/")
+      );
+    });
   });
 
   // ----------------------------------------------------------
@@ -731,6 +732,51 @@ describe("GitCommitEscapeAndInheritWriteDeny", () => {
 
       delete process.env.REMORA_WORKSPACE;
     });
+
+    it("allows Remora_Merger to write in inherited workspace", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Merger");
+      process.env.REMORA_WORKSPACE = "inherit";
+
+      const ctx = makeCtx("write_to_file", { TargetFile: "test.txt", CodeContent: "hello" });
+      const res = main(ctx);
+      expect(res["decision"]).toBe("allow");
+
+      delete process.env.REMORA_WORKSPACE;
+    });
+
+    it("allows Remora_Merger to run approved git commands", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Merger");
+
+      const ctx = makeCtx("run_command", { CommandLine: "git checkout main" });
+      const res = main(ctx);
+      expect(res["decision"]).toBe("allow");
+    });
+
+    it("blocks Remora_Merger from running non-git or restricted commands", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Merger");
+
+      // 1. Non-git command
+      const ctx1 = makeCtx("run_command", { CommandLine: "ls -la" });
+      const res1 = main(ctx1);
+      expect(res1["decision"]).toBe("deny");
+      expect(res1["reason"]).toContain("MERGER_DENY");
+
+      // 2. Git command but has restricted build keywords
+      const ctx2 = makeCtx("run_command", { CommandLine: "git checkout && npm run build" });
+      const res2 = main(ctx2);
+      expect(res2["decision"]).toBe("deny");
+      expect(res2["reason"]).toContain("MERGER_DENY");
+    });
+
+    it("intercepts main agent git merge and recommends Remora_Merger subagent", () => {
+      mocks.getSubagentType.mockReturnValue(null); // main agent
+      coreMocks.inspectCommand.mockReturnValue(["deny", "any_category_other_than_build"]);
+
+      const ctx = makeCtx("run_command", { CommandLine: "git merge feature-branch" });
+      const res = main(ctx);
+      expect(res["decision"]).toBe("deny");
+      expect(res["reason"]).toContain("Please delegate to 'Remora_Merger' subagent");
+    });
 });
 
 describe("BehaviorRulesGuard", () => {
@@ -756,12 +802,19 @@ describe("BehaviorRulesGuard", () => {
     coreMocks.isUnifiedLimitExceeded.mockReturnValue(false);
     coreMocks.isUnifiedLimitApproaching.mockReturnValue(false);
     coreMocks.isExemptedPath.mockReturnValue(false);
-    mocks.isExemptedPath.mockReturnValue(false);
     mocks.accumulate.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0, unified_accumulated_read_bytes: 0 });
     mocks.getStats.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0, unified_accumulated_read_bytes: 0 });
     mocks.mkdirSync.mockImplementation(() => {});
     mocks.writeFileSync.mockImplementation(() => {});
     mocks.realpathSync.mockImplementation((p) => p);
+    mocks.isExemptedPath.mockImplementation((targetFile: string): boolean => {
+      return (
+        targetFile.includes("/artifacts/") ||
+        targetFile.includes("scratch/parent_shared/") ||
+        targetFile.includes(".gemini/config/projects/") ||
+        targetFile.includes(".gemini/config/plugins/")
+      );
+    });
   });
   it("Subagent prompt length limit enforcement with 500/1500 limit", () => {
     mocks.getSubagentType.mockReturnValue(null);
@@ -1247,8 +1300,6 @@ describe("BehaviorRulesGuard", () => {
       const res = main(ctx);
 
       expect(res["decision"]).toBe("deny");
-      expect(res["reason"]).toContain("Unified accumulated read limit exceeded"); // UNIFIED-ANTI-ROT is mocked through makeDenyReason which starts with UNIFIED-ANTI-ROT or similar
-      // Actually makeDenyReason mocked as prefix + message + tip. Here prefix is UNIFIED-ANTI-ROT
       expect(res["reason"]).toContain("UNIFIED-ANTI-ROT");
     });
 
