@@ -1,10 +1,16 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, readdirSync } from "node:fs";
 
 const ROT_SENSITIVE_SUFFIXES: readonly string[] = [".jsonl", ".log", ".sqlite"];
 const ROT_SENSITIVE_PATH_FRAGMENTS: readonly string[] = ["/.system_generated", "/logs"];
 const ACCUMULATED_SOURCE_LIMIT = 400 * 1024;
 const ACCUMULATED_DATA_LIMIT = 150 * 1024;
 const LINE_ESTIMATE_BYTES = 50;
+
+export const UNIFIED_READ_WARN_LIMIT = 80 * 1024;
+export const UNIFIED_READ_DENY_LIMIT = 160 * 1024;
+export const GREP_PRE_ALLOCATION_DIR_DEFAULT = 15 * 1024;
+export const GREP_PRE_ALLOCATION_DIR_SMALL = 5 * 1024;
+export const GREP_PRE_ALLOCATION_FILE_MAX = 10 * 1024;
 
 export interface DenyReason {
   prefix: string;
@@ -21,7 +27,47 @@ export interface ReadArgs {
 export interface AccumulatedStats {
   accumulated_source_bytes: number;
   accumulated_data_bytes: number;
+  unified_accumulated_read_bytes?: number;
 }
+
+export function estimateGrepReadBytes(searchPath: string, fileCount?: number): number {
+  if (!existsSync(searchPath)) {
+    return GREP_PRE_ALLOCATION_DIR_DEFAULT;
+  }
+  try {
+    const stats = statSync(searchPath);
+    if (stats.isFile()) {
+      const estimated = Math.floor(stats.size * 0.5);
+      return Math.min(estimated, GREP_PRE_ALLOCATION_FILE_MAX);
+    } else if (stats.isDirectory()) {
+      let count = fileCount;
+      if (count === undefined) {
+        try {
+          const files = readdirSync(searchPath);
+          count = files.length;
+        } catch {
+          // pass
+        }
+      }
+      if (count !== undefined && count < 5) {
+        return GREP_PRE_ALLOCATION_DIR_SMALL;
+      }
+      return GREP_PRE_ALLOCATION_DIR_DEFAULT;
+    }
+  } catch {
+    // pass
+  }
+  return GREP_PRE_ALLOCATION_DIR_DEFAULT;
+}
+
+export function isUnifiedLimitExceeded(bytes: number): boolean {
+  return bytes > UNIFIED_READ_DENY_LIMIT;
+}
+
+export function isUnifiedLimitApproaching(bytes: number): boolean {
+  return bytes > UNIFIED_READ_WARN_LIMIT;
+}
+
 
 export function stripMarkdownCodeBlocks(text: string): string {
   return text.replace(/```[\s\S]*?(?:```|$)/g, "").replace(/~~~[\s\S]*?(?:~~~|$)/g, "");
@@ -225,4 +271,3 @@ export function validatePromptSyntax(prompt: string): { isValid: boolean; errorR
 
   return { isValid: true };
 }
-

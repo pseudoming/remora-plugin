@@ -97,3 +97,13 @@ export function resolveSecurePath(targetPath: string): string {
   }
 }
 
+export function isExemptedPath(targetFile: string): boolean {
+  return (
+    targetFile.includes("/artifacts/") ||
+    targetFile.includes("scratch/parent_shared/") ||
+    targetFile.includes(".gemini/config/projects/") ||
+    targetFile.includes(".gemini/config/plugins/")
+  );
+}
+
+

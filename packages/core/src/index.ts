@@ -34,6 +34,14 @@ export {
   isAccumulatedLimitExceeded,
   isPlanningArtifact,
   validatePromptSyntax,
+  UNIFIED_READ_WARN_LIMIT,
+  UNIFIED_READ_DENY_LIMIT,
+  GREP_PRE_ALLOCATION_DIR_DEFAULT,
+  GREP_PRE_ALLOCATION_DIR_SMALL,
+  GREP_PRE_ALLOCATION_FILE_MAX,
+  estimateGrepReadBytes,
+  isUnifiedLimitExceeded,
+  isUnifiedLimitApproaching,
 } from "./safety-policy";
 
 // Text analysis

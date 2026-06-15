@@ -12,6 +12,14 @@ import {
   isAccumulatedLimitExceeded,
   isPlanningArtifact,
   validatePromptSyntax,
+  UNIFIED_READ_WARN_LIMIT,
+  UNIFIED_READ_DENY_LIMIT,
+  GREP_PRE_ALLOCATION_DIR_DEFAULT,
+  GREP_PRE_ALLOCATION_DIR_SMALL,
+  GREP_PRE_ALLOCATION_FILE_MAX,
+  estimateGrepReadBytes,
+  isUnifiedLimitExceeded,
+  isUnifiedLimitApproaching,
 } from "../src/safety-policy";
 
 describe("enforcePromptLengthLimit", () => {
@@ -307,5 +315,46 @@ describe("validatePromptSyntax", () => {
     const result = validatePromptSyntax(prompt);
     expect(result.isValid).toBe(false);
     expect(result.errorReason).toContain("Unclosed double quote");
+  });
+});
+
+describe("unified safety features", () => {
+  let tmpFileSmall: string;
+  let tmpFileLarge: string;
+  let tmpDirSmall: string;
+  let tmpDirLarge: string;
+
+  beforeAll(() => {
+    tmpFileSmall = join(tmpdir(), `test-grep-small-${Date.now()}.txt`);
+    writeFileSync(tmpFileSmall, "dummy"); // 5 bytes
+
+    tmpFileLarge = join(tmpdir(), `test-grep-large-${Date.now()}.dat`);
+    writeFileSync(tmpFileLarge, Buffer.alloc(30 * 1024, "x")); // 30KB
+  });
+
+  afterAll(() => {
+    try { unlinkSync(tmpFileSmall); } catch {}
+    try { unlinkSync(tmpFileLarge); } catch {}
+  });
+
+  it("test_estimate_grep_read_bytes_file", () => {
+    expect(estimateGrepReadBytes(tmpFileSmall)).toBe(2);
+    expect(estimateGrepReadBytes(tmpFileLarge)).toBe(GREP_PRE_ALLOCATION_FILE_MAX);
+  });
+
+  it("test_estimate_grep_read_bytes_directory", () => {
+    expect(estimateGrepReadBytes(tmpdir(), 3)).toBe(GREP_PRE_ALLOCATION_DIR_SMALL);
+    expect(estimateGrepReadBytes(tmpdir(), 10)).toBe(GREP_PRE_ALLOCATION_DIR_DEFAULT);
+    const result = estimateGrepReadBytes(tmpdir());
+    expect([GREP_PRE_ALLOCATION_DIR_SMALL, GREP_PRE_ALLOCATION_DIR_DEFAULT]).toContain(result);
+    expect(estimateGrepReadBytes("/nonexistent-path-abc-123")).toBe(GREP_PRE_ALLOCATION_DIR_DEFAULT);
+  });
+
+  it("test_is_unified_limit_checkers", () => {
+    expect(isUnifiedLimitApproaching(70 * 1024)).toBe(false);
+    expect(isUnifiedLimitApproaching(UNIFIED_READ_WARN_LIMIT + 1)).toBe(true);
+
+    expect(isUnifiedLimitExceeded(150 * 1024)).toBe(false);
+    expect(isUnifiedLimitExceeded(UNIFIED_READ_DENY_LIMIT + 1)).toBe(true);
   });
 });

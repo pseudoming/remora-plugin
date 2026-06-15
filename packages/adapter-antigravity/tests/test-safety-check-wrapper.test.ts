@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
     getSubagentTypeByConvId: vi.fn<[string], string | null>(),
     accumulate: vi.fn(),
     cleanup: vi.fn(),
+    getStats: vi.fn(),
     cdallGetCurrentTurnIdx: vi.fn<[], number>().mockReturnValue(0),
     cdallGetCompactionWatermark: vi.fn<[], number>().mockReturnValue(-1),
     existsSync: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => {
     writeFileSync: vi.fn(),
     realpathSync: vi.fn(),
     findPluginRoot: vi.fn(),
+    isExemptedPath: vi.fn<[string], boolean>(),
   };
 });
 
@@ -31,6 +33,7 @@ vi.mock("../src/bridge/subagent", () => ({
 vi.mock("../src/bridge/stats", () => ({
   accumulate: mocks.accumulate,
   cleanup: mocks.cleanup,
+  getStats: mocks.getStats,
 }));
 
 // -- bridge/conversation --
@@ -77,11 +80,15 @@ const coreMocks = vi.hoisted(() => ({
   getHookState: vi.fn().mockReturnValue(null),
   setHookState: vi.fn(),
   info: vi.fn(),
-  RuleEngine: vi.fn().mockImplementation(() => {
-    return {
-      evaluate: vi.fn().mockReturnValue({ status: "ALLOW" }),
-    };
+  RuleEngine: vi.fn().mockImplementation(class {
+    evaluate = vi.fn().mockReturnValue({ status: "ALLOW" });
   }),
+  UNIFIED_READ_WARN_LIMIT: 80 * 1024,
+  UNIFIED_READ_DENY_LIMIT: 160 * 1024,
+  estimateGrepReadBytes: vi.fn().mockReturnValue(0),
+  isUnifiedLimitExceeded: vi.fn().mockReturnValue(false),
+  isUnifiedLimitApproaching: vi.fn().mockReturnValue(false),
+  isExemptedPath: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock("@remora/core", () => coreMocks);
@@ -99,16 +106,33 @@ vi.mock("node:fs", async () => {
 });
 
 // -- bridge/paths --
-vi.mock("../src/bridge/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/bridge/paths")>();
+vi.mock("../src/bridge/paths", () => {
   return {
-    ...actual,
     findPluginRoot: mocks.findPluginRoot,
+    isExemptedPath: mocks.isExemptedPath,
+    resolveSecurePath: (p: string) => {
+      try {
+        return require("node:fs").realpathSync(p);
+      } catch {
+        return p;
+      }
+    },
+    getDataDir: () => "/tmp/data",
+    getDbPath: () => "/tmp/data/remora_memory.db",
+    extractConvId: (p: string) => {
+      const match = p.match(/\/brain\/([^/]+)\//);
+      return match ? match[1] : null;
+    },
+    getAntigravityDir: () => "/tmp/antigravity",
+    getBrainDir: () => "/tmp/antigravity/brain",
+    getConversationsDir: () => "/tmp/antigravity/conversations",
+    getGeminiConfigDir: () => "/tmp/config",
   };
 });
 
 // module under test (import *after* mocks)
 import { main } from "../src/hooks/safety-check";
+import { isExemptedPath } from "../src/bridge/paths";
 
 // ============================================================
 // Helper – build a minimal toolCall context
@@ -146,7 +170,13 @@ describe("SafetyCheckWrapper", () => {
     coreMocks.validatePromptSyntax.mockReturnValue({ isValid: true });
     coreMocks.inspectCommand.mockReturnValue(["allow", ""]);
     coreMocks.getHookState.mockReturnValue(null);
-    mocks.accumulate.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0 });
+    coreMocks.estimateGrepReadBytes.mockReturnValue(0);
+    coreMocks.isUnifiedLimitExceeded.mockReturnValue(false);
+    coreMocks.isUnifiedLimitApproaching.mockReturnValue(false);
+    coreMocks.isExemptedPath.mockReturnValue(false);
+    mocks.isExemptedPath.mockReturnValue(false);
+    mocks.accumulate.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0, unified_accumulated_read_bytes: 0 });
+    mocks.getStats.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0, unified_accumulated_read_bytes: 0 });
     mocks.mkdirSync.mockImplementation(() => {});
     mocks.writeFileSync.mockImplementation(() => {});
     mocks.realpathSync.mockImplementation((p) => p);
@@ -704,6 +734,35 @@ describe("GitCommitEscapeAndInheritWriteDeny", () => {
 });
 
 describe("BehaviorRulesGuard", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // restore default return values
+    mocks.getSubagentType.mockReturnValue(null);
+    mocks.existsSync.mockReturnValue(false);
+    mocks.statSync.mockReturnValue({ size: 100, isFile: () => false, isDirectory: () => false, isSymbolicLink: () => false });
+    mocks.readFileSync.mockReturnValue("");
+    mocks.findPluginRoot.mockReturnValue("/tmp/plugin-root");
+    coreMocks.readMode.mockReturnValue("strict");
+    coreMocks.enforcePromptLengthLimit.mockReturnValue([false, null]);
+    coreMocks.enforceSandboxWorkspace.mockReturnValue([false, null]);
+    coreMocks.isRotSensitiveFile.mockReturnValue(false);
+    coreMocks.isRotSensitivePath.mockReturnValue(false);
+    coreMocks.estimateReadBytes.mockReturnValue(0);
+    coreMocks.isAccumulatedLimitExceeded.mockReturnValue(false);
+    coreMocks.validatePromptSyntax.mockReturnValue({ isValid: true });
+    coreMocks.inspectCommand.mockReturnValue(["allow", ""]);
+    coreMocks.getHookState.mockReturnValue(null);
+    coreMocks.estimateGrepReadBytes.mockReturnValue(0);
+    coreMocks.isUnifiedLimitExceeded.mockReturnValue(false);
+    coreMocks.isUnifiedLimitApproaching.mockReturnValue(false);
+    coreMocks.isExemptedPath.mockReturnValue(false);
+    mocks.isExemptedPath.mockReturnValue(false);
+    mocks.accumulate.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0, unified_accumulated_read_bytes: 0 });
+    mocks.getStats.mockReturnValue({ accumulated_source_bytes: 0, accumulated_data_bytes: 0, unified_accumulated_read_bytes: 0 });
+    mocks.mkdirSync.mockImplementation(() => {});
+    mocks.writeFileSync.mockImplementation(() => {});
+    mocks.realpathSync.mockImplementation((p) => p);
+  });
   it("Subagent prompt length limit enforcement with 500/1500 limit", () => {
     mocks.getSubagentType.mockReturnValue(null);
 
@@ -1156,6 +1215,106 @@ describe("BehaviorRulesGuard", () => {
 
         expect(res["decision"]).toBe("allow");
       });
+    });
+  });
+
+  // ----------------------------------------------------------
+  describe("unified watermark checks", () => {
+    it("warns when approaching limit but allows", () => {
+      mocks.getSubagentType.mockReturnValue(null); // main agent
+      coreMocks.isUnifiedLimitApproaching.mockReturnValue(true);
+      coreMocks.isUnifiedLimitExceeded.mockReturnValue(false);
+      
+      const originalWarn = console.warn;
+      const warnCalls: any[] = [];
+      console.warn = (...args: any[]) => {
+        warnCalls.push(args);
+      };
+
+      const ctx = makeCtx("view_file", { AbsolutePath: "/path/to/code.ts" });
+      const res = main(ctx);
+      console.warn = originalWarn;
+
+      expect(res["decision"]).toBe("allow");
+      expect(warnCalls).toContainEqual(["[Warning] [ANTI-ROT_ALERT]"]);
+    });
+
+    it("blocks view_file when unified limit is exceeded", () => {
+      mocks.getSubagentType.mockReturnValue(null); // main agent
+      coreMocks.isUnifiedLimitExceeded.mockReturnValue(true);
+
+      const ctx = makeCtx("view_file", { AbsolutePath: "/path/to/code.ts" });
+      const res = main(ctx);
+
+      expect(res["decision"]).toBe("deny");
+      expect(res["reason"]).toContain("Unified accumulated read limit exceeded"); // UNIFIED-ANTI-ROT is mocked through makeDenyReason which starts with UNIFIED-ANTI-ROT or similar
+      // Actually makeDenyReason mocked as prefix + message + tip. Here prefix is UNIFIED-ANTI-ROT
+      expect(res["reason"]).toContain("UNIFIED-ANTI-ROT");
+    });
+
+    it("blocks grep_search when unified limit is exceeded", () => {
+      mocks.getSubagentType.mockReturnValue(null); // main agent
+      coreMocks.isUnifiedLimitExceeded.mockReturnValue(true);
+
+      const ctx = makeCtx("grep_search", { SearchPath: "/path/to/dir" });
+      const res = main(ctx);
+
+      expect(res["decision"]).toBe("deny");
+      expect(res["reason"]).toContain("UNIFIED-ANTI-ROT");
+    });
+
+    it("allows view_file/grep_search on exempted paths even if limit is exceeded", () => {
+      mocks.getSubagentType.mockReturnValue(null); // main agent
+      coreMocks.isUnifiedLimitExceeded.mockReturnValue(true);
+      mocks.isExemptedPath.mockReturnValue(true);
+
+      const ctx1 = makeCtx("view_file", { AbsolutePath: "/path/to/any/file.json" });
+      const res1 = main(ctx1);
+      expect(res1["decision"]).toBe("allow");
+
+      const ctx2 = makeCtx("grep_search", { SearchPath: "/path/to/any/dir" });
+      const res2 = main(ctx2);
+      expect(res2["decision"]).toBe("allow");
+    });
+
+    it("allows view_file/grep_search for subagents even if limit is exceeded", () => {
+      mocks.getSubagentType.mockReturnValue("Remora_Deep_Diver"); // subagent
+      coreMocks.isUnifiedLimitExceeded.mockReturnValue(true);
+
+      const ctx1 = makeCtx("view_file", { AbsolutePath: "/path/to/code.ts" });
+      const res1 = main(ctx1);
+      expect(res1["decision"]).toBe("allow");
+
+      const ctx2 = makeCtx("grep_search", { SearchPath: "/path/to/dir" });
+      const res2 = main(ctx2);
+      expect(res2["decision"]).toBe("allow");
+    });
+
+    it("view_file updates double-track stats using accumulate", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      mocks.existsSync.mockReturnValue(true);
+      mocks.statSync.mockReturnValue({ size: 1000 });
+      coreMocks.estimateReadBytes.mockReturnValue(1000);
+      mocks.accumulate.mockReturnValue({
+        accumulated_source_bytes: 1000,
+        accumulated_data_bytes: 0,
+        unified_accumulated_read_bytes: 1000,
+      });
+
+      const ctx = makeCtx("view_file", { AbsolutePath: "/path/to/code.py" });
+      main(ctx);
+      
+      expect(mocks.accumulate).toHaveBeenCalledWith("conv123", 1000, 0, 1000);
+    });
+
+    it("grep_search updates unified stats using accumulate", () => {
+      mocks.getSubagentType.mockReturnValue(null);
+      coreMocks.estimateGrepReadBytes.mockReturnValue(5000);
+
+      const ctx = makeCtx("grep_search", { SearchPath: "/path/to/dir" });
+      main(ctx);
+
+      expect(mocks.accumulate).toHaveBeenCalledWith("conv123", 0, 0, 5000);
     });
   });
 });
