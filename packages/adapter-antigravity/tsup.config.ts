@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/install.ts', 'src/**/*.ts'],
+  entry: ['src/install.ts', 'src/**/*.ts', 'src/mcp/git-mcp.ts'],
   format: ['cjs'],
   outDir: 'dist',
   external: ['better-sqlite3'],

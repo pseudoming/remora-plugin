@@ -61,6 +61,7 @@ function renderAllTemplates(sourceRoot: string, targetRoot: string): void {
     [path.join(templateDir, "hooks.template.json"), path.join(targetRoot, "hooks.json")],
     [path.join(templateDir, "sidecar.template.json"), path.join(targetRoot, "sidecars", "memory-compactor", "sidecar.json")],
     [path.join(templateDir, "SKILL.template.md"), path.join(targetRoot, "skills", "remora-architecture", "SKILL.md")],
+    [path.join(templateDir, "mcp_config.template.json"), path.join(targetRoot, "mcp_config.json")],
   ];
 
   const agentsSrc = path.join(templateDir, "agents");
@@ -98,6 +99,70 @@ function deployWorkflows(sourceRoot: string, targetRoot: string): void {
   }
 }
 
+function mergeMcpConfig(pluginRoot: string): void {
+  const serverConfig = {
+    command: "node",
+    args: [
+      path.join(pluginRoot, "packages/adapter-antigravity/dist/mcp/git-mcp.js")
+    ]
+  };
+
+  const globalConfigs = [
+    path.join(getGeminiConfigDir(), "mcp_config.json"),
+    path.join(path.dirname(getGeminiConfigDir()), "antigravity-ide", "mcp_config.json")
+  ];
+
+  log("\n[2.5/3] Merging MCP configuration...");
+  for (const configPath of globalConfigs) {
+    if (!fs.existsSync(configPath)) {
+      log(`  Config file not found, skipping: ${configPath}`);
+      continue;
+    }
+    try {
+      const data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      if (!data.mcpServers) {
+        data.mcpServers = {};
+      }
+      data.mcpServers["remora-git-mcp"] = serverConfig;
+      
+      if (_dryRun) {
+        log(`[DRY-RUN] Would merge remora-git-mcp into ${configPath}`);
+      } else {
+        fs.writeFileSync(configPath, JSON.stringify(data, null, 2), "utf-8");
+        log(`  Merged remora-git-mcp into: ${configPath}`);
+      }
+    } catch (err: any) {
+      log(`[WARNING] Failed to merge MCP config into ${configPath}: ${err.message}`);
+    }
+  }
+}
+
+function unmergeMcpConfig(): void {
+  const globalConfigs = [
+    path.join(getGeminiConfigDir(), "mcp_config.json"),
+    path.join(path.dirname(getGeminiConfigDir()), "antigravity-ide", "mcp_config.json")
+  ];
+
+  log("\nRemoving remora-git-mcp from global MCP configurations...");
+  for (const configPath of globalConfigs) {
+    if (!fs.existsSync(configPath)) continue;
+    try {
+      const data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+      if (data.mcpServers && data.mcpServers["remora-git-mcp"]) {
+        delete data.mcpServers["remora-git-mcp"];
+        if (_dryRun) {
+          log(`[DRY-RUN] Would remove remora-git-mcp from ${configPath}`);
+        } else {
+          fs.writeFileSync(configPath, JSON.stringify(data, null, 2), "utf-8");
+          log(`  Removed remora-git-mcp from: ${configPath}`);
+        }
+      }
+    } catch (err: any) {
+      log(`[WARNING] Failed to remove MCP config from ${configPath}: ${err.message}`);
+    }
+  }
+}
+
 
 function resolvePaths(pluginRoot: string): [string, string] {
   let dataDir: string;
@@ -124,6 +189,8 @@ function doRemove(filePath: string): void {
 
 function doUninstall(dataDir: string, pluginRoot: string, purge: boolean): void {
   log("Uninstalling Remora Plugin...");
+
+  unmergeMcpConfig();
 
   const flag = path.join(dataDir, ".runtime", "installed.flag");
   doRemove(flag);
@@ -273,6 +340,7 @@ function mainReal(
   const srcRoot = sourcePluginRoot ?? pluginRoot;
   renderAllTemplates(srcRoot, pluginRoot);
   deployWorkflows(srcRoot, pluginRoot);
+  mergeMcpConfig(pluginRoot);
 
 
   log("\n[3/3] Initializing database...");

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "remora-git-mcp": {
+      "command": "node",
+      "args": [
+        "{PLUGIN_ROOT}/packages/adapter-antigravity/dist/mcp/git-mcp.js"
+      ]
+    }
+  }
+}

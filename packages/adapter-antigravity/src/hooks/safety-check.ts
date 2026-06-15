@@ -619,6 +619,52 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
   }
 
   // --------------------------------------------------------
+  // 针对 Git MCP 服务的双模态拦截审计 (Phase 79 Hardened)
+  // --------------------------------------------------------
+  const isLazyMcpMatch = toolName === "call_mcp_tool" && ((args["ServerName"] as string) || "").replace(/_/g, "-") === "remora-git-mcp";
+  const isEagerMcpMatch = toolName.startsWith("mcp_") && /^mcp_remora[-_]git[-_]mcp_/i.test(toolName);
+  
+  if (isLazyMcpMatch || isEagerMcpMatch) {
+    let actionName = "";
+    let actionArgs: Record<string, unknown> = {};
+
+    if (isLazyMcpMatch) {
+      actionName = (args["ToolName"] as string) || "";
+      actionArgs = (args["Arguments"] as Record<string, unknown>) || {};
+    } else {
+      actionName = toolName.replace(/^mcp_remora[-_]git[-_]mcp_/i, "");
+      actionArgs = args;
+    }
+
+    const isWriteMcpTool = ["git_checkout", "git_merge", "git_commit"].includes(actionName);
+    
+    if (isWriteMcpTool && !isMergerSub) {
+      return {
+        decision: "deny",
+        reason: makeDenyReason(
+          "MCP_GIT_DENY",
+          `Write operation '${actionName}' via Git MCP is restricted to Remora_Merger.`,
+          "Please delegate Git merge, checkout, or commit tasks to 'Remora_Merger' subagent."
+        ),
+      };
+    }
+
+    if (actionName === "git_commit") {
+      const commitMsg = (actionArgs["message"] as string) || "";
+      if (/[\r\n]|\*\*\*|(\&\&|;|\||`|\$\()/.test(commitMsg)) {
+        return {
+          decision: "deny",
+          reason: makeDenyReason(
+            "GIT_ESCAPE",
+            "Git commit message contains forbidden characters (newlines, consecutive asterisks, or shell command separators).",
+            "Ensure the commit message is clean and does not contain command injections."
+          ),
+        };
+      }
+    }
+  }
+
+  // --------------------------------------------------------
   // 针对 run_command 的拦截
   // --------------------------------------------------------
   if (toolName === "run_command") {
@@ -800,7 +846,7 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
               reason: makeDenyReason(
                 "DELEGATION",
                 "Version control merge or checkout commands cannot be run directly in main context.",
-                "Please delegate to 'Remora_Merger' subagent with Workspace: 'inherit' to perform merging safely."
+                "Please delegate to 'Remora_Merger' subagent with Workspace: 'inherit' and use 'remora-git-mcp' tools safely."
               ),
             };
           }
