@@ -1,0 +1,7 @@
+{
+  "highRiskCommands": [
+    "^git\\s+push\\b",
+    "\\brm\\s+-rf\\b",
+    "^npm\\s+publish\\b"
+  ]
+}

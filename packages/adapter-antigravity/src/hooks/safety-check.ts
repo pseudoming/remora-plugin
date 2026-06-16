@@ -19,6 +19,7 @@ import { auditMergerCmdRule } from "./command-auditors/merger-audit";
 import { auditReadonlyCmdRule } from "./command-auditors/readonly-audit";
 import { auditDeepDiverCmdRule } from "./command-auditors/deep-diver-audit";
 import { auditMainCmdRule } from "./command-auditors/main-audit";
+import { auditHighRiskCmdRule } from "./command-auditors/high-risk-gate";
 
 // ##########################################################
 // AGENT MAINTENANCE DISCIPLINE (架构设计维护纪律)
@@ -123,6 +124,7 @@ export const dynamicRules: DynamicRule[] = [
 	auditReadonlyCmdRule,
 	auditDeepDiverCmdRule,
 	auditMainCmdRule,
+	auditHighRiskCmdRule,
 ];
 
 export function executeDynamicRuleChain(
