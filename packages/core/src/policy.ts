@@ -18,12 +18,14 @@ export const SYSTEM_POLICY = {
 	SAFETY: {
 		// Context and I/O limits
 		MAX_PROMPT_CHARS: 1500,
-		FILE_READ_WARN_BYTES: 80 * 1024, // 80KB
-		FILE_READ_DENY_BYTES: 160 * 1024, // 160KB
-		SOURCE_LIMIT_BYTES: 400 * 1024, // 400KB accumulated
-		DATA_LIMIT_BYTES: 150 * 1024, // 150KB accumulated
+		FILE_READ_WARN_BYTES: 120 * 1024, // 120KB
+		FILE_READ_DENY_BYTES: 200 * 1024, // 200KB
+		SOURCE_LIMIT_BYTES: 80 * 1024, // 80KB accumulated source
+		DATA_LIMIT_BYTES: 120 * 1024, // 120KB accumulated data
 		PROMPT_DENSITY_LIMIT: 500, // chars per density check
 		VIEW_FILE_LINE_LIMIT: 300,
+		SINGLE_FILE_SIZE_LIMIT: 40 * 1024, // 40KB strict
+		SINGLE_FILE_SIZE_RELAX: 80 * 1024, // 80KB relax
 	},
 	GREP: {
 		// Pre-allocation sizes for text processing

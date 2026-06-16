@@ -45,6 +45,8 @@ export type DynamicRule = (
 ) => PreToolUseResponse | undefined;
 
 export interface AntigravityHookContext {
+    conversationId?: string;
+    workspacePaths?: string[];
     transcriptPath?: string;
     cwd?: string;
     

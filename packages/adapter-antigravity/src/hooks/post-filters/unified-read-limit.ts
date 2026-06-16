@@ -32,7 +32,7 @@ export const checkUnifiedReadLimitRule: DynamicRule = (ctx: DynamicRuleContext):
 			}
 
 			if (!ctx.isSub && ctx.transcriptPath) {
-				const sizeLimit = ctx.mode === "relax" ? 200 * 1024 : 50 * 1024;
+				const sizeLimit = ctx.mode === "relax" ? SYSTEM_POLICY.SAFETY.SINGLE_FILE_SIZE_RELAX : SYSTEM_POLICY.SAFETY.SINGLE_FILE_SIZE_LIMIT;
 				try {
 					if (
 						fs.existsSync(targetFile) &&

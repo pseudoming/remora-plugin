@@ -647,7 +647,7 @@ function _main(context: AntigravityHookContext): {
 		);
 
 		const hasSubagentKeyword =
-			/\b(?:subagent|diver|extractor|委派|沙盒)\b/i.test(cleanMsg);
+			/\b(?:subagent|diver|extractor)\b|委派|沙盒/i.test(cleanMsg);
 		const lastDispatchTurnStr = getHookState(
 			convId,
 			-1,
@@ -664,46 +664,56 @@ function _main(context: AntigravityHookContext): {
 		const alreadyInjectedThisTurn =
 			lastDispatchTurnStr === String(currentTurnIdxNum);
 
-		if (
-			!alreadyInjectedThisTurn &&
-			(srcKb > 150 || dataKb > 50 || hasSubagentKeyword)
-		) {
-			if (srcKb > 150 || dataKb > 50) {
-				injectSteps.push({
-					ephemeralMessage: formatCumulativeReadWarning(srcKb, dataKb),
-				});
-			}
-			injectSteps.push({
-				ephemeralMessage: formatSubagentDispatchReminder(),
-			});
-			
-			// Inject the absolute project decisions path
-			const projectUuid = getProjectUuidByConv(convId);
-			if (projectUuid) {
-				const projectDecisionsPath = path.join(getDataDir(), projectUuid, "decisions.json");
-				
-				let constraintsText = "";
-				try {
-					const constraints = getProjectConstraints(projectUuid);
-					console.log(`[Hook Info] Loaded ${constraints.length} behavioral constraints for ${projectUuid}`);
-					if (constraints && constraints.length > 0) {
-						constraintsText = `\n\n<system-discipline>\n[CRITICAL BEHAVIORAL CONSTRAINTS]\n${constraints.map(c => `- ${c.decision}`).join("\n")}\n</system-discipline>`;
-					}
-				} catch (err) {
-					console.error("[Hook Debug] Error fetching project constraints:", err);
-				}
-
-				// Event-Driven Sync: Check docs hash & detached spawn
-				try {
-					const conn = getConn();
+		const projectUuid = getProjectUuidByConv(convId);
+		if (projectUuid) {
+			// Event-Driven Sync: Check docs hash & detached spawn
+			try {
+				const conn = getConn();
 					try {
+						let workspacePath = process.cwd();
+						if (context.workspacePaths && context.workspacePaths.length > 0) {
+							workspacePath = context.workspacePaths[0];
+						} else if ((context as any).workspaceUris && (context as any).workspaceUris.length > 0) {
+							workspacePath = (context as any).workspaceUris[0].replace(/^file:\/\//, "");
+						} else {
+							const homeDir = process.env.HOME || process.env.USERPROFILE || "";
+							const projectDir = path.join(homeDir, ".gemini", "config", "projects");
+							if (fs.existsSync(projectDir)) {
+								const files = fs.readdirSync(projectDir);
+								for (const f of files) {
+									if (f.endsWith(".json")) {
+										try {
+											const config = JSON.parse(fs.readFileSync(path.join(projectDir, f), "utf-8"));
+											if (config.projectResources && config.projectResources.resources && config.projectResources.resources.length > 0) {
+												const folderUri = config.projectResources.resources[0].gitFolder?.folderUri || config.projectResources.resources[0].folder?.folderUri;
+												if (folderUri) {
+													const candidate = folderUri.replace(/^file:\/\//, "");
+													if (fs.existsSync(path.join(candidate, "AGENTS.md"))) {
+														workspacePath = candidate;
+														break;
+													}
+												}
+											}
+										} catch(e) {}
+									}
+								}
+							}
+						}
+
+						const debugPayload = {
+							context_workspacePaths: context.workspacePaths,
+							context_workspaceUris: (context as any).workspaceUris,
+							resolved_workspacePath: workspacePath,
+						};
+						fs.writeFileSync("/tmp/hook_state.log", JSON.stringify(debugPayload, null, 2));
+
 						const targetFiles = [
-							path.join(process.cwd(), "AGENTS.md"),
-							path.join(process.cwd(), "CLAUDE.md"),
-							path.join(process.cwd(), ".cursorrules"),
-							path.join(process.cwd(), ".github", "copilot-instructions.md"),
+							path.join(workspacePath, "AGENTS.md"),
+							path.join(workspacePath, "CLAUDE.md"),
+							path.join(workspacePath, ".cursorrules"),
+							path.join(workspacePath, ".github", "copilot-instructions.md"),
 						];
-						const normalizedCwd = process.cwd().replace(/\//g, "-");
+						const normalizedCwd = workspacePath.replace(/\//g, "-");
 						const ccMemoryDir = path.join(os.homedir(), ".claude", "projects", normalizedCwd, "memory");
 						if (fs.existsSync(ccMemoryDir)) {
 							const memFiles = fs.readdirSync(ccMemoryDir);
@@ -731,7 +741,7 @@ function _main(context: AntigravityHookContext): {
 								console.log("[Hook Info] Project docs changed. Spawning detached seed extraction...");
 								upsertArtifactHash(hashKey, currentHash, conn);
 								const scriptPath = path.join(findPluginRoot(), "packages", "adapter-antigravity", "dist", "sidecar", "seed-docs.js");
-								const worker = spawn(process.execPath, [scriptPath, projectUuid, process.cwd()], {
+								const worker = spawn(process.execPath, [scriptPath, projectUuid, workspacePath], {
 									detached: true,
 									stdio: "ignore",
 									env: process.env,
@@ -739,16 +749,39 @@ function _main(context: AntigravityHookContext): {
 								worker.unref();
 								console.log(`[Hook Info] Seed extraction worker spawned (pid=${worker.pid})`);
 							} else {
-								console.log("[Hook Info] Docs hash unchanged, skipping extraction.");
 							}
 						} else {
-							console.log("[Hook Info] No seed docs found in project root, skipping extraction.");
 						}
 					} finally {
 						if (conn) conn.close();
 					}
+			} catch (err) {
+				console.error("[Hook Debug] Error in docs hash check:", err);
+			}
+		}
+
+		if (!alreadyInjectedThisTurn && (srcKb > 15 || dataKb > 5 || hasSubagentKeyword)) {
+			if (srcKb > 15 || dataKb > 5) {
+				injectSteps.push({
+					ephemeralMessage: formatCumulativeReadWarning(srcKb, dataKb),
+				});
+			}
+			injectSteps.push({
+				ephemeralMessage: formatSubagentDispatchReminder(),
+			});
+			
+			console.log(`[Hook Info] dispatch triggered: convId=${convId}, projectUuid=${projectUuid || "(null)"}, srcKb=${srcKb}, dataKb=${dataKb}, hasSubagentKeyword=${hasSubagentKeyword}`);
+			if (projectUuid) {
+				const projectDecisionsPath = path.join(getDataDir(), projectUuid, "decisions.json");
+				let constraintsText = "";
+				try {
+					const constraints = getProjectConstraints(projectUuid);
+					console.log(`[Hook Info] Loaded ${constraints.length} behavioral constraints for ${projectUuid}`);
+					if (constraints && constraints.length > 0) {
+						constraintsText = `\n\n<system-discipline>\n[CRITICAL BEHAVIORAL CONSTRAINTS]\n${constraints.map(c => `- ${c.decision}`).join("\n")}\n</system-discipline>`;
+					}
 				} catch (err) {
-					console.error("[Hook Debug] Error in docs hash check:", err);
+					console.error("[Hook Debug] Error fetching project constraints:", err);
 				}
 
 				injectSteps.push({
