@@ -4,6 +4,16 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { getDataDir } from "../../bridge/paths";
 
+function escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function compileCommandPattern(plainCmd: string): RegExp {
+    const tokens = plainCmd.trim().split(/\s+/).map(escapeRegex);
+    // Match at the start of a command or after spaces, and require space or end of string after
+    return new RegExp(`(?:^|\\s)${tokens.join("\\s+")}(?:\\s|$)`);
+}
+
 export function auditHighRiskCmdRule(
 	ctx: DynamicRuleContext,
 ): PreToolUseResponse | undefined {
@@ -22,9 +32,9 @@ export function auditHighRiskCmdRule(
 		} else {
             // Fallback default
             highRiskCommands = [
-                "^git\\s+push\\b",
-                "\\brm\\s+-rf\\b",
-                "^npm\\s+publish\\b"
+                "git push",
+                "rm -rf",
+                "npm publish"
             ];
         }
 	} catch (e) {
@@ -32,8 +42,8 @@ export function auditHighRiskCmdRule(
 	}
 
 	let matchedPattern = false;
-	for (const patternStr of highRiskCommands) {
-		const regex = new RegExp(patternStr);
+	for (const rawStr of highRiskCommands) {
+		const regex = compileCommandPattern(rawStr);
 		if (regex.test(cmd)) {
 			matchedPattern = true;
 			break;

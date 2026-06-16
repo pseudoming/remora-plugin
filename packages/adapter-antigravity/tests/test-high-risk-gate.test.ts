@@ -106,10 +106,10 @@ describe("auditHighRiskCmdRule", () => {
         expect(result?.decision).toBe("deny");
     });
 
-    it("should dynamically load from config file", () => {
+    it("should dynamically load from config file and support robust matching", () => {
         (fs.existsSync as any).mockReturnValue(true);
         (fs.readFileSync as any).mockReturnValue(JSON.stringify({
-            highRiskCommands: ["^echo\\s+danger\\b"]
+            highRiskCommands: ["echo danger", "rm -rf"]
         }));
 
         // The default fallback "git push" should now be ignored, and only "echo danger" triggers it
@@ -119,5 +119,9 @@ describe("auditHighRiskCmdRule", () => {
         const dangerCtx = createCtx("run_command", "echo danger world");
         const result = auditHighRiskCmdRule(dangerCtx);
         expect(result?.decision).toBe("deny");
+
+        // Should handle multiple spaces robustness
+        const spacingCtx = createCtx("run_command", "sudo rm    -rf /");
+        expect(auditHighRiskCmdRule(spacingCtx)?.decision).toBe("deny");
     });
 });

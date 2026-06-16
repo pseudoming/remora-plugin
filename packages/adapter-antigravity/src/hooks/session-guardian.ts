@@ -268,7 +268,7 @@ function _main(context: AntigravityHookContext): {
 				console.warn("[Hook Warn] mkdirSync failed:", e);
 			}
 
-			// 导出活跃 Topic 决策到 subagent_shared 供子代理共享
+			// 导出活跃 Topic 决策到 项目级别 供所有会话共享
 			try {
 				const conn = getConn();
 				try {
@@ -287,10 +287,13 @@ function _main(context: AntigravityHookContext): {
 								decisions: decisions,
 								exported_at: new Date().toISOString(),
 							};
+							const projectDir = path.join(getDataDir(), projectUuid);
+							if (!fs.existsSync(projectDir)) {
+								fs.mkdirSync(projectDir, { recursive: true });
+							}
 							const exportPath = path.join(
-								parentScratch,
-								"subagent_shared",
-								"active_decisions.json",
+								projectDir,
+								"decisions.json",
 							);
 							fs.writeFileSync(
 								exportPath,
@@ -667,6 +670,16 @@ function _main(context: AntigravityHookContext): {
 			injectSteps.push({
 				ephemeralMessage: formatSubagentDispatchReminder(),
 			});
+			
+			// Inject the absolute project decisions path
+			const projectUuid = getProjectUuidByConv(convId);
+			if (projectUuid) {
+				const projectDecisionsPath = path.join(getDataDir(), projectUuid, "decisions.json");
+				injectSteps.push({
+					ephemeralMessage: `<system-reminder>⚠️ 项目决策持久化于 ${projectDecisionsPath}。跨会话前读取此文件可恢复历史决策。</system-reminder>`
+				});
+			}
+
 			markFired(
 				convId,
 				"dispatch_protocol_injected_turn",
