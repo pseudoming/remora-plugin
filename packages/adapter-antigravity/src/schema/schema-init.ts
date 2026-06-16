@@ -40,6 +40,21 @@ function initDb(): void {
 		} catch {
 			db.exec("ALTER TABLE topic_decisions ADD COLUMN compressed_summary TEXT");
 		}
+		try {
+			db.prepare("SELECT is_constraint FROM topic_decisions LIMIT 1").run();
+		} catch {
+			db.exec(
+				"ALTER TABLE topic_decisions ADD COLUMN is_constraint INTEGER DEFAULT 0",
+			);
+			db.exec(`
+				UPDATE topic_decisions SET is_constraint = 1
+				WHERE user_confirmed = 1 AND (
+					decision LIKE '%禁止%' OR
+					decision LIKE '%红线%' OR
+					decision LIKE '%越权%'
+				)
+			`);
+		}
 
 		for (const [col, colDef] of [
 			["source", "TEXT DEFAULT 'auto'"],

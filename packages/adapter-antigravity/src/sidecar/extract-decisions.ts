@@ -320,12 +320,14 @@ You MUST output ONLY a valid JSON object matching this schema:
       "topic_id": "t_001",
       "summary": "...",
       "decisions": [
-        {"decision": "...", "rationale": "...", "evidence_msg_ids": [123, 125], "decision_type": "approved", "user_confirmed": false, "inherited_from": []}
+        {"decision": "...", "rationale": "...", "evidence_msg_ids": [123, 125], "decision_type": "approved", "is_constraint": false, "user_confirmed": false, "inherited_from": []}
       ]
     }
   ]
 }
-Note: decision_type MUST be one of: "approved" (decision accepted/made), "rejected" (proposal explicitly rejected), "deferred" (postponed for later).
+Note: decision_type MUST be one of: "approved" (decision accepted/made), "rejected" (proposal explicitly rejected/abandoned), "deferred" (postponed for later).
+IMPORTANT: You MUST critically evaluate if a decision was REJECTED or DEFERRED. Do NOT default to "approved" if the user or agent decided to abandon or delay an idea!
+Note: is_constraint MUST be true ONLY IF the decision is a strict behavioral rule, prohibition, or red-line constraint for the agent (e.g., "NEVER use git push", "Always use WSL2"). Set false for normal technical/architecture decisions.
 Note: If this call compresses or merges old decisions with known IDs (e.g. 12, 15), you MUST list those original IDs in the "inherited_from" array. Otherwise, set "inherited_from": [].${topicConstraintPrompt}
 Note: evidence_msg_ids MUST NOT be empty. Fill it with the actual IDs from [msg_XXXX] prefixes.
 Note: If the MODEL output shows clear self-correction, agreement, or adoption of user's proposal, set "user_confirmed": true.
@@ -403,6 +405,7 @@ If no significant topics, output: {"topics": []}
 						const evidenceMsgIds = d.evidence_msg_ids || [];
 
 						const decisionType = d.decision_type || "approved";
+						const isConstraint = d.is_constraint ? 1 : 0;
 						insertDecision(
 							session.projectUuid,
 							topicId,
@@ -412,6 +415,7 @@ If no significant topics, output: {"topics": []}
 							JSON.stringify(evidenceMsgIds),
 							userConfirmedVal,
 							decisionType,
+							isConstraint,
 							conn,
 						);
 					}

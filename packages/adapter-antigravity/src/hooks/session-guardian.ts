@@ -119,6 +119,7 @@ import {
 	getProjectUuidByConv,
 	getActiveTopic,
 	getDecisionsByTopic,
+	getProjectConstraints,
 	SYSTEM_POLICY,
 } from "@remora/core";
 import { cleanup, getStats } from "../bridge/stats";
@@ -675,8 +676,19 @@ function _main(context: AntigravityHookContext): {
 			const projectUuid = getProjectUuidByConv(convId);
 			if (projectUuid) {
 				const projectDecisionsPath = path.join(getDataDir(), projectUuid, "decisions.json");
+				
+				let constraintsText = "";
+				try {
+					const constraints = getProjectConstraints(projectUuid);
+					if (constraints && constraints.length > 0) {
+						constraintsText = `\n\n<system-discipline>\n[CRITICAL BEHAVIORAL CONSTRAINTS]\n${constraints.map(c => `- ${c.decision}`).join("\n")}\n</system-discipline>`;
+					}
+				} catch (err) {
+					console.error("[Hook Debug] Error fetching project constraints:", err);
+				}
+
 				injectSteps.push({
-					ephemeralMessage: `<system-reminder>⚠️ 项目决策持久化于 ${projectDecisionsPath}。跨会话前读取此文件可恢复历史决策。</system-reminder>`
+					ephemeralMessage: `<system-reminder>⚠️ 项目决策持久化于 ${projectDecisionsPath}。跨会话前读取此文件可恢复历史决策。${constraintsText}</system-reminder>`
 				});
 			}
 

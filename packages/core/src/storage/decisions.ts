@@ -239,15 +239,16 @@ export function insertDecision(
 	evidenceMsgIds: string,
 	userConfirmed: number,
 	decisionType: string,
+	isConstraint = 0,
 	conn?: Database.Database,
 ): void {
 	const db = conn ?? getConn();
 	const ownConn = !conn;
 	try {
 		db.prepare(
-			`INSERT INTO topic_decisions
-         (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, decision_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO topic_decisions 
+         (project_uuid, topic_id, conversation_id, decision, rationale, evidence_msg_ids, user_confirmed, decision_type, is_constraint) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		).run(
 			projectUuid,
 			topicId,
@@ -257,6 +258,7 @@ export function insertDecision(
 			evidenceMsgIds,
 			userConfirmed,
 			decisionType,
+			isConstraint,
 		);
 	} finally {
 		if (ownConn) db.close();
@@ -462,5 +464,29 @@ export function getDecisionsByTopic(
 		return [];
 	} finally {
 		if (ownConn) db.close();
+	}
+}
+
+export function getProjectConstraints(
+	projectUuid: string,
+	conn?: Database.Database,
+): Array<{ topic_id: string; decision: string }> {
+	const db = conn ?? getConn();
+	const ownConn = !conn;
+	try {
+		const stmt = db.prepare(
+			`SELECT topic_id, decision FROM topic_decisions 
+			 WHERE project_uuid = ? AND is_constraint = 1 AND decision_type = 'approved'
+			 ORDER BY updated_at DESC`,
+		);
+		const rows = stmt.all(projectUuid) as Array<{
+			topic_id: string;
+			decision: string;
+		}>;
+		return rows;
+	} finally {
+		if (ownConn) {
+			db.close();
+		}
 	}
 }
