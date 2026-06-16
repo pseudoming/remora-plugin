@@ -24,14 +24,7 @@ export function findPluginRoot(): string {
 }
 
 export function getDataDir(): string {
-	const pluginRoot = findPluginRoot();
-	try {
-		fs.accessSync(pluginRoot, fs.constants.W_OK);
-		return path.join(pluginRoot, "data");
-	} catch (e) {
-    console.error("[Remora Policy Error] Failure:", e);
-  }
-	return path.join(os.homedir(), ".remora", "data");
+	return path.join(homeDir(), ".remora", "data");
 }
 
 export function getDbPath(): string {

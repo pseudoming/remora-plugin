@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS topic_decisions (
     last_injected_at TEXT,                -- 上次被注入上下文的时间戳
     compressed_summary TEXT,              -- 存放 LLM 生成的单行压缩决策摘要
     is_constraint INTEGER DEFAULT 0,      -- 是否为架构约束
+    source TEXT DEFAULT 'auto',           -- 决策来源：'auto' (compactor) / 'system' (全局种子) / 'seed_docs' (文档提取)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 最后更新时间
     FOREIGN KEY(project_uuid, topic_id) REFERENCES project_topics(uuid, topic_id)

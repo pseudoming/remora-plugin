@@ -92,12 +92,43 @@ function initDb(): void {
 			["decision_type", "TEXT DEFAULT 'approved'"],
 			["associated_files", "TEXT DEFAULT '[]'"],
 			["updated_at", "TIMESTAMP DEFAULT '2026-06-05 00:00:00'"],
+			["source", "TEXT DEFAULT 'auto'"],
 		]) {
 			try {
 				db.prepare(`SELECT ${col} FROM topic_decisions LIMIT 1`).run();
 			} catch {
 				db.exec(`ALTER TABLE topic_decisions ADD COLUMN ${col} ${colDef}`);
 			}
+		}
+
+		// Seed global system-wide constraints
+		try {
+			db.exec(`
+				INSERT INTO project_topics (uuid, topic_id, summary, status)
+				SELECT 'global', 't_global_rules', 'Global System Rules', 'open'
+				WHERE NOT EXISTS (SELECT 1 FROM project_topics WHERE uuid = 'global' AND topic_id = 't_global_rules')
+			`);
+
+			const seedRules = [
+				{ decision: '写完代码不自动 commit', rationale: '防止污染代码库历史' },
+				{ decision: '不在 Hook payload 注入自定义字段', rationale: '遵循 Hook Schema Strictness，防止 JSON 解析崩溃' },
+				{ decision: '临时脚本用完即删', rationale: '保持环境卫生，防止垃圾脚本残留' },
+				{ decision: 'Seed 数据脚本必须存在门控校验', rationale: '防止无限制修改开发期数据库数据' },
+			];
+
+			const stmt = db.prepare(`
+				INSERT INTO topic_decisions (project_uuid, topic_id, conversation_id, decision, rationale, user_confirmed, is_constraint, source, decision_type)
+				SELECT 'global', 't_global_rules', 'system_init', ?, ?, 1, 1, 'system', 'approved'
+				WHERE NOT EXISTS (
+					SELECT 1 FROM topic_decisions
+					WHERE project_uuid = 'global' AND decision = ?
+				)
+			`);
+			for (const rule of seedRules) {
+				stmt.run(rule.decision, rule.rationale, rule.decision);
+			}
+		} catch (e) {
+			console.error("[Remora Schema Error] Failed to seed global constraints:", e);
 		}
 
 		try {

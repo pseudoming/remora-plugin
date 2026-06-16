@@ -93,6 +93,7 @@ export type { SnapshotEntry, Snapshot } from "./filesystem";
 
 // Connection
 export { getConn } from "./storage/connection";
+export { getArtifactHash, upsertArtifactHash } from "./storage/artifacts";
 
 // Coverage
 export { calculateFactualConfidence, validateIdInheritance } from "./coverage";

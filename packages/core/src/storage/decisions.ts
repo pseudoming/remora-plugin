@@ -475,8 +475,8 @@ export function getProjectConstraints(
 	const ownConn = !conn;
 	try {
 		const stmt = db.prepare(
-			`SELECT topic_id, decision FROM topic_decisions 
-			 WHERE project_uuid = ? AND is_constraint = 1 AND decision_type = 'approved'
+			`SELECT topic_id, decision FROM topic_decisions
+			 WHERE project_uuid IN (?, 'global') AND is_constraint = 1 AND decision_type = 'approved'
 			 ORDER BY updated_at DESC`,
 		);
 		const rows = stmt.all(projectUuid) as Array<{

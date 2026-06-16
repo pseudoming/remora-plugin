@@ -1,6 +1,8 @@
 import { PreInvocationResponse, AntigravityHookContext } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as os from "node:os";
+import { spawn } from "node:child_process";
 
 export function recoverCoreDistSymlink(pluginRoot: string): void {
 	if (!pluginRoot) return;
@@ -121,7 +123,10 @@ import {
 	getDecisionsByTopic,
 	getProjectConstraints,
 	SYSTEM_POLICY,
+	getArtifactHash,
+	upsertArtifactHash,
 } from "@remora/core";
+import { createHash } from "node:crypto";
 import { cleanup, getStats } from "../bridge/stats";
 import {
 	getSubagentTypeByConvId,
@@ -680,11 +685,70 @@ function _main(context: AntigravityHookContext): {
 				let constraintsText = "";
 				try {
 					const constraints = getProjectConstraints(projectUuid);
+					console.log(`[Hook Info] Loaded ${constraints.length} behavioral constraints for ${projectUuid}`);
 					if (constraints && constraints.length > 0) {
 						constraintsText = `\n\n<system-discipline>\n[CRITICAL BEHAVIORAL CONSTRAINTS]\n${constraints.map(c => `- ${c.decision}`).join("\n")}\n</system-discipline>`;
 					}
 				} catch (err) {
 					console.error("[Hook Debug] Error fetching project constraints:", err);
+				}
+
+				// Event-Driven Sync: Check docs hash & detached spawn
+				try {
+					const conn = getConn();
+					try {
+						const targetFiles = [
+							path.join(process.cwd(), "AGENTS.md"),
+							path.join(process.cwd(), "CLAUDE.md"),
+							path.join(process.cwd(), ".cursorrules"),
+							path.join(process.cwd(), ".github", "copilot-instructions.md"),
+						];
+						const normalizedCwd = process.cwd().replace(/\//g, "-");
+						const ccMemoryDir = path.join(os.homedir(), ".claude", "projects", normalizedCwd, "memory");
+						if (fs.existsSync(ccMemoryDir)) {
+							const memFiles = fs.readdirSync(ccMemoryDir);
+							for (const mf of memFiles) {
+								if (mf.endsWith(".md")) {
+									targetFiles.push(path.join(ccMemoryDir, mf));
+								}
+							}
+						}
+
+						let combinedData = "";
+						for (const f of targetFiles) {
+							if (fs.existsSync(f)) {
+								combinedData += fs.readFileSync(f, "utf-8");
+							}
+						}
+
+						if (combinedData.length > 0) {
+							const currentHash = createHash("md5").update(combinedData).digest("hex");
+							const hashKey = "project_docs_seed_hash";
+							const prevHash = getArtifactHash(hashKey, conn);
+
+							console.log(`[Hook Info] Docs hash check: prev=${prevHash || "(none)"}, current=${currentHash}, files=${targetFiles.length}`);
+							if (currentHash !== prevHash) {
+								console.log("[Hook Info] Project docs changed. Spawning detached seed extraction...");
+								upsertArtifactHash(hashKey, currentHash, conn);
+								const scriptPath = path.join(findPluginRoot(), "packages", "adapter-antigravity", "dist", "sidecar", "seed-docs.js");
+								const worker = spawn(process.execPath, [scriptPath, projectUuid, process.cwd()], {
+									detached: true,
+									stdio: "ignore",
+									env: process.env,
+								});
+								worker.unref();
+								console.log(`[Hook Info] Seed extraction worker spawned (pid=${worker.pid})`);
+							} else {
+								console.log("[Hook Info] Docs hash unchanged, skipping extraction.");
+							}
+						} else {
+							console.log("[Hook Info] No seed docs found in project root, skipping extraction.");
+						}
+					} finally {
+						if (conn) conn.close();
+					}
+				} catch (err) {
+					console.error("[Hook Debug] Error in docs hash check:", err);
 				}
 
 				injectSteps.push({

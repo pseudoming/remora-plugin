@@ -189,14 +189,8 @@ function unmergeMcpConfig(): void {
 	}
 }
 
-function resolvePaths(pluginRoot: string): [string, string] {
-	let dataDir: string;
-	try {
-		fs.accessSync(pluginRoot, fs.constants.W_OK);
-		dataDir = path.join(pluginRoot, "data");
-	} catch {
-		dataDir = path.join(os.homedir(), ".remora", "data");
-	}
+function resolvePaths(_pluginRoot: string): [string, string] {
+	const dataDir = path.join(os.homedir(), ".remora", "data");
 	const runtimeDir = path.join(dataDir, ".runtime");
 	return [dataDir, runtimeDir];
 }
