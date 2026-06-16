@@ -89,7 +89,7 @@ describe("TestSafetyRules", () => {
 	});
 });
 
-describe.skip("TestFactualConfidence", () => {
+describe("TestFactualConfidence", () => {
 	let conn: Database.Database;
 
 	// 初始化内存数据库并创建所需的表结构
@@ -163,6 +163,7 @@ describe.skip("TestFactualConfidence", () => {
 				baselineFiles,
 				baselineActions,
 				outputTopics,
+				conn
 			);
 			expect(confidence).toBe(1.0);
 		} finally {
@@ -209,6 +210,7 @@ describe.skip("TestFactualConfidence", () => {
 				baselineFiles,
 				baselineActions,
 				outputTopics,
+				conn
 			);
 			expect(confidence).toBe(0.5);
 		} finally {

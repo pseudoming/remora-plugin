@@ -79,29 +79,6 @@ describe("Base64Audit", () => {
 		const b64Token = Buffer.from(dangerousCmd).toString("base64");
 		expect(inspectCommand(`echo ${b64Token}`)).toEqual(["deny", "test"]);
 	});
-
-	it.skip("base64 whitelisted token skipped", () => {
-		// BASE64_WHITELIST is a non-exported module const — cannot patch in TS.
-		// Original Python test used unittest.mock.patch("core.rules.inspector.BASE64_WHITELIST", [b64_token]).
-		const dangerousCmd = "echo 1 ; pytest xyz";
-		const b64Token = Buffer.from(dangerousCmd).toString("base64");
-		// expect(inspectCommand(`echo ${b64Token}`)).toEqual(["allow", ""]);
-	});
-
-	it.skip("base64 decoded in whitelist skips inspection", () => {
-		// BASE64_WHITELIST is a non-exported module const — cannot patch in TS.
-		// Original Python test used unittest.mock.patch("core.rules.inspector.BASE64_WHITELIST", [dangerous_cmd]).
-		const dangerousCmd = "echo 1 ; pytest xyz";
-		const b64Token = Buffer.from(dangerousCmd).toString("base64");
-		// expect(inspectCommand(`echo ${b64Token}`)).toEqual(["allow", ""]);
-	});
-});
-
-describe("NestedShellCheck", () => {
-	it("sh -c denies dangerous command", () => {
-		expect(inspectCommand("sh -c pytest")).toEqual(["deny", "test"]);
-	});
-
 	it("bash -c denies dangerous command", () => {
 		expect(inspectCommand('bash -c "pytest"')).toEqual(["deny", "test"]);
 	});

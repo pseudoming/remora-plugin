@@ -40,21 +40,6 @@ describe("getActiveFiles", () => {
 		const found = [...files].some((f) => f.endsWith("tracked.txt"));
 		expect(found).toBe(true);
 	});
-
-	// Git ignore behavior depends on .gitignore file being tracked/committed.
-	// Tested implicitly via snapshot-git hook integration tests.
-	it.skip("ignores git-ignored files", () => {
-		// Use .git/info/exclude for reliable gitignore in tests
-		const excludePath = path.join(workspace, ".git", "info", "exclude");
-		fs.writeFileSync(excludePath, "ignored.txt\n");
-		const ignored = path.join(workspace, "ignored.txt");
-		fs.writeFileSync(ignored, "secret");
-
-		const files = getActiveFiles(workspace);
-		expect([...files].size).toBeGreaterThan(0); // should find at least tracked.txt
-		expect([...files].some((f) => f.endsWith("ignored.txt"))).toBe(false);
-	});
-
 	it("falls back to directory walk when git unavailable", () => {
 		// Create a clean temp dir OUTSIDE any git repo
 		const nonGitDir = fs.mkdtempSync(path.join(os.tmpdir(), "remora-nogit-"));

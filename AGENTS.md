@@ -133,6 +133,7 @@ if (process.env.REMORA_SEED_DEV_MODE !== "1") {
 - **C3: 上下文配额平衡 (Context budget balancing)**：**`BLOCKED`**（在业务逻辑上绝对依赖 C2 压缩摘要的物理生成产物）。
   - *子代理协同优化*：执行 Per-session token 追踪，在上下文紧绷时优先注入高价值 decisions。
 - **C4: 守护进程常驻模式 (Daemonized Hooks & IPC Stub Client)**：**`PENDING (待观察)`**（若后续观测到并发子特工调起时 SQLite 冲突或进程间读写竞态，则拉起 Unix Domain Socket 进行长驻内存求值）。
+- **C5: 自动化分支与沙箱修剪机制 (Automated Branch & Worktree Pruning)**：**`PENDING`**（由于子代理长期处于高频调起状态，其创建的隔离工作树(worktrees)和独立分支如果不加以定期清理，将导致极大的资源泄漏与仓库腐化。需在 Remora 核心链路中实现定期剪枝机制，替代人工阶段性大扫除）。
 
 ### 2. Route A: Multi-Platform Support (多平台适配路线)
 - **A3: Binpack core (核心包二进制独立打包)**：**`PENDING`**（无前置依赖，core 模块解耦已就绪）。
