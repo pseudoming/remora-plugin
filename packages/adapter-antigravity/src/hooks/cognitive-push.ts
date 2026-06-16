@@ -1,4 +1,4 @@
-import { PreInvocationResponse, AntigravityInjectStep } from "../types";
+import { PreInvocationResponse, AntigravityInjectStep, AntigravityHookContext } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -50,7 +50,7 @@ function _getActiveTopicAndDecisions(
 }
 
 function _handlePreInvocation(
-	context: Record<string, unknown>,
+	context: AntigravityHookContext,
 	convId: string,
 	currentTurnIdx: number,
 ): { injectSteps: AntigravityInjectStep[] } {
@@ -151,7 +151,7 @@ function _checkLineCEnabled(): boolean {
 }
 
 function _runLineC(
-	context: Record<string, unknown>,
+	context: AntigravityHookContext,
 	convId: string,
 	currentTurnIdx: number,
 ): AntigravityInjectStep[] {
@@ -171,7 +171,7 @@ function _runLineC(
 		return [];
 	}
 
-	let lastMsg = (context["last_msg"] as string) ?? "";
+	let lastMsg = context.last_msg ?? "";
 	if (!lastMsg) {
 		const steps = cdal.streamStepsReverse(50);
 		for (const step of steps) {
@@ -288,7 +288,7 @@ function _runLineC(
 }
 
 function _handlePreToolUse(
-	context: Record<string, unknown>,
+	context: AntigravityHookContext,
 	convId: string,
 	currentTurnIdx: number,
 ): {
@@ -296,7 +296,7 @@ function _handlePreToolUse(
 	reason?: string;
 	injectSteps: AntigravityInjectStep[];
 } {
-	const toolName = (context["toolName"] as string) ?? "";
+	const toolName = context.toolName ?? "";
 	if (
 		![
 			"write_to_file",
@@ -307,7 +307,7 @@ function _handlePreToolUse(
 		return { injectSteps: [] };
 	}
 
-	const toolArgs = (context["toolArgs"] ?? {}) as Record<string, unknown>;
+	const toolArgs = context.toolArgs ?? {};
 	const targetFile = (toolArgs["TargetFile"] ??
 		toolArgs["AbsolutePath"] ??
 		"") as string;
@@ -390,7 +390,7 @@ function _handlePreToolUse(
 	return { injectSteps: [] };
 }
 
-export function main(context: Record<string, unknown>): PreInvocationResponse {
+export function main(context: AntigravityHookContext): PreInvocationResponse {
 	try {
 		return _main(context);
 	} catch (_e: any) {
@@ -399,7 +399,7 @@ export function main(context: Record<string, unknown>): PreInvocationResponse {
 	}
 }
 
-function _main(context: Record<string, unknown>): PreInvocationResponse {
+function _main(context: AntigravityHookContext): PreInvocationResponse {
 	const fallback: { injectSteps: AntigravityInjectStep[] } = {
 		injectSteps: [],
 	};
@@ -414,7 +414,7 @@ function _main(context: Record<string, unknown>): PreInvocationResponse {
 		return fallback;
 	}
 
-	const transcriptPath = (context["transcriptPath"] as string) ?? "";
+	const transcriptPath = context.transcriptPath ?? "";
 	let convId = extractConvId(transcriptPath) ?? "default";
 	if (convId === "default") {
 		const latest = getLatestSession();

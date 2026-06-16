@@ -1,4 +1,4 @@
-import { AntigravityHookResponse } from "../types";
+import { AntigravityHookResponse, AntigravityHookContext } from "../types";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -48,7 +48,7 @@ export function logDuration(elapsed: number, exitCode: number = 0): void {
 	}
 }
 
-export function main(context?: any): AntigravityHookResponse {
+export function main(context?: AntigravityHookContext): AntigravityHookResponse {
 	try {
 		return _main(context);
 	} catch (e) {
@@ -116,7 +116,7 @@ function getActiveSubagents(convId: string): Set<string> {
 	return activeSubagents;
 }
 
-function _main(context?: any): AntigravityHookResponse {
+function _main(context?: AntigravityHookContext): AntigravityHookResponse {
 	const t0 = performance.now();
 	const myUid = process.getuid ? process.getuid() : -1;
 	const myPid = String(process.pid);

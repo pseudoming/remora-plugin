@@ -1,4 +1,4 @@
-import { PreToolUseResponse, DynamicRuleContext, DynamicRule } from "../../types";
+import { PreToolUseResponse, DynamicRuleContext, DynamicRule, AntigravityHookContext } from "../types";
 import { readMode } from "@remora/core";
 import { getSubagentType } from "../bridge/subagent";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
@@ -38,7 +38,7 @@ import { auditMainCmdRule } from "./command-auditors/main-audit";
 //    统一接收 DynamicRuleContext 并由 executeDynamicRuleChain 短路执行。
 
 export function main(
-	context: Record<string, unknown>,
+	context: AntigravityHookContext,
 ): PreToolUseResponse {
 	// 1. 先跑无副作用的引擎基础防御
 	let engineResult;

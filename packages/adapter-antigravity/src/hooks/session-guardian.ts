@@ -1,4 +1,4 @@
-import { PreInvocationResponse } from "../types";
+import { PreInvocationResponse, AntigravityHookContext } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -134,7 +134,7 @@ import {
 } from "../bridge/paths";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
 
-export function main(context: Record<string, unknown>): PreInvocationResponse {
+export function main(context: AntigravityHookContext): PreInvocationResponse {
 	try {
 		return _main(context);
 	} catch (err) {
@@ -157,7 +157,7 @@ export function main(context: Record<string, unknown>): PreInvocationResponse {
 	}
 }
 
-function _main(context: Record<string, unknown>): {
+function _main(context: AntigravityHookContext): {
 	injectSteps: Array<Record<string, unknown>>;
 } {
 	// 0. Fail-Fast 探测环境是否已被 install.py 初始化
@@ -173,7 +173,7 @@ function _main(context: Record<string, unknown>): {
 		};
 	}
 
-	const transcriptPath = context["transcriptPath"] as string;
+	const transcriptPath = context.transcriptPath ?? "";
 	const pluginRoot = findPluginRoot();
 	recoverCoreDistSymlink(pluginRoot);
 	const sandboxedCoreDist = path.join(pluginRoot, "packages", "core", "dist");

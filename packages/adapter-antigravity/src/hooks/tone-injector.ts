@@ -1,4 +1,4 @@
-import { PreInvocationResponse } from "../types";
+import { PreInvocationResponse, AntigravityHookContext } from "../types";
 import {
 	shouldFire,
 	markFired,
@@ -27,7 +27,7 @@ import { ConversationDataAccessLayer } from "../bridge/conversation";
 //    - 在 strict 模式下：向模型注入极其严格的客观专业（strict tone）提示词，限制废话和情绪表达；
 //    - 在 relax 模式下：不进行 any 语气约束注入，保障大模型在起草设计与发散脑暴时的创造力。
 
-export function main(context: Record<string, unknown>): PreInvocationResponse {
+export function main(context: AntigravityHookContext): PreInvocationResponse {
 	try {
 		return _main(context);
 	} catch {
@@ -35,8 +35,8 @@ export function main(context: Record<string, unknown>): PreInvocationResponse {
 	}
 }
 
-function _main(context: Record<string, unknown>): { injectSteps: any[] } {
-	const transcriptPath = (context["transcriptPath"] ?? "") as string;
+function _main(context: AntigravityHookContext): { injectSteps: any[] } {
+	const transcriptPath = context.transcriptPath ?? "";
 	let convId = "default";
 	if (transcriptPath) {
 		const match = transcriptPath.match(/\/brain\/([^/]+)\//);

@@ -1,4 +1,4 @@
-import { PreInvocationResponse } from "../types";
+import { PreInvocationResponse, AntigravityHookContext } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -165,7 +165,7 @@ export function getLatestConversationStates(cdal: ConversationDataAccessLayer, i
   return [plannerText ?? "", actualModifiedFiles, hasAnyToolCalls];
 }
 
-export function main(context: Record<string, any>): PreInvocationResponse {
+export function main(context: AntigravityHookContext): PreInvocationResponse {
   try {
     return _main(context);
   } catch {
@@ -173,9 +173,9 @@ export function main(context: Record<string, any>): PreInvocationResponse {
   }
 }
 
-export function _main(context: Record<string, any>): PreInvocationResponse {
-  const transcriptPath = context["transcriptPath"] ?? "";
-  const cwd = context["cwd"] ?? process.cwd();
+export function _main(context: AntigravityHookContext): PreInvocationResponse {
+  const transcriptPath = context.transcriptPath ?? "";
+  const cwd = context.cwd ?? process.cwd();
 
   // Dump context to scratch for analysis
   try {
@@ -190,7 +190,7 @@ export function _main(context: Record<string, any>): PreInvocationResponse {
   const convId = extractConvId(transcriptPath) || "default";
 
   // 规则 7: Bypass gating if write tool returns error
-  const toolCallResult = context["toolCallResult"] ?? {};
+  const toolCallResult = (context.toolCallResult as Record<string, unknown>) ?? {};
   if (toolCallResult && "error" in toolCallResult && toolCallResult["error"] !== null) {
     return { injectSteps: [], terminationBehavior: "" };
   }
@@ -201,7 +201,7 @@ export function _main(context: Record<string, any>): PreInvocationResponse {
   trimStaleHookStates(convId, currentTurnIdx);
 
 
-  const initialNumSteps = context["initialNumSteps"] ?? 0;
+  const initialNumSteps = context.initialNumSteps ?? 0;
 
   profilerStep("start_conv_state_read");
   const [plannerText, actualToolFiles, hasAnyToolCalls] = getLatestConversationStates(cdal, initialNumSteps);

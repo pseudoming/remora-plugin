@@ -1,9 +1,9 @@
-import { PreInvocationResponse } from "../types";
+import { PreInvocationResponse, AntigravityHookContext } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getSnapshot } from "../bridge/filesystem";
 
-export function main(context: Record<string, any>): PreInvocationResponse {
+export function main(context: AntigravityHookContext): PreInvocationResponse {
 	try {
 		return _main(context);
 	} catch {
@@ -11,9 +11,9 @@ export function main(context: Record<string, any>): PreInvocationResponse {
 	}
 }
 
-function _main(context: Record<string, any>): { injectSteps: never[] } {
-	const transcriptPath = context["transcriptPath"] ?? "";
-	const cwd = context["cwd"] ?? process.cwd();
+function _main(context: AntigravityHookContext): { injectSteps: never[] } {
+	const transcriptPath = context.transcriptPath ?? "";
+	const cwd = context.cwd ?? process.cwd();
 
 	if (!transcriptPath) {
 		return { injectSteps: [] };
