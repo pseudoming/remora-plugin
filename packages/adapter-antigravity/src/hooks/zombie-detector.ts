@@ -1,3 +1,4 @@
+import { AntigravityHookResponse } from "../types";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -42,16 +43,12 @@ export function logDuration(elapsed: number, exitCode: number = 0): void {
 			`  [total]: ${elapsed.toFixed(2)} ms (Exit Code: ${exitCode})\n\n`,
 			"utf-8",
 		);
-	} catch (e) {
-		// pass
+	} catch (e: any) {
+		console.error("[Hook Error] zombie-detector failed:", e);
 	}
 }
 
-export function main(context?: any): {
-	decision?: string;
-	reason?: string;
-	injectSteps?: any[];
-} {
+export function main(context?: any): AntigravityHookResponse {
 	try {
 		return _main(context);
 	} catch (e) {
@@ -70,8 +67,8 @@ function getActiveSubagents(convId: string): Set<string> {
 		if (parentId) {
 			parentConvId = parentId;
 		}
-	} catch (e) {
-		// pass
+	} catch (e: any) {
+		console.error("[Hook Error] zombie-detector failed:", e);
 	}
 
 	try {
@@ -87,9 +84,9 @@ function getActiveSubagents(convId: string): Set<string> {
 		let projectUuid: string | null = null;
 		try {
 			projectUuid = getProjectUuidByConv(parentConvId);
-		} catch (e) {
-			// pass
-		}
+		} catch (e: any) {
+		console.error("[Hook Error] zombie-detector failed:", e);
+	}
 
 		for (const subId of subagentIds) {
 			if (projectUuid) {
@@ -112,18 +109,14 @@ function getActiveSubagents(convId: string): Set<string> {
 				activeSubagents.add(subId);
 			}
 		}
-	} catch (e) {
-		// pass
+	} catch (e: any) {
+		console.error("[Hook Error] zombie-detector failed:", e);
 	}
 
 	return activeSubagents;
 }
 
-function _main(context?: any): {
-	decision?: string;
-	reason?: string;
-	injectSteps?: any[];
-} {
+function _main(context?: any): AntigravityHookResponse {
 	const t0 = performance.now();
 	const myUid = process.getuid ? process.getuid() : -1;
 	const myPid = String(process.pid);
@@ -214,9 +207,9 @@ function _main(context?: any): {
 						break;
 					}
 				}
-			} catch (e) {
-				// pass
-			}
+			} catch (e: any) {
+		console.error("[Hook Error] zombie-detector failed:", e);
+	}
 
 			if (isSubagentProc) {
 				continue;

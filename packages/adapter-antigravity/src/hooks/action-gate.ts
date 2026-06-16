@@ -1,3 +1,4 @@
+import { PreInvocationResponse } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -164,7 +165,7 @@ export function getLatestConversationStates(cdal: ConversationDataAccessLayer, i
   return [plannerText ?? "", actualModifiedFiles, hasAnyToolCalls];
 }
 
-export function main(context: Record<string, any>): { injectSteps: any[]; terminationBehavior: string } {
+export function main(context: Record<string, any>): PreInvocationResponse {
   try {
     return _main(context);
   } catch {
@@ -172,7 +173,7 @@ export function main(context: Record<string, any>): { injectSteps: any[]; termin
   }
 }
 
-export function _main(context: Record<string, any>): { injectSteps: any[]; terminationBehavior: string } {
+export function _main(context: Record<string, any>): PreInvocationResponse {
   const transcriptPath = context["transcriptPath"] ?? "";
   const cwd = context["cwd"] ?? process.cwd();
 

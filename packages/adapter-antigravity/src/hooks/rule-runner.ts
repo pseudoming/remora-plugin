@@ -54,7 +54,9 @@ export class AntigravityFactExtractor implements IFactExtractor {
 		try {
 			const cdal = new ConversationDataAccessLayer(convId);
 			currentTurnIdx = cdal.getCurrentTurnIdx();
-		} catch {}
+		} catch (e: any) {
+		console.debug("[Hook Debug] rule-runner optional parse:", e);
+	}
 
 		const subagentType = getSubagentType(transcriptPath);
 		const isSub = subagentType !== null;
@@ -163,7 +165,9 @@ export class AntigravityFactExtractor implements IFactExtractor {
 							if (fs.existsSync(secure)) {
 								return fs.statSync(secure).size;
 							}
-						} catch {}
+						} catch (e: any) {
+		console.debug("[Hook Debug] rule-runner optional parse:", e);
+	}
 					}
 					return 0;
 				},
@@ -214,7 +218,9 @@ export class AntigravityFactExtractor implements IFactExtractor {
 										subagentType,
 									);
 								}
-							} catch {}
+							} catch (e: any) {
+		console.debug("[Hook Debug] rule-runner optional parse:", e);
+	}
 						}
 						if (subagentType === "Remora_ReadOnly_Extractor") {
 							const stateKey = `subagent_turn_limit_${recipient}`;
@@ -279,7 +285,9 @@ export class AntigravityFactExtractor implements IFactExtractor {
 					if (rawHistory) {
 						try {
 							history = JSON.parse(rawHistory);
-						} catch {}
+						} catch (e: any) {
+		console.debug("[Hook Debug] rule-runner optional parse:", e);
+	}
 					}
 					if (Array.isArray(history)) {
 						for (const sub of subagents) {
@@ -322,7 +330,9 @@ export class AntigravityFactExtractor implements IFactExtractor {
 						if (realCwd.includes(".system_generated/worktrees")) {
 							hasWorktreesInCwd = true;
 						}
-					} catch {}
+					} catch (e: any) {
+		console.debug("[Hook Debug] rule-runner optional parse:", e);
+	}
 					const isBranch =
 						targetDir.includes(".system_generated/worktrees") ||
 						hasWorktreesInCwd ||

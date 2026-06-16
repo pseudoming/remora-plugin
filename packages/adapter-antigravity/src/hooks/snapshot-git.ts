@@ -1,8 +1,9 @@
+import { PreInvocationResponse } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getSnapshot } from "../bridge/filesystem";
 
-export function main(context: Record<string, any>): { injectSteps: never[] } {
+export function main(context: Record<string, any>): PreInvocationResponse {
 	try {
 		return _main(context);
 	} catch {

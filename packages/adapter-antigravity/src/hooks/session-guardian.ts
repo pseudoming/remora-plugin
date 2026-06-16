@@ -1,91 +1,103 @@
+import { PreInvocationResponse } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+export function recoverCoreDistSymlink(pluginRoot: string): void {
+	if (!pluginRoot) return;
+	const sandboxedCoreDist = path.join(pluginRoot, "packages", "core", "dist");
+	const gitPath = path.join(pluginRoot, ".git");
+	const isBranchSandbox =
+		fs.existsSync(gitPath) && fs.statSync(gitPath).isFile();
+
+	if (isBranchSandbox && !fs.existsSync(sandboxedCoreDist)) {
+		let parentDir = "";
+		try {
+			const gitContent = fs.readFileSync(gitPath, "utf-8").trim();
+			const parts = gitContent.split("/.git/worktrees/");
+			if (parts.length > 1) {
+				parentDir = parts[0].replace("gitdir:", "").trim();
+			}
+		} catch (e: any) {
+			console.debug("[Hook Debug] Error:", e);
+		}
+
+		if (parentDir) {
+			const parentCoreDist = path.join(parentDir, "packages", "core", "dist");
+			if (fs.existsSync(parentCoreDist)) {
+				try {
+					const stat = fs.lstatSync(sandboxedCoreDist);
+					if (stat.isSymbolicLink() || stat.isDirectory() || stat.isFile()) {
+						fs.rmSync(sandboxedCoreDist, { recursive: true, force: true });
+					}
+				} catch (e: any) {
+					console.debug("[Hook Debug] FS cleanup skipped (expected):", e);
+				}
+				fs.symlinkSync(parentCoreDist, sandboxedCoreDist);
+			} else {
+				throw new Error(
+					`[MONOREPO_BUILD_ERROR] Core package not built in parent workspace. Please run: cd ${parentDir} && npm run build`
+				);
+			}
+		}
+	}
+}
+
+export function ensureRemoraSystemProjectConfig(): void {
+	const homeDir = process.env.HOME || process.env.USERPROFILE || "";
+	if (homeDir) {
+		const projectDir = path.join(homeDir, ".gemini", "config", "projects");
+		const configPath = path.join(
+			projectDir,
+			"11111111-1111-1111-1111-111111111111.json",
+		);
+		if (!fs.existsSync(configPath)) {
+			fs.mkdirSync(projectDir, { recursive: true });
+			fs.writeFileSync(
+				configPath,
+				JSON.stringify(
+					{
+						id: "11111111-1111-1111-1111-111111111111",
+						name: "remora-system",
+						projectResources: { resources: [] },
+					},
+					null,
+					2,
+				),
+				"utf-8",
+			);
+		}
+	}
+}
+
 // Bootstrap: Auto-recover packages/core/dist symlink before importing @remora/core
 (function bootstrap() {
+	const findPluginRoot = () => {
+		let currentDir = require("node:path").resolve(__dirname);
+		while (currentDir !== "/" && currentDir !== "") {
+			if (fs.existsSync(require("node:path").join(currentDir, "plugin.json"))) {
+				return currentDir;
+			}
+			currentDir = require("node:path").dirname(currentDir);
+		}
+		// Fallback fallback if __dirname is dist/
+		let fallbackDir = require("node:path").resolve(__dirname, "..", "..");
+		if (fs.existsSync(require("node:path").join(fallbackDir, "plugin.json"))) {
+			return fallbackDir;
+		}
+		return "";
+	};
+
 	try {
-		const findPluginRoot = () => {
-			let currentDir = path.resolve(__dirname);
-			while (currentDir !== "/" && currentDir !== "") {
-				if (fs.existsSync(path.join(currentDir, "plugin.json"))) {
-					return currentDir;
-				}
-				currentDir = path.dirname(currentDir);
-			}
-			// Fallback fallback if __dirname is dist/
-			let fallbackDir = path.resolve(__dirname, "..", "..");
-			if (fs.existsSync(path.join(fallbackDir, "plugin.json"))) {
-				return fallbackDir;
-			}
-			return "";
-		};
-
 		const pluginRoot = findPluginRoot();
-		if (!pluginRoot) return;
+		recoverCoreDistSymlink(pluginRoot);
+	} catch (e: any) {
+		console.warn("[session-guardian] recoverCoreDistSymlink failed:", e);
+	}
 
-		const sandboxedCoreDist = path.join(pluginRoot, "packages", "core", "dist");
-		const gitPath = path.join(pluginRoot, ".git");
-		const isBranchSandbox =
-			fs.existsSync(gitPath) && fs.statSync(gitPath).isFile();
-
-		if (isBranchSandbox && !fs.existsSync(sandboxedCoreDist)) {
-			let parentDir = "";
-			try {
-				const gitContent = fs.readFileSync(gitPath, "utf-8").trim();
-				const parts = gitContent.split("/.git/worktrees/");
-				if (parts.length > 1) {
-					parentDir = parts[0].replace("gitdir:", "").trim();
-				}
-			} catch (e) {
-				// pass
-			}
-
-			if (parentDir) {
-				const parentCoreDist = path.join(parentDir, "packages", "core", "dist");
-				if (fs.existsSync(parentCoreDist)) {
-					try {
-						const stat = fs.lstatSync(sandboxedCoreDist);
-						if (stat.isSymbolicLink() || stat.isDirectory() || stat.isFile()) {
-							fs.rmSync(sandboxedCoreDist, { recursive: true, force: true });
-						}
-					} catch (e) {
-						// pass
-					}
-					fs.symlinkSync(parentCoreDist, sandboxedCoreDist);
-				}
-			}
-		}
-		// Ensure virtual project config for 'remora-system' exists
-		try {
-			const homeDir = process.env.HOME || process.env.USERPROFILE || "";
-			if (homeDir) {
-				const projectDir = path.join(homeDir, ".gemini", "config", "projects");
-				const configPath = path.join(
-					projectDir,
-					"11111111-1111-1111-1111-111111111111.json",
-				);
-				if (!fs.existsSync(configPath)) {
-					fs.mkdirSync(projectDir, { recursive: true });
-					fs.writeFileSync(
-						configPath,
-						JSON.stringify(
-							{
-								id: "11111111-1111-1111-1111-111111111111",
-								name: "remora-system",
-								projectResources: { resources: [] },
-							},
-							null,
-							2,
-						),
-						"utf-8",
-					);
-				}
-			}
-		} catch (e) {
-			// pass
-		}
-	} catch (e) {
-		// pass
+	try {
+		ensureRemoraSystemProjectConfig();
+	} catch (e: any) {
+		console.warn("[session-guardian] ensureRemoraSystemProjectConfig failed:", e);
 	}
 })();
 
@@ -111,7 +123,6 @@ import {
 } from "@remora/core";
 import { cleanup, getStats } from "../bridge/stats";
 import {
-	getSubagentType,
 	getSubagentTypeByConvId,
 	getParentConvId,
 } from "../bridge/subagent";
@@ -123,9 +134,7 @@ import {
 } from "../bridge/paths";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
 
-export function main(context: Record<string, unknown>): {
-	injectSteps: Array<Record<string, unknown>>;
-} {
+export function main(context: Record<string, unknown>): PreInvocationResponse {
 	try {
 		return _main(context);
 	} catch (err) {
@@ -166,48 +175,8 @@ function _main(context: Record<string, unknown>): {
 
 	const transcriptPath = context["transcriptPath"] as string;
 	const pluginRoot = findPluginRoot();
+	recoverCoreDistSymlink(pluginRoot);
 	const sandboxedCoreDist = path.join(pluginRoot, "packages", "core", "dist");
-	const subagentType = getSubagentType(transcriptPath);
-	const isSub = subagentType !== null;
-	const gitPath = path.join(pluginRoot, ".git");
-	const isBranchSandbox =
-		isSub && fs.existsSync(gitPath) && fs.statSync(gitPath).isFile();
-
-	if (isBranchSandbox && !fs.existsSync(sandboxedCoreDist)) {
-		let parentDir = "";
-		try {
-			const gitContent = fs.readFileSync(gitPath, "utf-8").trim();
-			const parts = gitContent.split("/.git/worktrees/");
-			if (parts.length > 1) {
-				parentDir = parts[0].replace("gitdir:", "").trim();
-			}
-		} catch {
-			// pass
-		}
-
-		if (parentDir) {
-			const parentCoreDist = path.join(parentDir, "packages", "core", "dist");
-			if (fs.existsSync(parentCoreDist)) {
-				try {
-					try {
-						const stat = fs.lstatSync(sandboxedCoreDist);
-						if (stat.isSymbolicLink() || stat.isDirectory() || stat.isFile()) {
-							fs.rmSync(sandboxedCoreDist, { recursive: true, force: true });
-						}
-					} catch {
-						// ignore if not exists
-					}
-					fs.symlinkSync(parentCoreDist, sandboxedCoreDist);
-				} catch {
-					// pass
-				}
-			} else {
-				throw new Error(
-					`[MONOREPO_BUILD_ERROR] Core package not built in parent workspace. Please run: cd ${parentDir} && npm run build`,
-				);
-			}
-		}
-	}
 
 	const isTest = !!(process.env.VITEST || process.env.NODE_ENV === "test");
 	if (!isTest && !fs.existsSync(sandboxedCoreDist)) {
@@ -234,9 +203,9 @@ function _main(context: Record<string, unknown>): {
 				}),
 				"utf-8",
 			);
-		} catch {
-			// pass
-		}
+		} catch (e: any) {
+		console.warn("[Hook Warn] FS ops failed:", e);
+	}
 	}
 
 	// 提取当前会话 ID
@@ -255,15 +224,15 @@ function _main(context: Record<string, unknown>): {
 			);
 			try {
 				fs.mkdirSync(sharedSrc, { recursive: true });
-			} catch {
-				// pass
+			} catch (e: any) {
+				console.warn("[Hook Warn] mkdirSync failed:", e);
 			}
 
 			const scratchDst = path.join(process.cwd(), "scratch");
 			try {
 				fs.mkdirSync(scratchDst, { recursive: true });
-			} catch {
-				// pass
+			} catch (e: any) {
+				console.warn("[Hook Warn] mkdirSync failed:", e);
 			}
 
 			const linkDst = path.join(scratchDst, "parent_shared");
@@ -284,9 +253,9 @@ function _main(context: Record<string, unknown>): {
 						try {
 							fs.unlinkSync(linkDst);
 							fs.symlinkSync(sharedSrc, linkDst, "dir");
-						} catch {
-							// pass
-						}
+						} catch (e: any) {
+		console.debug("[Hook Debug] Error:", e);
+	}
 					}
 				}
 			}
@@ -294,11 +263,9 @@ function _main(context: Record<string, unknown>): {
 			// Main agent: initialize shared subdirectory
 			const parentScratch = path.join(getBrainDir(), convId, "scratch");
 			try {
-				fs.mkdirSync(path.join(parentScratch, "subagent_shared"), {
-					recursive: true,
-				});
-			} catch {
-				// pass
+				fs.mkdirSync(path.join(parentScratch, "subagent_shared"), { recursive: true });
+			} catch (e: any) {
+				console.warn("[Hook Warn] mkdirSync failed:", e);
 			}
 
 			// 导出活跃 Topic 决策到 subagent_shared 供子代理共享
@@ -335,12 +302,12 @@ function _main(context: Record<string, unknown>): {
 				} finally {
 					if (conn) conn.close();
 				}
-			} catch (e) {
-				// pass
-			}
+			} catch (e: any) {
+		console.debug("[Hook Debug] FS cleanup skipped (expected):", e);
+	}
 		}
-	} catch {
-		// pass
+	} catch (e: any) {
+		console.debug("[Hook Debug] Error:", e);
 	}
 	// --- End shared scratch ---
 
@@ -373,8 +340,8 @@ function _main(context: Record<string, unknown>): {
 			}
 			break;
 		}
-	} catch {
-		// pass
+	} catch (e: any) {
+		console.debug("[Hook Debug] Error:", e);
 	}
 
 	const keywordsConfigPath = path.join(
@@ -390,8 +357,8 @@ function _main(context: Record<string, unknown>): {
 		) as Record<string, unknown>;
 		relaxKws = (config["relax_keywords"] as string[]) || [];
 		alertKws = (config["alert_keywords"] as string[]) || [];
-	} catch {
-		// pass
+	} catch (e: any) {
+		console.debug("[Hook Debug] Error:", e);
 	}
 
 	const injectSteps: Array<Record<string, unknown>> = [];
@@ -540,13 +507,13 @@ function _main(context: Record<string, unknown>): {
 					if (fs.existsSync(retryFile)) {
 						fs.unlinkSync(retryFile);
 					}
-				} catch {
-					// pass
+				} catch (e: any) {
+					console.debug("[Hook Debug] FS cleanup skipped (expected):", e);
 				}
 			}
-		} catch {
-			// pass
-		}
+		} catch (e: any) {
+		console.debug("[Hook Debug] Error:", e);
+	}
 	}
 
 	// 逆序索引越小时间越近。若子代理活动比最新的定时器更近，代表 timer 已经被该中间消息自动静默取消了
@@ -601,9 +568,9 @@ function _main(context: Record<string, unknown>): {
 						break;
 					}
 				}
-			} catch {
-				// pass
-			}
+			} catch (e: any) {
+		console.debug("[Hook Debug] Error:", e);
+	}
 		}
 
 		if (!roleName) {
@@ -706,8 +673,8 @@ function _main(context: Record<string, unknown>): {
 				String(currentTurnIdxNum),
 			);
 		}
-	} catch {
-		// pass
+	} catch (e: any) {
+		console.debug("[Hook Debug] Error:", e);
 	}
 
 	return { injectSteps: injectSteps };

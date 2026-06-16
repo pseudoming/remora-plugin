@@ -52,6 +52,12 @@ Antigravity Hook triggers
 | 61 | Hook Entrypoint Switch + Prompt Injection + Agent Hardening | ✅ |
 | 62 | Python Removal — TypeScript is the sole source | ✅ |
 | 63 | npm Installer + tsup Build Pipeline | ✅ |
+| 64-65 | Physically Isolated Deployment with auto-cleanup, Sidecar Dynamic Activation, Cross-Session Scratch Sharing | ✅ |
+| 66-68 | ConversationDataAccessLayer (CDAL) Refactor, Sidecar Self-Recovery, Generic Rule Engine Core | ✅ |
+| 69-72 | Subagent Governance Defenses (CLI Rollback, Zombie Warning, Compile Self-Healing, Symlink Security) | ✅ |
+| 73-77 | Declarative Rule Engine Switch, Glob Bypass static defense, SQLite DDL Hot Upgrades Tracking | ✅ |
+| 78-80 | Stdio Git MCP Integration & Handshake, CoR-based Defense Pipeline Refactoring | ✅ |
+| 81-84 | Unified Magic Numbers Policy, Test Engineering Hardening (Zero Skipped Policy), Strict HookPayload Typing Defense | ✅ |
 
 ## Quality Gates
 

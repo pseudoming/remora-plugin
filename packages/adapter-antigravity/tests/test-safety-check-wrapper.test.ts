@@ -64,7 +64,7 @@ vi.mock("../src/bridge/conversation", () => {
 
 // -- @remora/core --
 const coreMocks = vi.hoisted(() => ({
-	SYSTEM_POLICY: { ORCHESTRATION: { REPEAT_SPAWN_WINDOW_MS: 180000, MAX_EXECUTION_SEC: 300, STREAM_HISTORY_DEPTH: 300 }, DISPLAY: { WARM_SNIPPET_CHARS: 500 } },
+	SYSTEM_POLICY: { ORCHESTRATION: { REPEAT_SPAWN_WINDOW_MS: 180000, MAX_EXECUTION_SEC: 300, STREAM_HISTORY_DEPTH: 300 }, DISPLAY: { WARM_SNIPPET_CHARS: 500 }, SAFETY: { FILE_READ_DENY_BYTES: 163840, FILE_READ_WARN_BYTES: 102400 } },
 	stripMarkdownCodeBlocks: vi.fn((str) => str),
 	readMode: vi.fn().mockReturnValue("strict"),
 	warn: vi.fn(),

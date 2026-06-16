@@ -150,3 +150,6 @@ if (process.env.REMORA_SEED_DEV_MODE !== "1") {
   - 全局数据库备份：`~/.remora_data_backup_safeguard_20260615/dot_remora_data/remora_memory.db`
   - 工作区数据库备份：`~/.remora_data_backup_safeguard_20260615/workspace_data/remora_memory.db`
   - 状态：✅ 已全量物理备份同步，随时可用于秒级恢复。
+
+### 11. Git Remote Push Authorization Rule (防误推规约)
+You **MUST NEVER** execute `git push` to any remote branch (especially `origin/master`) without explicit and direct authorization from the USER. Even if you have merged a subagent branch locally and completed a task perfectly, you must stop, report the completion, and explicitly wait for the USER to say "Proceed to push" or similar approval before executing the remote push. This prevents unreviewed changes from polluting the remote repository.

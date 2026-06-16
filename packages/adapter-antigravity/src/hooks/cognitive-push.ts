@@ -1,3 +1,4 @@
+import { PreInvocationResponse, AntigravityInjectStep } from "../types";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -38,7 +39,7 @@ import { getOrCreateConversation } from "../sidecar/extract-decisions";
 
 function _getActiveTopicAndDecisions(
 	uuid: string,
-): [string | null, Array<Record<string, unknown>>] {
+): [string | null, AntigravityInjectStep[]] {
 	const topicId = getActiveTopic(uuid);
 	if (!topicId) {
 		return [null, []];
@@ -52,13 +53,13 @@ function _handlePreInvocation(
 	context: Record<string, unknown>,
 	convId: string,
 	currentTurnIdx: number,
-): { injectSteps: Array<Record<string, unknown>> } {
+): { injectSteps: AntigravityInjectStep[] } {
 	// 检查同回合内是否已经注入过会话重载提示
 	if (isDuplicate(convId, "resume_injected", String(currentTurnIdx))) {
 		return { injectSteps: [] };
 	}
 
-	const injectSteps: Array<Record<string, unknown>> = [];
+	const injectSteps: AntigravityInjectStep[] = [];
 
 	// In PreInvocation, when in discussion/planning phase, inject system discipline
 	const mode = readMode(convId, "strict");
@@ -142,7 +143,8 @@ function _checkLineCEnabled(): boolean {
 		const raw = fs.readFileSync(configPath, "utf-8");
 		const config = JSON.parse(raw);
 		return !!config?.semantic_conflict_detection?.enabled;
-	} catch (_e) {
+	} catch (_e: any) {
+		console.error("[Hook Error] cognitive-push critical update failed:", _e);
 		return false;
 	}
 }
@@ -151,7 +153,7 @@ function _runLineC(
 	context: Record<string, unknown>,
 	convId: string,
 	currentTurnIdx: number,
-): Array<Record<string, unknown>> {
+): AntigravityInjectStep[] {
 	/** Returns list of inject step dicts, or []. */
 	const cdal = new ConversationDataAccessLayer(convId);
 	const userInputCount = cdal.getUserInputCount();
@@ -242,7 +244,7 @@ function _runLineC(
 	for (const c of candidates) {
 		candidateMap[Number(c.id)] = c;
 	}
-	const injectStepsResult: Array<Record<string, unknown>> = [];
+	const injectStepsResult: AntigravityInjectStep[] = [];
 	let hasAnyConflict = false;
 
 	for (const c of conflicts) {
@@ -287,9 +289,9 @@ function _handlePreToolUse(
 	convId: string,
 	currentTurnIdx: number,
 ): {
-	decision?: string;
+	decision?: "allow" | "deny" | "fallback";
 	reason?: string;
-	injectSteps: Array<Record<string, unknown>>;
+	injectSteps: AntigravityInjectStep[];
 } {
 	const toolName = (context["toolName"] as string) ?? "";
 	if (
@@ -340,7 +342,7 @@ function _handlePreToolUse(
 			// 第二次尝试，清除状态直接放行 (allow)
 			setHookState(convId, currentTurnIdx, stateKey, "0");
 			insertFileChange(uuid, convId, path.basename(targetFile), "write_tool");
-			const injectSteps: Array<Record<string, unknown>> = [];
+			const injectSteps: AntigravityInjectStep[] = [];
 			const fileName = path.basename(targetFile);
 			const fileDecisions = getDecisionsByFile(uuid, fileName);
 			if (fileDecisions && fileDecisions.length > 0) {
@@ -385,24 +387,17 @@ function _handlePreToolUse(
 	return { injectSteps: [] };
 }
 
-export function main(context: Record<string, unknown>): {
-	decision?: string;
-	reason?: string;
-	injectSteps: Array<Record<string, unknown>>;
-} {
+export function main(context: Record<string, unknown>): PreInvocationResponse {
 	try {
 		return _main(context);
-	} catch (_e) {
+	} catch (_e: any) {
+		console.error("[Hook Error] cognitive-push critical update failed:", _e);
 		return { injectSteps: [] };
 	}
 }
 
-function _main(context: Record<string, unknown>): {
-	decision?: string;
-	reason?: string;
-	injectSteps: Array<Record<string, unknown>>;
-} {
-	const fallback: { injectSteps: Array<Record<string, unknown>> } = {
+function _main(context: Record<string, unknown>): PreInvocationResponse {
+	const fallback: { injectSteps: AntigravityInjectStep[] } = {
 		injectSteps: [],
 	};
 
@@ -433,9 +428,9 @@ function _main(context: Record<string, unknown>): {
 	try {
 		if (stage === "pre-invoke") {
 			return _handlePreInvocation(context, convId, currentTurnIdx) as {
-				decision?: string;
+				decision?: "allow" | "deny" | "fallback";
 				reason?: string;
-				injectSteps: Array<Record<string, unknown>>;
+				injectSteps: AntigravityInjectStep[];
 			};
 		} else {
 			// stage === "pre-tool"

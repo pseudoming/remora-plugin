@@ -1,3 +1,4 @@
+import { PreToolUseResponse } from "../types";
 import {
 	readMode,
 	makeDenyReason,
@@ -11,7 +12,7 @@ import {
 	getHookState,
 	setHookState,
 	formatJitInjection,
-	UNIFIED_READ_DENY_LIMIT,
+	
 	estimateGrepReadBytes,
 	isUnifiedLimitExceeded,
 	isUnifiedLimitApproaching,
@@ -44,7 +45,8 @@ function loadBuiltinAgentPerms(name: string): Record<string, boolean> | null {
 			enable_write_tools: !!def["enable_write_tools"],
 			enable_subagent_tools: !!def["enable_subagent_tools"],
 		};
-	} catch {
+	} catch (e: any) {
+		console.debug("[Hook Debug] loadBuiltinAgentPerms failed:", e);
 		return null;
 	}
 }
@@ -89,8 +91,8 @@ function isPathSensitive(target: string): boolean {
 			const relPath = secure.slice(cwd.length);
 			return isRotSensitivePath(relPath) || isRotSensitiveFile(relPath);
 		}
-	} catch (e) {
-		// pass
+	} catch (e: any) {
+		console.debug("[Hook Debug] Path resolution failed:", e);
 	}
 	// If path escapes our workspace (or fails workspace prefix match), perform strict core checks on full physical path
 	return isRotSensitivePath(secure) || isRotSensitiveFile(secure);
@@ -98,7 +100,7 @@ function isPathSensitive(target: string): boolean {
 
 export function main(
 	context: Record<string, unknown>,
-): Record<string, unknown> {
+): PreToolUseResponse {
 	// 1. 先跑无副作用的引擎基础防御
 	let engineResult;
 	try {
@@ -123,13 +125,8 @@ export function main(
 		const postResult = executeDynamicRuleChain(context);
 		return postResult || { decision: "allow" };
 	} catch (e: any) {
-		console.error(
-			`[PostFilter] Exception in executeDynamicRuleChain: ${e.message}`,
-		);
-		return {
-			decision: "deny",
-			reason: "Internal error in security post-filters.",
-		};
+		console.error(`[PostFilter] Exception in executeDynamicRuleChain: ${e.stack}`);
+		throw e;
 	}
 }
 
@@ -150,7 +147,7 @@ export interface DynamicRuleContext {
 
 export type DynamicRule = (
 	ctx: DynamicRuleContext,
-) => Record<string, unknown> | undefined;
+) => PreToolUseResponse | undefined;
 
 function buildDynamicRuleContext(
 	rawContext: Record<string, unknown>,
@@ -200,14 +197,15 @@ const rotReason = makeDenyReason(
 
 function trimTimelineRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	trimStaleHookStates(ctx.convId, ctx.currentTurnIdx);
 	return undefined;
 }
 
 function checkDuplicateSpawnRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+	_now?: number
+): PreToolUseResponse | undefined {
 	if (ctx.toolName !== "invoke_subagent") return undefined;
 	const subagents = ctx.args["Subagents"];
 	if (Array.isArray(subagents)) {
@@ -224,10 +222,12 @@ function checkDuplicateSpawnRule(
 			let history: any[] = [];
 			try {
 				if (historyStr) history = JSON.parse(historyStr);
-			} catch (e) {}
+			} catch (e: any) {
+				console.debug("[Hook Debug] JSON parse failed for historyStr:", e);
+			}
 			if (!Array.isArray(history)) history = [];
 
-			const now = Date.now();
+			const now = _now ?? Date.now();
 			const recentSpawns = history.filter(
 				(h: any) =>
 					h.signature === signature &&
@@ -262,7 +262,7 @@ function checkDuplicateSpawnRule(
 
 function checkPromptSyntaxRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	if (ctx.toolName !== "invoke_subagent") return undefined;
 	const subagents =
 		(ctx.args["Subagents"] as Array<Record<string, unknown>>) ?? [];
@@ -277,7 +277,8 @@ function checkPromptSyntaxRule(
 		try {
 			history = JSON.parse(rawHistory);
 			if (!Array.isArray(history)) history = [];
-		} catch (e) {
+		} catch (e: any) {
+			console.debug("[Hook Debug] JSON parse failed for rawHistory:", e);
 			history = [];
 		}
 	}
@@ -302,7 +303,7 @@ function checkPromptSyntaxRule(
 
 function injectSubagentJITRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	if (ctx.toolName !== "invoke_subagent") return undefined;
 	const jitInjected = getHookState(
 		ctx.convId,
@@ -325,7 +326,7 @@ function injectSubagentJITRule(
 
 function checkDefineSubagentOverrideRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	if (ctx.toolName !== "define_subagent") return undefined;
 	const name = (ctx.args["name"] as string) ?? "";
 	if (BUILTIN_AGENTS.has(name)) {
@@ -353,7 +354,7 @@ function checkDefineSubagentOverrideRule(
 
 function checkSharedWorkspaceTraversalRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	const WRITE_TOOLS = [
 		"write_to_file",
 		"replace_file_content",
@@ -388,7 +389,8 @@ function checkSharedWorkspaceTraversalRule(
 			realBase = fs.realpathSync(
 				path.join(process.cwd(), "scratch", "parent_shared"),
 			);
-		} catch {
+		} catch (e: any) {
+			console.warn("[Hook Warn] Shared scratch symlink resolution failed:", e);
 			return {
 				decision: "deny",
 				reason: makeDenyReason(
@@ -414,7 +416,7 @@ function checkSharedWorkspaceTraversalRule(
 
 function checkSendMessageTurnLimitRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	if (ctx.toolName !== "send_message") return undefined;
 	const recipient = (ctx.args["Recipient"] as string) ?? "";
 	if (recipient) {
@@ -430,7 +432,7 @@ function checkSendMessageTurnLimitRule(
 
 function checkUnifiedReadLimitRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	if (ctx.toolName === "view_file") {
 		const targetFile = (ctx.args["AbsolutePath"] as string) ?? "";
 		if (targetFile) {
@@ -442,7 +444,7 @@ function checkUnifiedReadLimitRule(
 						decision: "deny",
 						reason: makeDenyReason(
 							"UNIFIED-ANTI-ROT",
-							`Unified accumulated read limit exceeded (${Math.floor(currentUnified / 1024)}KB > ${Math.floor(UNIFIED_READ_DENY_LIMIT / 1024)}KB). Direct reading in main context is blocked.`,
+							`Unified accumulated read limit exceeded (${Math.floor(currentUnified / 1024)}KB > ${Math.floor(SYSTEM_POLICY.SAFETY.FILE_READ_DENY_BYTES / 1024)}KB). Direct reading in main context is blocked.`,
 							"Please delegate to a subagent (e.g. 'Remora_ReadOnly_Extractor' for query/read, 'Remora_Deep_Diver' for test/modify).",
 						),
 					};
@@ -460,7 +462,9 @@ function checkUnifiedReadLimitRule(
 					) {
 						return { decision: "deny", reason: rotReason };
 					}
-				} catch {}
+				} catch (e: any) {
+					console.debug("[Hook Debug] fs.existsSync or statSync failed:", e);
+				}
 
 				const isDataLog = /\.(?:jsonl|log|sqlite|csv)$/.test(targetFile);
 				const incBytes = estimateReadBytes(ctx.args as any, targetFile);
@@ -491,7 +495,9 @@ function checkUnifiedReadLimitRule(
 									"============================================================",
 							};
 						}
-					} catch {}
+					} catch (e: any) {
+						console.error("[Hook Error] safety-check accumulate failed:", e);
+					}
 				}
 			}
 		}
@@ -506,7 +512,7 @@ function checkUnifiedReadLimitRule(
 						decision: "deny",
 						reason: makeDenyReason(
 							"UNIFIED-ANTI-ROT",
-							`Unified accumulated read limit exceeded (${Math.floor(currentUnified / 1024)}KB > ${Math.floor(UNIFIED_READ_DENY_LIMIT / 1024)}KB). Direct grep in main context is blocked.`,
+							`Unified accumulated read limit exceeded (${Math.floor(currentUnified / 1024)}KB > ${Math.floor(SYSTEM_POLICY.SAFETY.FILE_READ_DENY_BYTES / 1024)}KB). Direct grep in main context is blocked.`,
 							"Please delegate to a subagent (e.g. 'Remora_ReadOnly_Extractor' for query/read, 'Remora_Deep_Diver' for test/modify).",
 						),
 					};
@@ -525,7 +531,9 @@ function checkUnifiedReadLimitRule(
 			if (grepBytes > 0) {
 				try {
 					accumulate(ctx.convId, 0, 0, grepBytes);
-				} catch {}
+				} catch (e: any) {
+					console.error("[Hook Error] safety-check accumulate failed:", e);
+				}
 			}
 		}
 	}
@@ -534,7 +542,7 @@ function checkUnifiedReadLimitRule(
 
 function checkGitMcpRule(
 	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	const isLazyMcpMatch =
 		ctx.toolName === "call_mcp_tool" &&
 		((ctx.args["ServerName"] as string) || "").replace(/_/g, "-") ===
@@ -587,51 +595,7 @@ function checkGitMcpRule(
 	return undefined;
 }
 
-function checkRunCommandAuditRule(
-	ctx: DynamicRuleContext,
-): Record<string, unknown> | undefined {
-	if (ctx.toolName !== "run_command") return undefined;
-	const cmd = (ctx.args["CommandLine"] as string) ?? "";
-
-	if (ctx.isMergerSub) {
-		const trimmed = cmd.trim();
-		const isGitAllowed = [
-			"git checkout",
-			"git merge",
-			"git am",
-			"git apply",
-			"git add",
-			"git commit",
-			"git diff",
-			"git status",
-		].some((prefix) => trimmed.startsWith(prefix));
-
-		const hasRestrictedKeywords = [
-			"npm run",
-			"vitest",
-			"npm test",
-			"jest",
-			"pytest",
-			"sh ",
-			"bash ",
-			"./",
-			"source ",
-			"exec ",
-		].some((kw) => trimmed.includes(kw));
-
-		if (!isGitAllowed || hasRestrictedKeywords) {
-			return {
-				decision: "deny",
-				reason: makeDenyReason(
-					"MERGER_DENY",
-					"Remora_Merger is strictly restricted to approved version control actions.",
-					"Only approved git commands (checkout, merge, am, apply, add, commit, diff, status) are allowed.",
-				),
-			};
-		}
-		return { decision: "allow" };
-	}
-
+function checkGitCommitEscape(cmd: string): PreToolUseResponse | undefined {
 	if (cmd.trim().startsWith("git commit")) {
 		const [decision, category] = inspectCommand(cmd);
 		if (decision === "deny" && category === "git_escape") {
@@ -646,6 +610,105 @@ function checkRunCommandAuditRule(
 		}
 		return { decision: "allow" };
 	}
+	return undefined;
+}
+
+function auditMergerCmdRule(
+	ctx: DynamicRuleContext,
+): PreToolUseResponse | undefined {
+	if (ctx.toolName !== "run_command" || !ctx.isMergerSub) return undefined;
+	const cmd = (ctx.args["CommandLine"] as string) ?? "";
+	const escapeResult = checkGitCommitEscape(cmd);
+	if (escapeResult) return escapeResult;
+
+	const trimmed = cmd.trim();
+	const isGitAllowed = [
+		"git checkout",
+		"git merge",
+		"git am",
+		"git apply",
+		"git add",
+		"git commit",
+		"git diff",
+		"git status",
+	].some((prefix) => trimmed.startsWith(prefix));
+
+	const hasRestrictedKeywords = [
+		"npm run",
+		"vitest",
+		"npm test",
+		"jest",
+		"pytest",
+		"sh ",
+		"bash ",
+		"./",
+		"source ",
+		"exec ",
+	].some((kw) => trimmed.includes(kw));
+
+	if (!isGitAllowed || hasRestrictedKeywords) {
+		return {
+			decision: "deny",
+			reason: makeDenyReason(
+				"MERGER_DENY",
+				"Remora_Merger is strictly restricted to approved version control actions.",
+				"Only approved git commands (checkout, merge, am, apply, add, commit, diff, status) are allowed.",
+			),
+		};
+	}
+	return { decision: "allow" };
+}
+
+function auditReadonlyCmdRule(
+	ctx: DynamicRuleContext,
+): PreToolUseResponse | undefined {
+	if (ctx.toolName !== "run_command" || !ctx.isReadonlySub) return undefined;
+	const cmd = (ctx.args["CommandLine"] as string) ?? "";
+	const escapeResult = checkGitCommitEscape(cmd);
+	if (escapeResult) return escapeResult;
+
+
+	const [decision] = inspectCommand(cmd);
+	if (decision !== "allow") {
+		return {
+			decision: "deny",
+			reason: makeDenyReason(
+				"READONLY",
+				"Remora_ReadOnly_Extractor is strictly read-only.",
+				"Do not run write/test/build commands!",
+			),
+		};
+	}
+	return { decision: "allow" };
+}
+
+function auditDeepDiverCmdRule(
+	ctx: DynamicRuleContext,
+): PreToolUseResponse | undefined {
+	if (
+		ctx.toolName !== "run_command" ||
+		!ctx.isSub ||
+		ctx.isMergerSub ||
+		ctx.isReadonlySub
+	) {
+		return undefined;
+	}
+	const cmd = (ctx.args["CommandLine"] as string) ?? "";
+	const escapeResult = checkGitCommitEscape(cmd);
+	if (escapeResult) return escapeResult;
+
+
+	return { decision: "allow" };
+}
+
+function auditMainCmdRule(
+	ctx: DynamicRuleContext,
+): PreToolUseResponse | undefined {
+	if (ctx.toolName !== "run_command" || ctx.isSub) return undefined;
+	const cmd = (ctx.args["CommandLine"] as string) ?? "";
+	const escapeResult = checkGitCommitEscape(cmd);
+	if (escapeResult) return escapeResult;
+
 
 	const rotPattern =
 		/\b(?:cat|tail|grep|jq|awk|sed|sqlite3)\b.*?(?:\.jsonl|\.log|\.sqlite)\b|\bremora-recall\.(?:py|ts)\b/i;
@@ -656,61 +719,11 @@ function checkRunCommandAuditRule(
 
 	if (hasRotFeature) {
 		if (isRecallCall) {
-			if (ctx.isReadonlySub && decision !== "allow") {
-				return {
-					decision: "deny",
-					reason: makeDenyReason(
-						"READONLY",
-						"Remora_ReadOnly_Extractor is strictly read-only.",
-						"Do not run write/test/build commands!",
-					),
-				};
-			}
 			return { decision: "allow" };
 		}
-
-		if (ctx.isSub) {
-			if (ctx.isReadonlySub && decision !== "allow") {
-				return {
-					decision: "deny",
-					reason: makeDenyReason(
-						"READONLY",
-						"Remora_ReadOnly_Extractor is strictly read-only.",
-						"Do not run write/test/build commands!",
-					),
-				};
-			}
-			return { decision: "allow" };
-		} else {
-			return { decision: "deny", reason: rotReason };
-		}
+		return { decision: "deny", reason: rotReason };
 	} else {
-		if (decision === "deny") {
-			if (ctx.isReadonlySub) {
-				return {
-					decision: "deny",
-					reason: makeDenyReason(
-						"READONLY",
-						"Remora_ReadOnly_Extractor is strictly read-only.",
-						"Do not run write/test/build commands!",
-					),
-				};
-			}
-
-			if (ctx.isSub && !ctx.isReadonlySub) {
-				return { decision: "allow" };
-			}
-
-			if (category === "git_escape") {
-				return {
-					decision: "deny",
-					reason: makeDenyReason(
-						"GIT_COMMIT_ESCAPE",
-						"Git commit message containing newline characters or consecutive asterisks is blocked to prevent escape vulnerabilities.",
-						"Avoid using newline characters or consecutive asterisks in git commit message.",
-					),
-				};
-			} else if (category === "test" || category === "build") {
+		if (decision === "deny") {if (category === "test" || category === "build") {
 				return {
 					decision: "deny",
 					reason:
@@ -756,42 +769,39 @@ function checkRunCommandAuditRule(
 				};
 			}
 		} else {
-			if (!ctx.isSub) {
-				const blastDone = getHookState(
-					ctx.convId,
-					ctx.currentTurnIdx,
-					"blast_radius",
-				);
-				if (!blastDone) {
-					const cdal = new ConversationDataAccessLayer(ctx.convId);
-					const latestResp = cdal.getLatestPlannerResponse() ?? "";
-					const alreadyAware =
-						/(?:blast radius|reversible|undo|shared state|no-?verify|force push|irreversible)/i.test(
-							latestResp,
-						);
-					if (!alreadyAware) {
-						setHookState(ctx.convId, ctx.currentTurnIdx, "blast_radius", "1");
-						return {
-							decision: "allow",
-							injectSteps: [
-								{
-									ephemeralMessage:
-										"BLAST RADIUS CHECK:\n" +
-										"- Does this command affect only your workspace, or shared state?\n" +
-										"- If it goes wrong, can you undo it?\n" +
-										"- Do NOT use --no-verify, --force, or rm -rf to bypass problems.\n" +
-										'- If "shared" or "irreversible", delegate to a subagent with Workspace: branch.',
-								},
-							],
-						};
-					}
+			const blastDone = getHookState(
+				ctx.convId,
+				ctx.currentTurnIdx,
+				"blast_radius",
+			);
+			if (!blastDone) {
+				const cdal = new ConversationDataAccessLayer(ctx.convId);
+				const latestResp = cdal.getLatestPlannerResponse() ?? "";
+				const alreadyAware =
+					/(?:blast radius|reversible|undo|shared state|no-?verify|force push|irreversible)/i.test(
+						latestResp,
+					);
+				if (!alreadyAware) {
+					setHookState(ctx.convId, ctx.currentTurnIdx, "blast_radius", "1");
+					return {
+						decision: "allow",
+						injectSteps: [
+							{
+								ephemeralMessage:
+									"BLAST RADIUS CHECK:\n" +
+									"- Does this command affect only your workspace, or shared state?\n" +
+									"- If it goes wrong, can you undo it?\n" +
+									"- Do NOT use --no-verify, --force, or rm -rf to bypass problems.\n" +
+									'- If "shared" or "irreversible", delegate to a subagent with Workspace: branch.',
+							},
+						],
+					};
 				}
 			}
 			return { decision: "allow" };
 		}
 	}
 }
-
 export const dynamicRules: DynamicRule[] = [
 	trimTimelineRule,
 	checkDuplicateSpawnRule,
@@ -802,12 +812,15 @@ export const dynamicRules: DynamicRule[] = [
 	checkSendMessageTurnLimitRule,
 	checkUnifiedReadLimitRule,
 	checkGitMcpRule,
-	checkRunCommandAuditRule,
+	auditMergerCmdRule,
+	auditReadonlyCmdRule,
+	auditDeepDiverCmdRule,
+	auditMainCmdRule,
 ];
 
 export function executeDynamicRuleChain(
 	rawContext: Record<string, unknown>,
-): Record<string, unknown> | undefined {
+): PreToolUseResponse | undefined {
 	const ctx = buildDynamicRuleContext(rawContext);
 	for (const rule of dynamicRules) {
 		const result = rule(ctx);

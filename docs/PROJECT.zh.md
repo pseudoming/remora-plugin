@@ -52,6 +52,12 @@ Antigravity Hook 触发
 | 61 | Hook 入口切换 + Prompt 注入 + Agent 加固 | ✅ |
 | 62 | Python 代码移除 — TypeScript 成为唯一源码 | ✅ |
 | 63 | npm 安装器 + tsup 构建管线 | ✅ |
+| 64-65 | 物理隔离部署自动清理、Sidecar 动态激活、跨会话目录共享 | ✅ |
+| 66-68 | 对话数据访问层 (CDAL) 重构、Sidecar 自愈、声明式引擎内核 | ✅ |
+| 69-72 | 子代理治理防线 (CLI回滚/僵尸拦截/编译自愈/符号链接安全) | ✅ |
+| 73-77 | 声明式安全规则引擎切换、全局绕过静态防线、SQLite DDL 热升级追踪 | ✅ |
+| 78-80 | Stdio Git MCP 集成与握手协议、基于 CoR 的防御管线重构 | ✅ |
+| 81-84 | 魔术数字策略收敛、测试工程加固 (Zero Skipped)、HookPayload 强类型防御 | ✅ |
 
 ## Quality Gates
 

@@ -59,8 +59,9 @@ Spending an extra 1M tokens on memory management (≈ $0.10) to avoid 1h of rewo
 - 💀 **Subagent Liveness Self-Healing** — Heartbeat probing (60s/180s tiered timeout). `completed` → alive, `blocked` → dead, `timeout` → kill_and_retry. After 2 retries → escalate to human
 - 🚧 **Global Write Gate** — First write to core code → deny + require explanation of intent. Second retry → allow. On write retry, also injects historical decisions associated with the target file for conflict awareness. Three-tier mode (strict/relax/alert) adaptively gates write access
 - 🔬 **Line C Semantic Conflict Detection** — Cross-reference historical architecture decisions against current file write targets to detect semantic drift before code lands
-- 🔒 **Safety Audit** — `run_command` / `view_file` / `grep_search` pre-interception. Recursive Base64 audit, log large-file read circuit breaker, test/compile mandatory delegation to subagent sandbox
-- 👻 **Zombie Process Cleanup** — Scans `/proc` for unmanaged background processes (>15s), matches Antigravity env vars + whitelist filtering, blocks tool execution on detection
+- 🔒 **Safety Audit & Isolation** — `run_command` / `view_file` / `grep_search` pre-interception. Recursive Base64 audit, log large-file read circuit breaker, test/compile mandatory delegation to subagent sandbox. Integrates Stdio Git MCP Service for isolated and safe version control.
+- 👻 **Zombie Cleanup & Governance** — Scans `/proc` for unmanaged background processes (>15s). Features `CLI Rollback`, Compile Self-Healing, and cross-session scratch sharing defenses to strictly govern subagent behavior.
+- ⚙️ **Declarative Safety Engine** — `safety-check` utilizes a pure Chain of Responsibility (CoR) pattern, supporting Glob Bypass static defenses and a unified magic numbers policy. Strict TypeScript interfaces (e.g., `PreToolUseResponse`) prevent fatal host-environment `protojson crash` at compile-time.
 
 ---
 
