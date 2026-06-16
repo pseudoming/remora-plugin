@@ -61,8 +61,8 @@ function profilerStep(event: string): void {
     if (p) {
       p.step(event);
     }
-  } catch {
-    // pass
+  } catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
   }
 }
 
@@ -86,9 +86,9 @@ export function getPhysicalModifications(cwd: string, transcriptPath: string): S
     if (fs.existsSync(snapshotFile)) {
       try {
         fs.unlinkSync(snapshotFile);
-      } catch {
-        // pass
-      }
+      } catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
     }
 
     return modifiedFiles;
@@ -143,9 +143,9 @@ export function getLatestConversationStates(cdal: ConversationDataAccessLayer, i
             if (typeof args === "string") {
               try {
                 args = JSON.parse(args);
-              } catch {
-                // pass
-              }
+              } catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
             }
 
             if (typeof args === "object" && args !== null && !Array.isArray(args)) {
@@ -158,8 +158,8 @@ export function getLatestConversationStates(cdal: ConversationDataAccessLayer, i
         }
       }
     }
-  } catch {
-    // pass
+  } catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
   }
 
   return [plannerText ?? "", actualModifiedFiles, hasAnyToolCalls];
@@ -183,8 +183,8 @@ export function _main(context: Record<string, any>): PreInvocationResponse {
     const scratchDir = path.join(convDir, "scratch");
     fs.mkdirSync(scratchDir, { recursive: true });
     fs.writeFileSync(path.join(scratchDir, "context_dump.json"), JSON.stringify(context, null, 2), "utf-8");
-  } catch {
-    // pass
+  } catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
   }
 
   const convId = extractConvId(transcriptPath) || "default";

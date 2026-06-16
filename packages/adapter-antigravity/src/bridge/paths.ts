@@ -23,9 +23,9 @@ export function getDataDir(): string {
 	try {
 		fs.accessSync(pluginRoot, fs.constants.W_OK);
 		return path.join(pluginRoot, "data");
-	} catch {
-		// pass
-	}
+	} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 	return path.join(os.homedir(), ".remora", "data");
 }
 
@@ -34,9 +34,9 @@ export function getDbPath(): string {
 		if (!process.env.REMORA_DB_PATH) {
 			process.env.REMORA_DB_PATH = path.join(getDataDir(), "remora_memory.db");
 		}
-	} catch {
-		// pass
-	}
+	} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 	return coreGetDbPath();
 }
 
@@ -45,9 +45,9 @@ try {
 	if (!process.env.REMORA_DB_PATH) {
 		process.env.REMORA_DB_PATH = path.join(getDataDir(), "remora_memory.db");
 	}
-} catch {
-	// pass
-}
+} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 
 export function extractConvId(transcriptPath: string): string | null {
 	if (!transcriptPath) {

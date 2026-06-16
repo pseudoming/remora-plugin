@@ -134,16 +134,16 @@ export function main(): void {
 				"utf-8",
 			);
 		} catch (e) {
-			// pass
-		}
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 	} else {
 		try {
 			if (fs.existsSync(retryFile)) {
 				fs.unlinkSync(retryFile);
 			}
 		} catch (e) {
-			// pass
-		}
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 	}
 
 	let actionSuggestion: string;

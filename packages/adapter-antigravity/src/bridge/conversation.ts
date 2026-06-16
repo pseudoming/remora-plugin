@@ -239,17 +239,17 @@ export class ConversationDataAccessLayer {
 		if (fs.existsSync(this.dbPath)) {
 			try {
 				t = fs.statSync(this.dbPath).mtimeMs / 1000;
-			} catch {
-				// pass
-			}
+			} catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
 		}
 		if (fs.existsSync(this.pbPath)) {
 			try {
 				const pt = fs.statSync(this.pbPath).mtimeMs / 1000;
 				if (pt > t) t = pt;
-			} catch {
-				// pass
-			}
+			} catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
 		}
 		return t;
 	}

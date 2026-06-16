@@ -45,18 +45,18 @@ export function estimateGrepReadBytes(
 				try {
 					const files = readdirSync(searchPath);
 					count = files.length;
-				} catch {
-					// pass
-				}
+				} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 			}
 			if (count !== undefined && count < 5) {
 				return SYSTEM_POLICY.GREP.DIR_SMALL_BYTES;
 			}
 			return SYSTEM_POLICY.GREP.DIR_DEFAULT_BYTES;
 		}
-	} catch {
-		// pass
-	}
+	} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 	return SYSTEM_POLICY.GREP.DIR_DEFAULT_BYTES;
 }
 

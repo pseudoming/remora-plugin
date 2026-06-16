@@ -18,9 +18,9 @@ function forceColdStart(): void {
 	if (fs.existsSync(convIdFile)) {
 		try {
 			mainConvId = fs.readFileSync(convIdFile, "utf-8").trim();
-		} catch {
-			// pass
-		}
+		} catch (e) {
+    console.debug("[Remora FS/DB Debug] Omission expected: ", e.message || e);
+  }
 	}
 	dao.forceColdStartLatestSession(mainConvId);
 }

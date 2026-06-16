@@ -108,8 +108,8 @@ export function readIncrementalLogs(
 				}
 			}
 		}
-	} catch {
-		// pass
+	} catch (e) {
+		console.error("[Remora Daemon Error] Exception during cdal stream:", e);
 	}
 
 	if (currentLine < lastLine) {
@@ -130,9 +130,10 @@ export function readIncrementalLogs(
 				if (evIds.some((eid: number) => eid > targetMsgId)) {
 					deleteTopicDecision(decId, conn);
 				}
-			} catch {
-				// pass
-			}
+			} catch (e) {
+					console.error("[Remora Daemon Error] Exception in loop:", e);
+					continue;
+				}
 		}
 
 		const targetTimestamp = getMessageTimestamp(targetMsgId, conn);

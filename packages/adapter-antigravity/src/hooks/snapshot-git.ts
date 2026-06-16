@@ -27,9 +27,9 @@ function _main(context: Record<string, any>): { injectSteps: never[] } {
 
 		const snapshot = getSnapshot(cwd);
 		fs.writeFileSync(snapshotFile, JSON.stringify(snapshot), "utf-8");
-	} catch {
-		// pass
-	}
+	} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 
 	return { injectSteps: [] };
 }

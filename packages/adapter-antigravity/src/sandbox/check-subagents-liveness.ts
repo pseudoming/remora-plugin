@@ -72,9 +72,9 @@ function globSingle(
 					);
 				}
 			}
-		} catch {
-			// pass
-		}
+		} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 	} else {
 		const nextPath = path.join(dirPath, seg);
 		if (isLast) {
@@ -192,9 +192,9 @@ export function runAudit(
 	if (lastUpdatedAtVal != null) {
 		try {
 			progressTs = parseFloat(String(lastUpdatedAtVal));
-		} catch {
-			// pass
-		}
+		} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 	}
 
 	if (status === "completed") {
@@ -279,9 +279,9 @@ export function runAudit(
 				undefined,
 				deathReason,
 			);
-		} catch {
-			// pass
-		}
+		} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 
 		return {
 			liveness: "dead",
@@ -353,9 +353,9 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
 		) {
 			return { decision: "allow", reason: "Not a liveness audit phase." };
 		}
-	} catch {
-		// pass
-	}
+	} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 
 	let subagentIds: string[] = [];
 	try {

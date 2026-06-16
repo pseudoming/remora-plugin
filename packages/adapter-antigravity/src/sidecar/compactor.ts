@@ -32,14 +32,15 @@ export function pruneSidecarEvents(): void {
 				if (f.endsWith(".json")) {
 					try {
 						fs.unlinkSync(path.join(eventsDir, f));
-					} catch {
-						// pass
+					} catch (e) {
+						console.error("[Remora Daemon Error] Exception in loop:", e);
+						continue;
 					}
 				}
 			}
 		}
-	} catch {
-		// pass
+	} catch (e) {
+		console.error("[Remora Daemon Error] Exception initializing sidecar events pruning:", e);
 	}
 }
 
@@ -54,8 +55,8 @@ function main(): void {
 			const stdin = fs.readFileSync(process.stdin.fd, "utf-8");
 			const context = JSON.parse(stdin);
 			scanAndIngestArtifacts(context);
-		} catch {
-			// pass
+		} catch (e) {
+			console.error("[Remora Daemon Error] Exception initializing event driven mode:", e);
 		}
 	} else {
 		acquireLock();

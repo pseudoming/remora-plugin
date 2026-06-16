@@ -125,9 +125,9 @@ export function extractStepPayload(blob: Buffer): Record<string, any> {
 					entry["timestamp"] = dt.toISOString().replace("T", " ").slice(0, 19);
 				}
 			}
-		} catch {
-			// pass
-		}
+		} catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
 	}
 
 	const tag20s = root[20] ?? [];
@@ -138,16 +138,16 @@ export function extractStepPayload(blob: Buffer): Record<string, any> {
 		if (1 in tag20Msg) {
 			try {
 				entry["content"] = tag20Msg[1][0].toString("utf-8");
-			} catch {
-				// pass
-			}
+			} catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
 		}
 		if (3 in tag20Msg) {
 			try {
 				entry["internal_monologue"] = tag20Msg[3][0].toString("utf-8");
-			} catch {
-				// pass
-			}
+			} catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
 		}
 
 		if (7 in tag20Msg) {

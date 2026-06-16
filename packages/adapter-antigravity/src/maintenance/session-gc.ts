@@ -103,16 +103,16 @@ export function pruneDeadSubagentWorktrees(brainDir?: string): void {
 								prunedAny = true;
 							}
 						} catch (e) {
-							// pass
-						}
+    console.debug("[Remora FS/DB Debug] Omission expected: ", e.message || e);
+  }
 					}
 				}
 				if (prunedAny) {
 					try {
 						execSync("git worktree prune");
 					} catch (err) {
-						// pass
-					}
+    console.debug("[Remora FS/DB Debug] Omission expected: ", err.message || err);
+  }
 				}
 			}
 		}

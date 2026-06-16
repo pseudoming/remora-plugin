@@ -61,14 +61,16 @@ export function getOrCreateConversation(prompt: string): string {
 					if (lineCount > 150) {
 						shouldRollover = true;
 					}
-				} catch {}
+				} catch (e) {
+					console.error("[Remora Daemon Error] Exception checking marker:", e);
+				}
 			}
 
 			if (shouldRollover) {
 				try {
 					fs.unlinkSync(CONV_MARKER_FILE);
-				} catch {
-					// pass
+				} catch (e) {
+					console.error("[Remora Daemon Error] Exception unlinking marker:", e);
 				}
 			} else {
 				try {
@@ -148,8 +150,9 @@ export function extractFactualBaseline(
 					if (typeof args === "string") {
 						try {
 							args = JSON.parse(args);
-						} catch {
-							// pass
+						} catch (e) {
+							console.error("[Remora Daemon Error] Exception parsing tool args:", e);
+							continue;
 						}
 					}
 					if (typeof args === "object" && args !== null) {
@@ -174,8 +177,8 @@ export function extractFactualBaseline(
 				}
 			}
 		}
-	} catch {
-		// pass
+	} catch (e) {
+		console.error("[Remora Daemon Error] Exception reading steps:", e);
 	}
 
 	return [[...baselineFiles], [...baselineActions]];
@@ -422,7 +425,7 @@ If no significant topics, output: {"topics": []}
 					backfillMessageTopicIds(t.topic_id || "", topicEvidenceIds, conn);
 				}
 			} catch (_e) {
-				// pass  // JSONDecodeError or other parse failures
+				console.error("[Remora Daemon Error] Exception parsing LLM output:", _e);
 			}
 
 			updateWatermark(

@@ -40,8 +40,8 @@ export function releaseLock(): void {
 			if (pid === process.pid) {
 				fs.unlinkSync(LOCK_FILE);
 			}
-		} catch {
-			// pass
-		}
+		} catch (e) {
+    console.debug("[Remora FS/DB Debug] Omission expected: ", e.message || e);
+  }
 	}
 }

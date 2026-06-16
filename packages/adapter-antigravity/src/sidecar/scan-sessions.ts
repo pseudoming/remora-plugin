@@ -103,8 +103,8 @@ export function extractSubagentReport(convId: string): {
 				}
 			}
 		}
-	} catch {
-		// pass
+	} catch (e) {
+		console.error("[Remora Daemon Error] Exception scanning sessions:", e);
 	}
 	return { changedFiles, referencedFiles };
 }

@@ -28,9 +28,9 @@ export function getStats(convId: string): AccumulatedStats {
 				unified_accumulated_read_bytes:
 					parsed.unified_accumulated_read_bytes ?? 0,
 			};
-		} catch {
-			// pass
-		}
+		} catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
 	}
 	return {
 		accumulated_source_bytes: 0,
@@ -94,8 +94,8 @@ export function cleanup(convId: string): void {
 	if (fs.existsSync(p)) {
 		try {
 			fs.unlinkSync(p);
-		} catch {
-			// pass
-		}
+		} catch (e) {
+    console.error("[Remora Error] Exception caught:", e);
+  }
 	}
 }

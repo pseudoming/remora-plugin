@@ -73,9 +73,9 @@ export class HookProfiler {
 				);
 				fs.mkdirSync(scratchDir, { recursive: true });
 				logProfile(logContent, path.join(scratchDir, "hooks_profile.log"));
-			} catch {
-				// pass
-			}
+			} catch (e) {
+    console.error("[Remora Policy Error] Failure:", e);
+  }
 		}
 	}
 }
