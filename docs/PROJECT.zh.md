@@ -1,95 +1,100 @@
 [English](PROJECT.md) | [简体中文](PROJECT.zh.md)
 
-# Project: Remora Plugin
+# Remora Plugin — 项目总览
 
-Remora — Antigravity 认知架构插件。通过 Hook 拦截器 + SQLite 温存储实现 AI Agent 的全自动记忆管理。
+Remora — Antigravity 认知架构插件。通过 Hook 拦截器 + SQLite 温存储实现 AI Agent 的全自动记忆管理。880 个测试，0 跳过。
 
-## Architecture
-
-### 分层
+## 架构
 
 ```
 packages/
-├── core/          @remora/core
-│   ├── src/       纯逻辑层（storage, rules, injection 等）
-│   ├── tests/     331 个测试 (vitest)
-├── adapter-antigravity/  @remora/antigravity-plugin
-│   ├── src/       hooks/ bridge/ sidecar/ sandbox/ cli/ debug/
-│   ├── bin/       install.js
-│   ├── tests/     424 个测试 (vitest)
+├── core/                        @remora/core — 纯逻辑，零平台依赖
+│   ├── src/storage/             SQLite DAO（11 模块）
+│   ├── src/rules/               声明式安全规则引擎
+│   ├── src/                     injection-formatting, safety-policy 等
+│   ├── schema/schema.sql        DDL + FTS5 trigram
+│   └── tests/                   381 个测试
+│
+└── adapter-antigravity/         @remora/antigravity-plugin — Antigravity 绑定
+    ├── src/hooks/               8 个生命周期钩子
+    │   ├── post-filters/        9 条动态 CoR 规则
+    │   └── command-auditors/    5 条命令审计规则
+    ├── src/sidecar/             8 个守护进程（compactor, warm-storage-sync 等）
+    ├── src/sandbox/             4 个模块（liveness, monitor, merge, zombie-linux）
+    ├── src/bridge/              11 个桥接模块（agentapi, conversation, paths 等）
+    ├── src/cli/                 6 个工具（recall, topic, init, gate, read-log, squash）
+    ├── src/mcp/                 1 个服务器（git-mcp stdio JSON-RPC 2.0）
+    ├── src/maintenance/         4 个模块（session-gc, topic-gc 等）
+    ├── src/schema/              schema-init + 迁移逻辑
+    └── tests/                   499 个测试
 ```
 
-### 数据流
+## Hook 生命周期
 
+Hook 在 `hooks.json` 中注册（由 `install.ts` 从 `conf/templates/hooks.template.json` 渲染）。
+
+| 阶段 | Hook（按顺序） |
+|------|---------------|
+| **PreInvocation** | zombie-detector → snapshot-git → session-guardian → tone-injector → cognitive-push (pre-invoke) → check-subagents-liveness |
+| **PreToolUse** | zombie-detector (全部工具), safety-check (run_command/view_file/grep_search/写操作), cognitive-push (写操作) |
+| **PostInvocation** | action-gate (幻象检测) |
+| **Stop** | compactor (事件驱动), clean-session-stats, check-subagents-liveness |
+
+### safety-check.ts — 双层防线
+
+1. **规则引擎层**：`conf/remora-rules.json` 中的 10 条 JSON 规则，由 core 的 `RuleEngine` 求值。引擎异常时 fail-closed。
+2. **动态规则链**：`post-filters/` 和 `command-auditors/` 中的 14 条纯函数规则，短路执行（首个 DENY 胜出）。
+
+## 核心能力
+
+- **决策记忆**：自动提取 → SQLite + FTS5 trigram → 冷启动注入 → `remora-recall` CLI
+- **声明式规则引擎**：10 条 JSON 规则 + 14 条 CoR 动态规则，fail-closed
+- **子代理治理**：workspace 矩阵（branch/share/inherit）、prompt 密度限制、3 分钟去重、4-turn 只读熔断、高危命令门控
+- **联合防腐**：view_file + grep_search 统一计费（80KB 警告 / 160KB 熔断）
+- **幻象检测**：声称的文件修改 vs 物理 git diff 交叉验证
+- **子代理存活自愈**：/proc 扫描、心跳探活、自愈 SOP（kill → clean → verify）
+- **Git MCP**：零依赖 stdio JSON-RPC 2.0 git 服务器，隔离的版本控制
+- **Hook 类型安全**：`PreToolUseResponse` / `PreInvocationResponse` 杜绝 protojson 崩溃
+- **C5 Worktree 剪枝**：自动清理死掉的子代理分支和 worktree 目录
+
+## CLI 工具
+
+```bash
+remora-recall "<关键词>"                         # 通过 FTS5 全文索引召回决策
+remora-topic new|switch|close                    # 话题管理
+remora-gate --rollback                            # 紧急回滚 safety-check
+read-session-log <conv_id>                        # 阅读会话日志
+git-squash                                        # 压缩增量提交
 ```
-Antigravity Hook 触发
-    → adapter-antigravity/src/hooks/ （拦截、模式判定、记忆重载、写门禁+文件触碰注入、安全检查）
-    → adapter-antigravity/src/sidecar/compactor/ （后台 LLM 增量提取决策）
-    → core/src/storage/ ← @remora/core DAO 层（统一 SQLite 读写）
+
+## 质量门禁
+
+- `core/` 禁止 import `adapter-antigravity/`（`test_architecture.ts` 强制执行）
+- 所有数据库读写通过 `@remora/core` DAO
+- 880 个测试，0 跳过，CI 在 push/PR 时运行（Node 20/22）
+- 严格 TypeScript（`strict: true`）+ Biome 格式化
+- `data/` 在 rsync 部署时排除——用户数据库在升级时存留
+
+## 部署
+
+```bash
+./deploy.sh                          # 构建两个包 + rsync 到运行目录
+remora-install --force               # 重装
+remora-install --uninstall           # 卸载插件，保留数据库
+remora-install --uninstall --purge   # 卸载插件 + 数据库
 ```
+
+开发目录（`~/wsl_code/remora-plugin`）与运行目录（`~/.gemini/config/plugins/remora-plugin`）物理隔离。`data/` 目录在 rsync 时排除——已有数据库在部署时存留。Schema 变更使用 try-catch `ALTER TABLE ADD COLUMN` 迁移，自动创建 `.db.bak` 冷备份。
 
 ## Phases
 
 | Phase | 内容 | 状态 |
 |---|---|---|
-| 44 | 架构分离：core/adapter 拆分、统一 logger、debug 工具 | ✅ |
-| 45 | 技术债：DAO 架构收敛、import 卫生、测试工程 | ✅ |
-| 46 | install.py 重写（幂等、dry-run、uninstall）、README v2、DB 路径统一 | ✅ |
-| 47 | README v2 故事化改写、conf/ 目录规范化、tracking hygiene | ✅ |
-| 48 | Sidecar 重构：AgentAPI bridge、纯函数拆 core、搬家 adapter/sidecar/ | ✅ |
-| 49 | 双语文档重写 | ✅ |
-| 50 | 三层模式(放松/严格/警觉)、步距召回、关键词精简 | ✅ |
-| 51 | uc=0 快照系统、文件变更追踪、supersede_unconfirmed | ✅ |
-| 52 | 文件触碰注入、Sidecar DAO 下沉、死代码清理、平台提取 | ✅ |
-| 53 | 冷启动修复(uc=0+uc=1)、存活检测统一、core 层清理 | ✅ |
-| 54 | Line C 语义冲突检测(BM25 + flash-lite)、features.json 门禁、core/gate.py | ✅ |
-| 55 | 统一门禁系统、文档同步与注入配置整合 | ✅ |
-| 56 | Agent 加固与配置同步 | ✅ |
-| 57 | C1 注入追踪、跨项目缺陷修复与 SQL 确定性审计 | ✅ |
-| 58 | 核心层提取（24 函数下沉 core、适配层瘦身、Antigravity 泄漏修复） | ✅ |
-| 59 | Core → TypeScript（25 模块 + 17 测试文件，严格 1:1 翻译） | ✅ |
-| 60 | 适配器重写（29 源文件 + 17 测试文件，755 pass） | ✅ |
-| 61 | Hook 入口切换 + Prompt 注入 + Agent 加固 | ✅ |
-| 62 | Python 代码移除 — TypeScript 成为唯一源码 | ✅ |
-| 63 | npm 安装器 + tsup 构建管线 | ✅ |
-| 64-65 | 物理隔离部署自动清理、Sidecar 动态激活、跨会话目录共享 | ✅ |
-| 66-68 | 对话数据访问层 (CDAL) 重构、Sidecar 自愈、声明式引擎内核 | ✅ |
-| 69-72 | 子代理治理防线 (CLI回滚/僵尸拦截/编译自愈/符号链接安全) | ✅ |
-| 73-77 | 声明式安全规则引擎切换、全局绕过静态防线、SQLite DDL 热升级追踪 | ✅ |
-| 78-80 | Stdio Git MCP 集成与握手协议、基于 CoR 的防御管线重构 | ✅ |
-| 81-84 | 魔术数字策略收敛、测试工程加固 (Zero Skipped)、HookPayload 强类型防御 | ✅ |
-
-## Quality Gates
-
-- `core/` 禁止 import `adapter-antigravity/`（`test_architecture.ts` 强制检查）
-- 所有 DB 读写过 `@remora/core` DAO 层
-- 755 tests, `npm test`
-- 禁止裸数据库连接在 `core/src/storage/` 之外
-
-## Quick Start
-
-```bash
-git clone https://github.com/pseudoming/remora-antigravity-plugin.git \
-  ~/.gemini/config/plugins/remora-plugin
-cd ~/.gemini/config/plugins/remora-plugin
-npm install
-node packages/adapter-antigravity/bin/install.js
-npm test  # 755 tests
-```
-
----
-
-## 部署与数据库安全演进 (Deployment & Database Evolution)
-
-本项目采用物理隔离部署与动态字段迁移，以保障运行环境的纯净与用户数据的安全。
-
-### 1. 物理隔离部署与冗余清理 (Physical Isolated Deployment)
-开发目录与全局插件运行目录实现物理隔离。
-- **一键构建与部署**：在开发目录下运行 `./deploy.sh`，脚本会自动清理 Python 缓存、执行 TypeScript 编译，并使用 `rsync` 增量同步运行依赖至全局物理部署目录。
-- **部署物理大扫除 (Obsolete Purging)**：为实现包体积瘦身，安装程序 `install.ts` 同步后会自动强行清除开发期源码（`src/`）、测试用例（`tests/`）、编译配置（`tsconfig.json`），并**递归清理所有 `.d.ts` 类型声明文件**和 **`node_modules/.vite` 构建缓存**。
-
-### 2. 数据库安全演进 (Database Migration)
-SQLite 数据库 `remora_memory.db` 升级时应用多重数据防护：
-- **物理防覆盖**：在 `rsync` 过程中彻底排除 `data/` 目录。每次安装程序运行 DDL 校验前，会自动在同目录下复制 `.db.bak` 作为冷备份保护。
-- **Try-Catch 增量 DDL 字段热升级**：无需擦除数据重新建库，在 `schema-init.ts` 的 `initDb()` 中追加对应的 `try-catch` 探测与 `ALTER TABLE ADD COLUMN` 语句，在部署安装时安全地进行字段热升级。
-
+| 44-63 | Core/adapter 拆分、Python→TypeScript 迁移、npm 安装器、tsup 构建、部署管线、双语文档 | ✅ |
+| 64-68 | 物理隔离部署、Sidecar 动态激活、CDAL 重构、声明式规则引擎（暗部署） | ✅ |
+| 69-72 | 子代理治理：CLI 回滚、TS 构建断言、Scaffolder 软链、僵尸告警、路径归一化 | ✅ |
+| 73-77 | 规则引擎切换 + Glob 绕过 + Route C1 schema 迁移 + 卸载 purge + 联合防腐防线 | ✅ |
+| 78-80 | Stdio Git MCP + 高危命令门控 + CoR 防御管线重构 | ✅ |
+| 81-84 | 魔法数字策略 + 测试加固（0 跳过）+ 严格 HookPayload 类型化 | ✅ |
+| 85-88 | 严格 Fail-Safe（消灭静默 catch）+ C5 Worktree 剪枝 + C6 测试解耦 + C7 模块化 | ✅ |
+| 89-90 | 类型安全 Hook 接口 + 高危命令交互式门控 + 行为约束强制注入 | ✅ |
