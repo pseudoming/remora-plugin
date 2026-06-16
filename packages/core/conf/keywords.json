@@ -1,10 +1,10 @@
 {
-  "relax_keywords": [
-    "草稿", "想法", "讨论",
-    "draft", "brainstorm", "discuss"
-  ],
-  "alert_keywords": [
-    "你清醒一点", "做梦呢", "搞什么", "我早说过",
-    "are you kidding me"
-  ]
+	"relax_keywords": ["草稿", "想法", "讨论", "draft", "brainstorm", "discuss"],
+	"alert_keywords": [
+		"你清醒一点",
+		"做梦呢",
+		"搞什么",
+		"我早说过",
+		"are you kidding me"
+	]
 }

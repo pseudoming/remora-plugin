@@ -1,6 +1,9 @@
 {
-  "description": "Incremental memory compactor for Remora (Runs every 10 mins).",
-  "builtin": "schedule",
-  "args": ["*/10 * * * *", "node", "{PLUGIN_ROOT}/packages/adapter-antigravity/dist/sidecar/compactor.js"]
+	"description": "Incremental memory compactor for Remora (Runs every 10 mins).",
+	"builtin": "schedule",
+	"args": [
+		"*/10 * * * *",
+		"node",
+		"{PLUGIN_ROOT}/packages/adapter-antigravity/dist/sidecar/compactor.js"
+	]
 }
-

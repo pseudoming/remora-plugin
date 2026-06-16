@@ -27,8 +27,8 @@ export * from "./storage/file-changes";
 
 // Watermarks — hand-written to avoid getActiveTopicCreatedAt conflict with topics
 export {
-  getProjectUuidByConv,
-  watermarkExists,
+	getProjectUuidByConv,
+	watermarkExists,
 } from "./storage/watermarks";
 
 // Runtime state

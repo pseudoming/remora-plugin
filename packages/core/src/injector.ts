@@ -15,22 +15,20 @@ const MAX_CHARS = 750;
  * @param decisions - Array of decision objects, each with a `text` string property.
  * @returns Truncated text joined with "\n- " prefix separators.
  */
-export function truncateDecisions(
-  decisions: Array<{ text: string }>
-): string {
-  const texts: string[] = [];
-  let currentLen = 0;
+export function truncateDecisions(decisions: Array<{ text: string }>): string {
+	const texts: string[] = [];
+	let currentLen = 0;
 
-  for (const d of decisions) {
-    const text = d.text;
-    if (currentLen + text.length > MAX_CHARS) {
-      texts.push(text.slice(0, MAX_CHARS - currentLen) + "...");
-      break;
-    }
-    texts.push(text);
-    currentLen += text.length;
-  }
+	for (const d of decisions) {
+		const text = d.text;
+		if (currentLen + text.length > MAX_CHARS) {
+			texts.push(text.slice(0, MAX_CHARS - currentLen) + "...");
+			break;
+		}
+		texts.push(text);
+		currentLen += text.length;
+	}
 
-  if (texts.length === 0) return "";
-  return texts.join("\n- ");
+	if (texts.length === 0) return "";
+	return texts.join("\n- ");
 }

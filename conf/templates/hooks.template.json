@@ -1,92 +1,92 @@
 {
-  "remora": {
-    "PreInvocation": [
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/zombie-detector.js",
-        "timeout": 30
-      },
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/snapshot-git.js",
-        "timeout": 30
-      },
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/session-guardian.js",
-        "timeout": 30
-      },
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/tone-injector.js",
-        "timeout": 30
-      },
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/cognitive-push.js --stage=pre-invoke",
-        "timeout": 30
-      },
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sandbox/check-subagents-liveness.js",
-        "timeout": 30
-      }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": ".*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/zombie-detector.js",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "invoke_subagent|run_command|view_file|grep_search|write_to_file|multi_replace_file_content|replace_file_content",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/safety-check.js",
-            "timeout": 30
-          }
-        ]
-      },
-      {
-        "matcher": "write_to_file|multi_replace_file_content|replace_file_content",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/cognitive-push.js --stage=pre-tool",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "PostInvocation": [
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/action-gate.js",
-        "timeout": 30
-      }
-    ],
-    "Stop": [
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sidecar/compactor.js --event-driven",
-        "timeout": 30
-      },
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/maintenance/clean-session-stats.js",
-        "timeout": 15
-      },
-      {
-        "type": "command",
-        "command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sandbox/check-subagents-liveness.js",
-        "timeout": 30
-      }
-    ]
-  }
+	"remora": {
+		"PreInvocation": [
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/zombie-detector.js",
+				"timeout": 30
+			},
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/snapshot-git.js",
+				"timeout": 30
+			},
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/session-guardian.js",
+				"timeout": 30
+			},
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/tone-injector.js",
+				"timeout": 30
+			},
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/cognitive-push.js --stage=pre-invoke",
+				"timeout": 30
+			},
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sandbox/check-subagents-liveness.js",
+				"timeout": 30
+			}
+		],
+		"PreToolUse": [
+			{
+				"matcher": ".*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/zombie-detector.js",
+						"timeout": 30
+					}
+				]
+			},
+			{
+				"matcher": "invoke_subagent|run_command|view_file|grep_search|write_to_file|multi_replace_file_content|replace_file_content",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/safety-check.js",
+						"timeout": 30
+					}
+				]
+			},
+			{
+				"matcher": "write_to_file|multi_replace_file_content|replace_file_content",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/cognitive-push.js --stage=pre-tool",
+						"timeout": 30
+					}
+				]
+			}
+		],
+		"PostInvocation": [
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/hooks/action-gate.js",
+				"timeout": 30
+			}
+		],
+		"Stop": [
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sidecar/compactor.js --event-driven",
+				"timeout": 30
+			},
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/maintenance/clean-session-stats.js",
+				"timeout": 15
+			},
+			{
+				"type": "command",
+				"command": "node {PLUGIN_ROOT}/packages/adapter-antigravity/dist/sandbox/check-subagents-liveness.js",
+				"timeout": 30
+			}
+		]
+	}
 }

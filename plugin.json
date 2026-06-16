@@ -1,26 +1,26 @@
 {
-  "name": "remora-plugin",
-  "version": "1.0.0",
-  "description": "Remora Cognitive Architecture plugin for Antigravity. Use when encountering context-rot, memory loss, dirty environments, or deep debugging.",
-  "author": {
-    "name": "pseudoming"
-  },
-  "license": "MIT",
-  "keywords": [
-    "remora",
-    "memory",
-    "coordinator",
-    "做梦呢",
-    "找bug",
-    "antigravity",
-    "好好想想",
-    "仔细检查",
-    "重新思考",
-    "你清醒一点",
-    "回忆一下",
-    "好好想",
-    "跟你说过",
-    "我早说过",
-    "又忘了"
-  ]
+	"name": "remora-plugin",
+	"version": "1.0.0",
+	"description": "Remora Cognitive Architecture plugin for Antigravity. Use when encountering context-rot, memory loss, dirty environments, or deep debugging.",
+	"author": {
+		"name": "pseudoming"
+	},
+	"license": "MIT",
+	"keywords": [
+		"remora",
+		"memory",
+		"coordinator",
+		"做梦呢",
+		"找bug",
+		"antigravity",
+		"好好想想",
+		"仔细检查",
+		"重新思考",
+		"你清醒一点",
+		"回忆一下",
+		"好好想",
+		"跟你说过",
+		"我早说过",
+		"又忘了"
+	]
 }

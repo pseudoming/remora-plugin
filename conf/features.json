@@ -1,14 +1,37 @@
 {
-  "semantic_conflict_detection": {
-    "enabled": false
-  },
-  "injection": {
-    "cold_start": {"enabled": true, "description": "Inject active topic decisions on session resume"},
-    "file_touch": {"enabled": true, "description": "Inject file-associated decisions before write"},
-    "strict_recall": {"enabled": true, "min_distance": 3, "description": "Suggest cross-check every N turns in strict mode"},
-    "alert_recall": {"enabled": true, "description": "Force recall on alert keyword detection"},
-    "semantic_conflict": {"enabled": false, "description": "Detect semantic conflicts between user input and rejected/deferred decisions"},
-    "tone": {"enabled": true, "interval": 5, "description": "Inject strict tone discipline every N user inputs"},
-    "discipline": {"enabled": true, "description": "Inject behavioral discipline in relax mode"}
-  }
+	"semantic_conflict_detection": {
+		"enabled": false
+	},
+	"injection": {
+		"cold_start": {
+			"enabled": true,
+			"description": "Inject active topic decisions on session resume"
+		},
+		"file_touch": {
+			"enabled": true,
+			"description": "Inject file-associated decisions before write"
+		},
+		"strict_recall": {
+			"enabled": true,
+			"min_distance": 3,
+			"description": "Suggest cross-check every N turns in strict mode"
+		},
+		"alert_recall": {
+			"enabled": true,
+			"description": "Force recall on alert keyword detection"
+		},
+		"semantic_conflict": {
+			"enabled": false,
+			"description": "Detect semantic conflicts between user input and rejected/deferred decisions"
+		},
+		"tone": {
+			"enabled": true,
+			"interval": 5,
+			"description": "Inject strict tone discipline every N user inputs"
+		},
+		"discipline": {
+			"enabled": true,
+			"description": "Inject behavioral discipline in relax mode"
+		}
+	}
 }

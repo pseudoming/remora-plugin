@@ -1,9 +1,9 @@
 import {
-  shouldFire,
-  markFired,
-  shouldInjectTone,
-  formatStrictTonePrompt,
-  trimStaleHookStates,
+	shouldFire,
+	markFired,
+	shouldInjectTone,
+	formatStrictTonePrompt,
+	trimStaleHookStates,
 } from "@remora/core";
 import { readMode } from "../bridge/session";
 import { ConversationDataAccessLayer } from "../bridge/conversation";
@@ -27,57 +27,57 @@ import { ConversationDataAccessLayer } from "../bridge/conversation";
 //    - 在 relax 模式下：不进行 any 语气约束注入，保障大模型在起草设计与发散脑暴时的创造力。
 
 export function main(context: Record<string, unknown>): { injectSteps: any[] } {
-  try {
-    return _main(context);
-  } catch {
-    return { injectSteps: [] };
-  }
+	try {
+		return _main(context);
+	} catch {
+		return { injectSteps: [] };
+	}
 }
 
 function _main(context: Record<string, unknown>): { injectSteps: any[] } {
-  const transcriptPath = (context["transcriptPath"] ?? "") as string;
-  let convId = "default";
-  if (transcriptPath) {
-    const match = transcriptPath.match(/\/brain\/([^/]+)\//);
-    if (match) {
-      convId = match[1];
-    }
-  }
+	const transcriptPath = (context["transcriptPath"] ?? "") as string;
+	let convId = "default";
+	if (transcriptPath) {
+		const match = transcriptPath.match(/\/brain\/([^/]+)\//);
+		if (match) {
+			convId = match[1];
+		}
+	}
 
-  const cdal = new ConversationDataAccessLayer(convId);
-  const currentTurnIdx = cdal.getCurrentTurnIdx();
+	const cdal = new ConversationDataAccessLayer(convId);
+	const currentTurnIdx = cdal.getCurrentTurnIdx();
 
-  trimStaleHookStates(convId, currentTurnIdx);
+	trimStaleHookStates(convId, currentTurnIdx);
 
-  const mode = readMode(convId, "strict");
+	const mode = readMode(convId, "strict");
 
-  const injectSteps: any[] = [];
-  if (mode === "strict" || mode === "alert") {
-    const userInputCount = cdal.getUserInputCount();
-    if (shouldInjectTone(userInputCount)) {
-      if (shouldFire(convId, "tone_injected", String(currentTurnIdx))) {
-        markFired(convId, "tone_injected", String(currentTurnIdx));
+	const injectSteps: any[] = [];
+	if (mode === "strict" || mode === "alert") {
+		const userInputCount = cdal.getUserInputCount();
+		if (shouldInjectTone(userInputCount)) {
+			if (shouldFire(convId, "tone_injected", String(currentTurnIdx))) {
+				markFired(convId, "tone_injected", String(currentTurnIdx));
 
-          // 中文翻译：
-          // ⛔ REMORA 沟通风格限制 [严格语气]：
-          // ============================================================
-          // 你必须以最高的效率和直接性进行沟通！
-          //
-          // 1. 无运行注释：不要叙述你的内部审议或解释你的思考过程。先交付结果和结论。
-          // 2. 零奉承：绝不使用夸张、道歉或情感铺垫。
-          // 3. 极简注释：在代码编辑中，除非显式要求，否则不要写任何注释或文档字符串。
-          // 4. 事实错误报告：如果你犯了错误，事实且简明地承认它（例如，"修正了第25行的变量引用"）。不要重复道歉。
-          // ============================================================
-          injectSteps.push({ ephemeralMessage: formatStrictTonePrompt() });
-        }
-      }
-    }
+				// 中文翻译：
+				// ⛔ REMORA 沟通风格限制 [严格语气]：
+				// ============================================================
+				// 你必须以最高的效率和直接性进行沟通！
+				//
+				// 1. 无运行注释：不要叙述你的内部审议或解释你的思考过程。先交付结果和结论。
+				// 2. 零奉承：绝不使用夸张、道歉或情感铺垫。
+				// 3. 极简注释：在代码编辑中，除非显式要求，否则不要写任何注释或文档字符串。
+				// 4. 事实错误报告：如果你犯了错误，事实且简明地承认它（例如，"修正了第25行的变量引用"）。不要重复道歉。
+				// ============================================================
+				injectSteps.push({ ephemeralMessage: formatStrictTonePrompt() });
+			}
+		}
+	}
 
-  return { injectSteps: injectSteps };
+	return { injectSteps: injectSteps };
 }
 
 import { hookEntrypoint } from "../bridge/context";
 
 if (typeof require !== "undefined" && require.main === module) {
-  hookEntrypoint()(main)();
+	hookEntrypoint()(main)();
 }

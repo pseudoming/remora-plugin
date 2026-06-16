@@ -1,0 +1,29 @@
+{
+	"name": "remora-plugin",
+	"version": "1.0.0",
+	"description": "<div align=\"center\">",
+	"main": "index.js",
+	"directories": {
+		"doc": "docs"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.0"
+	},
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1",
+		"format": "biome format --write .",
+		"lint": "biome lint ."
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/pseudoming/remora-antigravity-plugin.git"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"type": "commonjs",
+	"bugs": {
+		"url": "https://github.com/pseudoming/remora-antigravity-plugin/issues"
+	},
+	"homepage": "https://github.com/pseudoming/remora-antigravity-plugin#readme"
+}

@@ -6,18 +6,18 @@ import * as path from "node:path";
 const txPath = path.join(os.tmpdir(), `test_ghost_${Date.now()}.db`);
 
 vi.mock("../src/storage/connection", () => {
-  const Database = require("better-sqlite3");
-  return {
-    getDbPath: () => txPath,
-    getConn: () => new Database(txPath, { timeout: 15000 }),
-    checkDbExists: () => {
-      try {
-        return require("node:fs").statSync(txPath).isFile();
-      } catch {
-        return false;
-      }
-    },
-  };
+	const Database = require("better-sqlite3");
+	return {
+		getDbPath: () => txPath,
+		getConn: () => new Database(txPath, { timeout: 15000 }),
+		checkDbExists: () => {
+			try {
+				return require("node:fs").statSync(txPath).isFile();
+			} catch {
+				return false;
+			}
+		},
+	};
 });
 
 import { cleanupGhostMessages } from "../src/storage/maintenance";
@@ -48,60 +48,60 @@ const SCHEMA = `
 `;
 
 function createTestDb(): Database.Database {
-  const db = new Database(txPath);
-  db.exec("DELETE FROM messages");
-  db.exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')");
-  return db;
+	const db = new Database(txPath);
+	db.exec("DELETE FROM messages");
+	db.exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')");
+	return db;
 }
 
 // test_fix_db_no_ghost_records
 describe("fix_db", () => {
-  beforeAll(() => {
-    const db = new Database(txPath);
-    db.exec(SCHEMA);
-    db.close();
-  });
+	beforeAll(() => {
+		const db = new Database(txPath);
+		db.exec(SCHEMA);
+		db.close();
+	});
 
-  it("no ghost records", () => {
-    const db = createTestDb();
-    db.prepare(
-      "INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 1, 'user', 'hello')"
-    ).run();
+	it("no ghost records", () => {
+		const db = createTestDb();
+		db.prepare(
+			"INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 1, 'user', 'hello')",
+		).run();
 
-    const count = cleanupGhostMessages();
-    expect(count).toBe(0);
+		const count = cleanupGhostMessages();
+		expect(count).toBe(0);
 
-    const rows = db.prepare("SELECT * FROM messages").all();
-    expect(rows.length).toBe(1);
+		const rows = db.prepare("SELECT * FROM messages").all();
+		expect(rows.length).toBe(1);
 
-    db.close();
-  });
+		db.close();
+	});
 
-  // test_fix_db_with_ghost_records
-  it("with ghost records", () => {
-    const db = createTestDb();
-    db.prepare(
-      "INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 1, 'user', 'hello')"
-    ).run();
-    db.prepare(
-      "INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 2, NULL, 'ghost role null')"
-    ).run();
-    db.prepare(
-      "INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 3, '', 'ghost role empty')"
-    ).run();
-    db.prepare(
-      "INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 4, 'assistant', NULL)"
-    ).run();
-    db.prepare(
-      "INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 5, 'assistant', '')"
-    ).run();
+	// test_fix_db_with_ghost_records
+	it("with ghost records", () => {
+		const db = createTestDb();
+		db.prepare(
+			"INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 1, 'user', 'hello')",
+		).run();
+		db.prepare(
+			"INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 2, NULL, 'ghost role null')",
+		).run();
+		db.prepare(
+			"INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 3, '', 'ghost role empty')",
+		).run();
+		db.prepare(
+			"INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 4, 'assistant', NULL)",
+		).run();
+		db.prepare(
+			"INSERT INTO messages (conversation_id, line_number, role, content) VALUES ('conv1', 5, 'assistant', '')",
+		).run();
 
-    const count = cleanupGhostMessages();
-    expect(count).toBe(4);
+		const count = cleanupGhostMessages();
+		expect(count).toBe(4);
 
-    const rows = db.prepare("SELECT id FROM messages").all();
-    expect(rows.length).toBe(1);
+		const rows = db.prepare("SELECT id FROM messages").all();
+		expect(rows.length).toBe(1);
 
-    db.close();
-  });
+		db.close();
+	});
 });

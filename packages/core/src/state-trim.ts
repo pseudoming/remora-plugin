@@ -1,8 +1,8 @@
 import Database from "better-sqlite3";
 import {
-  getRuntimeHookValue,
-  setRuntimeHookValue,
-  trimRuntimeHookStates,
+	getRuntimeHookValue,
+	setRuntimeHookValue,
+	trimRuntimeHookStates,
 } from "./storage/runtime-state";
 
 /**
@@ -13,31 +13,31 @@ import {
  * are deleted and the last-seen marker is updated.
  */
 export function trimStaleHookStates(
-  convId: string,
-  currentTurnIdx: unknown,
-  conn?: Database.Database
+	convId: string,
+	currentTurnIdx: unknown,
+	conn?: Database.Database,
 ): void {
-  const lastSeen = getRuntimeHookValue(convId, -1, "last_seen_turn", conn);
-  let shouldTrim: boolean;
+	const lastSeen = getRuntimeHookValue(convId, -1, "last_seen_turn", conn);
+	let shouldTrim: boolean;
 
-  if (lastSeen === null) {
-    shouldTrim = true;
-  } else {
-    const lastSeenNum = Number(lastSeen);
-    const currentNum = Number(currentTurnIdx);
-    if (isNaN(lastSeenNum) || isNaN(currentNum)) {
-      shouldTrim = false;
-    } else {
-      shouldTrim = lastSeenNum !== currentNum;
-    }
-  }
+	if (lastSeen === null) {
+		shouldTrim = true;
+	} else {
+		const lastSeenNum = Number(lastSeen);
+		const currentNum = Number(currentTurnIdx);
+		if (isNaN(lastSeenNum) || isNaN(currentNum)) {
+			shouldTrim = false;
+		} else {
+			shouldTrim = lastSeenNum !== currentNum;
+		}
+	}
 
-  if (shouldTrim) {
-    let trimTurn = Number(currentTurnIdx);
-    if (isNaN(trimTurn)) {
-      trimTurn = 0;
-    }
-    trimRuntimeHookStates(convId, trimTurn, conn);
-    setRuntimeHookValue(convId, -1, "last_seen_turn", String(trimTurn), conn);
-  }
+	if (shouldTrim) {
+		let trimTurn = Number(currentTurnIdx);
+		if (isNaN(trimTurn)) {
+			trimTurn = 0;
+		}
+		trimRuntimeHookStates(convId, trimTurn, conn);
+		setRuntimeHookValue(convId, -1, "last_seen_turn", String(trimTurn), conn);
+	}
 }

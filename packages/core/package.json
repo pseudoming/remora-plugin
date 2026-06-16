@@ -1,33 +1,33 @@
 {
-  "name": "@remora/core",
-  "version": "0.1.0",
-  "description": "Remora cognitive architecture — pure core logic for multi-platform code agents",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "schema",
-    "conf"
-  ],
-  "scripts": {
-    "build": "tsc",
-    "test": "vitest run"
-  },
-  "dependencies": {
-    "better-sqlite3": "^11.0.0"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.0",
-    "@types/node": "^25.9.2",
-    "@vitest/coverage-v8": "^4.1.8",
-    "typescript": "^5.5.0"
-  },
-  "keywords": [
-    "remora",
-    "cognitive",
-    "agent",
-    "memory",
-    "injection"
-  ],
-  "license": "MIT"
+	"name": "@remora/core",
+	"version": "0.1.0",
+	"description": "Remora cognitive architecture — pure core logic for multi-platform code agents",
+	"main": "dist/index.js",
+	"types": "dist/index.d.ts",
+	"files": [
+		"dist",
+		"schema",
+		"conf"
+	],
+	"scripts": {
+		"build": "tsc",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"better-sqlite3": "^11.0.0"
+	},
+	"devDependencies": {
+		"@types/better-sqlite3": "^7.6.0",
+		"@types/node": "^25.9.2",
+		"@vitest/coverage-v8": "^4.1.8",
+		"typescript": "^5.5.0"
+	},
+	"keywords": [
+		"remora",
+		"cognitive",
+		"agent",
+		"memory",
+		"injection"
+	],
+	"license": "MIT"
 }

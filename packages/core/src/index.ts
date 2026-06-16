@@ -3,79 +3,78 @@
 
 // Prompt formatting
 export {
-  formatRelaxDisciplinePrompt,
-  formatDecisionsForSessionResume,
-  formatConflictInjectionMessage,
-  formatFileDecisionsInjection,
-  formatWriteGateDenyPrompt,
-  formatPhantomFirstWarning,
-  formatPhantomRepeatWarning,
-  formatJitInjection,
-  formatStrictRecallReminder,
-  formatStrictTonePrompt,
-  formatAlertRecallPrompt,
-  formatHeartbeatTimerInjection,
-  formatCumulativeReadWarning,
-  formatSubagentDispatchReminder,
-  makeDenyReason,
-  formatWorkTrackingPrompt,
-  escapeSystemXmlTags,
-  Decision,
-  ConflictInfo,
+	formatRelaxDisciplinePrompt,
+	formatDecisionsForSessionResume,
+	formatConflictInjectionMessage,
+	formatFileDecisionsInjection,
+	formatWriteGateDenyPrompt,
+	formatPhantomFirstWarning,
+	formatPhantomRepeatWarning,
+	formatJitInjection,
+	formatStrictRecallReminder,
+	formatStrictTonePrompt,
+	formatAlertRecallPrompt,
+	formatHeartbeatTimerInjection,
+	formatCumulativeReadWarning,
+	formatSubagentDispatchReminder,
+	makeDenyReason,
+	formatWorkTrackingPrompt,
+	escapeSystemXmlTags,
+	Decision,
+	ConflictInfo,
 } from "./injection-formatting";
 
 // Safety policy
 export {
-  stripMarkdownCodeBlocks,
-  enforcePromptLengthLimit,
-  enforceSandboxWorkspace,
-  isRotSensitiveFile,
-  isRotSensitivePath,
-  estimateReadBytes,
-  isAccumulatedLimitExceeded,
-  isPlanningArtifact,
-  validatePromptSyntax,
-  UNIFIED_READ_WARN_LIMIT,
-  UNIFIED_READ_DENY_LIMIT,
-  GREP_PRE_ALLOCATION_DIR_DEFAULT,
-  GREP_PRE_ALLOCATION_DIR_SMALL,
-  GREP_PRE_ALLOCATION_FILE_MAX,
-  estimateGrepReadBytes,
-  isUnifiedLimitExceeded,
-  isUnifiedLimitApproaching,
+	stripMarkdownCodeBlocks,
+	enforcePromptLengthLimit,
+	enforceSandboxWorkspace,
+	isRotSensitiveFile,
+	isRotSensitivePath,
+	estimateReadBytes,
+	isAccumulatedLimitExceeded,
+	isPlanningArtifact,
+	validatePromptSyntax,
+	UNIFIED_READ_WARN_LIMIT,
+	UNIFIED_READ_DENY_LIMIT,
+	GREP_PRE_ALLOCATION_DIR_DEFAULT,
+	GREP_PRE_ALLOCATION_DIR_SMALL,
+	GREP_PRE_ALLOCATION_FILE_MAX,
+	estimateGrepReadBytes,
+	isUnifiedLimitExceeded,
+	isUnifiedLimitApproaching,
 } from "./safety-policy";
 
 // Text analysis
 export {
-  scanApprovalSignals,
-  buildConflictDetectionPrompt,
-  ConflictCandidate,
+	scanApprovalSignals,
+	buildConflictDetectionPrompt,
+	ConflictCandidate,
 } from "./text-analysis";
 
 // Liveness
 export {
-  cleanSystemReminders,
-  detectMode,
-  parseSqliteTimestamp,
-  findAllUuids,
-  judgeZombie,
-  suggestZombieAction,
-  formatTimestamp,
-  isTimerCanceled,
+	cleanSystemReminders,
+	detectMode,
+	parseSqliteTimestamp,
+	findAllUuids,
+	judgeZombie,
+	suggestZombieAction,
+	formatTimestamp,
+	isTimerCanceled,
 } from "./liveness";
 
 // Phantom
 export {
-  ACTION_PATTERNS,
-  normalizeFilepath,
-  resolvePhantomModifications,
+	ACTION_PATTERNS,
+	normalizeFilepath,
+	resolvePhantomModifications,
 } from "./phantom";
 
 // Injector / Reader / Trimming
 export { truncateDecisions } from "./injector";
 export { filterUserAiRounds } from "./reader";
 export { trimStaleHookStates } from "./state-trim";
-
 
 // Command inspector
 export { inspectCommand, decodeBase64Token } from "./rules/inspector";
@@ -88,9 +87,9 @@ export * from "./dao";
 
 // Zombie (pure logic only — /proc scanning lives in adapter)
 export {
-  INFRASTRUCTURE_KEYWORDS,
-  isInfrastructureProcess,
-  isProcessExpired,
+	INFRASTRUCTURE_KEYWORDS,
+	isInfrastructureProcess,
+	isProcessExpired,
 } from "./zombie";
 
 // Filesystem
@@ -104,4 +103,13 @@ export { getConn } from "./storage/connection";
 export { calculateFactualConfidence, validateIdInheritance } from "./coverage";
 
 // Logger
-export { setTraceId, init as initLogger, debug, info, warn, error, profile, HOOKS_PROFILE_LOG } from "./logger";
+export {
+	setTraceId,
+	init as initLogger,
+	debug,
+	info,
+	warn,
+	error,
+	profile,
+	HOOKS_PROFILE_LOG,
+} from "./logger";

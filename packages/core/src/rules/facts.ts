@@ -1,5 +1,5 @@
 import { Fact } from "./types";
 
 export interface IFactExtractor {
-  extract(rawPayload: Record<string, any>): Fact;
+	extract(rawPayload: Record<string, any>): Fact;
 }

@@ -1,10 +1,14 @@
 {
-  "approval_keywords": [
-    "同意", "执行吧", "批准", "启动吧",
-    "开始执行", "可以执行", "没问题",
-    "approve", "confirm"
-  ],
-  "negation_prefixes": [
-    "不", "拒绝", "拒绝执行"
-  ]
+	"approval_keywords": [
+		"同意",
+		"执行吧",
+		"批准",
+		"启动吧",
+		"开始执行",
+		"可以执行",
+		"没问题",
+		"approve",
+		"confirm"
+	],
+	"negation_prefixes": ["不", "拒绝", "拒绝执行"]
 }

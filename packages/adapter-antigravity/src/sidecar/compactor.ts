@@ -18,74 +18,79 @@ import { consumeEventQueue } from "./consume-events";
 import { getConn, getAllProjectUuids } from "@remora/core";
 
 export function pruneSidecarEvents(): void {
-  try {
-    const pluginName = process.env.ANTIGRAVITY_PLUGIN_NAME ?? "remora-plugin";
-    const eventsDir = path.join(getAntigravityDir(), "sidecar_data", pluginName, "memory-compactor", "events");
-    if (fs.existsSync(eventsDir)) {
-      for (const f of fs.readdirSync(eventsDir)) {
-        if (f.endsWith(".json")) {
-          try {
-            fs.unlinkSync(path.join(eventsDir, f));
-          } catch {
-            // pass
-          }
-        }
-      }
-    }
-  } catch {
-    // pass
-  }
+	try {
+		const pluginName = process.env.ANTIGRAVITY_PLUGIN_NAME ?? "remora-plugin";
+		const eventsDir = path.join(
+			getAntigravityDir(),
+			"sidecar_data",
+			pluginName,
+			"memory-compactor",
+			"events",
+		);
+		if (fs.existsSync(eventsDir)) {
+			for (const f of fs.readdirSync(eventsDir)) {
+				if (f.endsWith(".json")) {
+					try {
+						fs.unlinkSync(path.join(eventsDir, f));
+					} catch {
+						// pass
+					}
+				}
+			}
+		}
+	} catch {
+		// pass
+	}
 }
 
 function main(): void {
-  const args = process.argv.slice(2);
-  const eventDriven = args.includes("--event-driven");
+	const args = process.argv.slice(2);
+	const eventDriven = args.includes("--event-driven");
 
-  initDb();
+	initDb();
 
-  if (eventDriven) {
-    try {
-      const stdin = fs.readFileSync(process.stdin.fd, "utf-8");
-      const context = JSON.parse(stdin);
-      scanAndIngestArtifacts(context);
-    } catch {
-      // pass
-    }
-  } else {
-    acquireLock();
-    const cycleStart = Date.now() / 1000;
-    try {
-      pruneExpiredWatermarks();
-      processSessions(cycleStart);
+	if (eventDriven) {
+		try {
+			const stdin = fs.readFileSync(process.stdin.fd, "utf-8");
+			const context = JSON.parse(stdin);
+			scanAndIngestArtifacts(context);
+		} catch {
+			// pass
+		}
+	} else {
+		acquireLock();
+		const cycleStart = Date.now() / 1000;
+		try {
+			pruneExpiredWatermarks();
+			processSessions(cycleStart);
 
-      const conn = getConn();
-      try {
-        const activeProjects = getAllProjectUuids(conn);
-        for (const pUuid of activeProjects) {
-          checkPlanApproval(pUuid, conn);
-        }
-        consumeEventQueue(cycleStart, conn);
-        runGarbageCollection(conn);
-      } finally {
-        conn.close();
-      }
-    } catch (e) {
-      if (e instanceof AgentApiError) {
-        process.stderr.write(String(e) + "\n");
-        releaseLock();
-        process.exit(1);
-      }
-      console.error(e);
-    } finally {
-      pruneSidecarEvents();
-      releaseLock();
-    }
-  }
+			const conn = getConn();
+			try {
+				const activeProjects = getAllProjectUuids(conn);
+				for (const pUuid of activeProjects) {
+					checkPlanApproval(pUuid, conn);
+				}
+				consumeEventQueue(cycleStart, conn);
+				runGarbageCollection(conn);
+			} finally {
+				conn.close();
+			}
+		} catch (e) {
+			if (e instanceof AgentApiError) {
+				process.stderr.write(String(e) + "\n");
+				releaseLock();
+				process.exit(1);
+			}
+			console.error(e);
+		} finally {
+			pruneSidecarEvents();
+			releaseLock();
+		}
+	}
 }
 
 export { main };
 
 if (typeof require !== "undefined" && require.main === module) {
-  main();
+	main();
 }
-

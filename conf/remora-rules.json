@@ -1,52 +1,52 @@
 {
-  "rules": [
-    {
-      "id": "prevent-sandbox-escape",
-      "priority": 100,
-      "hookType": "PreToolUse",
-      "conditions": [
-        {
-          "fact": "toolName",
-          "op": "eq",
-          "value": "invoke_subagent"
-        },
-        {
-          "fact": "isSandboxEscaped",
-          "op": "eq",
-          "value": true
-        }
-      ],
-      "action": {
-        "type": "deny",
-        "reasonCode": "SANDBOX_ESCAPE",
-        "payload": {
-          "message": "Attempted to escape the workspace sandbox."
-        }
-      }
-    },
-    {
-      "id": "prevent-log-explosion",
-      "priority": 90,
-      "hookType": "PreToolUse",
-      "conditions": [
-        {
-          "fact": "toolName",
-          "op": "eq",
-          "value": "view_file"
-        },
-        {
-          "fact": "isSensitiveLog",
-          "op": "eq",
-          "value": true
-        }
-      ],
-      "action": {
-        "type": "deny",
-        "reasonCode": "LOG_EXPLOSION",
-        "payload": {
-          "message": "Access to large log files is restricted to subagents to prevent context explosion."
-        }
-      }
-    }
-  ]
+	"rules": [
+		{
+			"id": "prevent-sandbox-escape",
+			"priority": 100,
+			"hookType": "PreToolUse",
+			"conditions": [
+				{
+					"fact": "toolName",
+					"op": "eq",
+					"value": "invoke_subagent"
+				},
+				{
+					"fact": "isSandboxEscaped",
+					"op": "eq",
+					"value": true
+				}
+			],
+			"action": {
+				"type": "deny",
+				"reasonCode": "SANDBOX_ESCAPE",
+				"payload": {
+					"message": "Attempted to escape the workspace sandbox."
+				}
+			}
+		},
+		{
+			"id": "prevent-log-explosion",
+			"priority": 90,
+			"hookType": "PreToolUse",
+			"conditions": [
+				{
+					"fact": "toolName",
+					"op": "eq",
+					"value": "view_file"
+				},
+				{
+					"fact": "isSensitiveLog",
+					"op": "eq",
+					"value": true
+				}
+			],
+			"action": {
+				"type": "deny",
+				"reasonCode": "LOG_EXPLOSION",
+				"payload": {
+					"message": "Access to large log files is restricted to subagents to prevent context explosion."
+				}
+			}
+		}
+	]
 }
