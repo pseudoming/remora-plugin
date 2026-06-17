@@ -317,6 +317,25 @@ export function main(
 	}
 }
 
+function getLatestMessageString(lastMsg: unknown): string {
+	if (!lastMsg) return "";
+	if (typeof lastMsg === "string") {
+		return lastMsg;
+	}
+	if (typeof lastMsg === "object" && lastMsg !== null) {
+		const msgObj = lastMsg as Record<string, unknown>;
+		if (typeof msgObj.content === "string") {
+			return msgObj.content;
+		}
+		try {
+			return JSON.stringify(lastMsg);
+		} catch {
+			return "";
+		}
+	}
+	return String(lastMsg);
+}
+
 function _main(context: Record<string, unknown>): Record<string, unknown> {
 	const transcriptPath = (context["transcriptPath"] as string) || "";
 	if (!transcriptPath) {
@@ -457,8 +476,10 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
 			currentTurnIdx,
 			"liveness_sop",
 		);
+		const hasSopInjected = sopInjected === "injected";
+
 		let ephemeralMsg: string;
-		if (!sopInjected) {
+		if (!hasSopInjected) {
 			setHookState(parentConvId, currentTurnIdx, "liveness_sop", "injected");
 			ephemeralMsg =
 				`⛔ REMORA LIVENESS WARNING: Subagents ${deadIdsStr} are unresponsive.\n` +
@@ -470,22 +491,55 @@ function _main(context: Record<string, unknown>): Record<string, unknown> {
 			ephemeralMsg = `⛔ REMORA LIVENESS WARNING: Subagents ${deadIdsStr} are unresponsive.`;
 		}
 
-		if (!context["toolCall"]) {
-			return {
-				decision: "deny",
-				reason: reasonMsg,
-				injectSteps: [
-					{
-						ephemeralMessage: ephemeralMsg,
-					},
-				],
-			};
-		} else {
+		// 1. 处理工具前置拦截 (防御性编程，以防未来挂载在 PreToolUse 阶段)
+		const toolCall = context["toolCall"] as Record<string, any> | undefined;
+		if (toolCall) {
+			const toolName = toolCall.name;
+			if (toolName === "manage_subagents") {
+				return {
+					decision: "allow",
+					reason: `放行原生自愈工具: ${reasonMsg}`,
+				};
+			}
+			if (toolName === "run_command") {
+				const cmd = (toolCall.args?.CommandLine as string) || "";
+				if (cmd.includes("cleanup-stale-session.ts")) {
+					return {
+						decision: "allow",
+						reason: `放行物理自愈清理脚本: ${reasonMsg}`,
+					};
+				}
+			}
 			return {
 				decision: "deny",
 				reason: reasonMsg,
 			};
 		}
+
+		// 2. 处理 PreInvocation 对话入口
+		const currentRawMsg = context["last_msg"];
+		const currentMsgStr = getLatestMessageString(currentRawMsg);
+		const isSelfHealingIntent = 
+			/(清理|强杀|自愈|kill|manage_subagents|cleanup-stale-session)/i.test(currentMsgStr);
+
+		// 如果已经在当前 Turn 注入过 SOP，或者检测到明确的自愈意图，放行以获取自愈推理窗口
+		if (hasSopInjected || isSelfHealingIntent) {
+			return {
+				decision: "allow",
+				reason: `放行自愈请求或重试交互: ${reasonMsg}`,
+			};
+		}
+
+		// 首次遭遇卡死且无明确自愈意图，执行物理拦截并注入 SOP 警示
+		return {
+			decision: "deny",
+			reason: reasonMsg,
+			injectSteps: [
+				{
+					ephemeralMessage: ephemeralMsg,
+				},
+			],
+		};
 	}
 
 	return { decision: "allow", reason: "All subagents are active" };

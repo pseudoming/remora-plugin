@@ -4,6 +4,7 @@ import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
 import { HookProfiler } from "./profiler";
 import { ProgressSentinel } from "./progress";
+import { findPluginRoot } from "./paths";
 import {
 	warn,
 	error,
@@ -131,6 +132,34 @@ export function hookEntrypoint(fallbackResult?: Record<string, unknown>) {
 
 				process.stdout.write(JSON.stringify(output) + "\n");
 			} catch (se: unknown) {
+				const errStr = se instanceof Error ? (se.stack ?? se.message) : String(se);
+				if (errStr.includes("better-sqlite3") || errStr.includes("sqlite3")) {
+					try {
+						let computedPluginRoot = "";
+						try {
+							computedPluginRoot = findPluginRoot();
+						} catch (pathErr) {
+							// 捕获 findPluginRoot 的 throw，保证不二次崩溃
+						}
+
+						if (computedPluginRoot) {
+							process.stderr.write(
+								`🚨 [Remora Native Error] better-sqlite3 native bindings load failed.\n` +
+								`👉 TO RESOLVE: Please run 'npm rebuild' in the global plugin directory:\n` +
+								`   Cwd: "${computedPluginRoot}"\n` +
+								`   Command: "npm rebuild"\n`
+							);
+						} else {
+							process.stderr.write(
+								`🚨 [Remora Native Error] better-sqlite3 native bindings load failed.\n` +
+								`👉 TO RESOLVE: Please run 'npm rebuild' in the global plugin directory.\n`
+							);
+						}
+					} catch (logErr) {
+						// 保护防线，不因自愈日志输出发生任何意外崩溃
+					}
+				}
+
 				const isToolUse = !!(
 					inputData &&
 					typeof inputData === "object" &&
@@ -142,85 +171,108 @@ export function hookEntrypoint(fallbackResult?: Record<string, unknown>) {
 					inputData["executionNum"] != null
 				);
 
-				// Python: except SystemExit → check if it's a system-level exit
-				if (se instanceof SystemExit) {
-					const exitCode = se.code;
-					if (exitCode === 0) {
-						ProgressSentinel.update(
-							transcriptPath,
-							"running",
-							undefined,
-							`Hook ${hookName} exited with code 0`,
-						);
-						if (isToolUse || isStopHook) {
-							process.stdout.write(
-								JSON.stringify({ decision: "allow" }) + "\n",
+				try {
+					// Python: except SystemExit → check if it's a system-level exit
+					if (se instanceof SystemExit) {
+						const exitCode = se.code;
+						if (exitCode === 0) {
+							ProgressSentinel.update(
+								transcriptPath,
+								"running",
+								undefined,
+								`Hook ${hookName} exited with code 0`,
 							);
+							if (isToolUse || isStopHook) {
+								process.stdout.write(
+									JSON.stringify({ decision: "allow" }) + "\n",
+								);
+							} else {
+								process.stdout.write(JSON.stringify({}) + "\n");
+							}
 						} else {
-							process.stdout.write(JSON.stringify({}) + "\n");
+							activeProfiler?.step(`func_sys_exit: ${exitCode}`);
+							error(`Hook SystemExit code ${exitCode}`);
+							process.stderr.write(
+								((se instanceof Error ? se.stack : undefined) ?? String(se)) +
+									"\n",
+							);
+							ProgressSentinel.update(
+								transcriptPath,
+								"blocked",
+								undefined,
+								`Hook SystemExit ${exitCode}`,
+							);
+							if (isToolUse || isStopHook) {
+								process.stdout.write(
+									JSON.stringify({
+										decision: "deny",
+										reason: `SystemExit with code ${exitCode}`,
+									}) + "\n",
+								);
+							} else {
+								process.stdout.write(JSON.stringify({ injectSteps: [] }) + "\n");
+							}
 						}
-					} else {
-						activeProfiler?.step(`func_sys_exit: ${exitCode}`);
-						error(`Hook SystemExit code ${exitCode}`);
-						process.stderr.write(se.stack ?? String(se) + "\n");
+					} else if (se instanceof Error) {
+						// Python: except Exception → regular exception
+						activeProfiler?.step(`func_error: ${String(se)}`);
+						const safeFallback = { ...fallback };
+						if ("decision" in safeFallback) {
+							safeFallback["reason"] =
+								`Remora Fallback (Error: ${String(se)})`;
+						}
+						error(`Hook Error: ${String(se)}`);
+						process.stderr.write((se.stack ?? String(se)) + "\n");
 						ProgressSentinel.update(
 							transcriptPath,
 							"blocked",
 							undefined,
-							`Hook SystemExit ${exitCode}`,
+							`Hook Exception: ${String(se)}`,
+						);
+						if (isToolUse || isStopHook) {
+							process.stdout.write(JSON.stringify(safeFallback) + "\n");
+						} else {
+							process.stdout.write(JSON.stringify({}) + "\n");
+						}
+					} else {
+						// Python: except BaseException → fatal (KeyboardInterrupt etc.)
+						activeProfiler?.step(`func_fatal: ${String(se)}`);
+						error(`Hook Fatal Error: ${String(se)}`);
+						process.stderr.write(String(se) + "\n");
+						ProgressSentinel.update(
+							transcriptPath,
+							"blocked",
+							undefined,
+							`Hook Fatal Exception: ${String(se)}`,
 						);
 						if (isToolUse || isStopHook) {
 							process.stdout.write(
 								JSON.stringify({
 									decision: "deny",
-									reason: `SystemExit with code ${exitCode}`,
+									reason: `Fatal Exception: ${String(se)}`,
 								}) + "\n",
 							);
 						} else {
-							process.stdout.write(JSON.stringify({ injectSteps: [] }) + "\n");
+							process.stdout.write(JSON.stringify({}) + "\n");
 						}
 					}
-				} else if (se instanceof Error) {
-					// Python: except Exception → regular exception
-					activeProfiler?.step(`func_error: ${String(se)}`);
-					const safeFallback = { ...fallback };
-					if ("decision" in safeFallback) {
-						safeFallback["reason"] =
-							`Remora Fallback (Error: ${String(se)})`;
-					}
-					error(`Hook Error: ${String(se)}`);
-					process.stderr.write(se.stack ?? String(se) + "\n");
-					ProgressSentinel.update(
-						transcriptPath,
-						"blocked",
-						undefined,
-						`Hook Exception: ${String(se)}`,
-					);
-					if (isToolUse || isStopHook) {
-						process.stdout.write(JSON.stringify(safeFallback) + "\n");
-					} else {
-						process.stdout.write(JSON.stringify({}) + "\n");
-					}
-				} else {
-					// Python: except BaseException → fatal (KeyboardInterrupt etc.)
-					activeProfiler?.step(`func_fatal: ${String(se)}`);
-					error(`Hook Fatal Error: ${String(se)}`);
-					process.stderr.write(String(se) + "\n");
-					ProgressSentinel.update(
-						transcriptPath,
-						"blocked",
-						undefined,
-						`Hook Fatal Exception: ${String(se)}`,
-					);
-					if (isToolUse || isStopHook) {
-						process.stdout.write(
-							JSON.stringify({
-								decision: "deny",
-								reason: `Fatal Exception: ${String(se)}`,
-							}) + "\n",
-						);
-					} else {
-						process.stdout.write(JSON.stringify({}) + "\n");
+				} catch (innerErr) {
+					// 嵌套 try-catch 终极熔断防线，捕获任何 Sentinel 更新/写盘/格式化二次报错
+					try {
+						const errStr = innerErr instanceof Error ? innerErr.stack : String(innerErr);
+						process.stderr.write(`[Remora Fatal Catch Deadlock] Hook secondary crash: ${errStr}\n`);
+						
+						const safeFallback = { ...fallback };
+						if ("decision" in safeFallback) {
+							safeFallback["reason"] = `Remora Safe Fallback (Secondary Error: ${String(innerErr)})`;
+						}
+						if (isToolUse || isStopHook) {
+							process.stdout.write(JSON.stringify(safeFallback) + "\n");
+						} else {
+							process.stdout.write(JSON.stringify({}) + "\n");
+						}
+					} catch (writeErr) {
+						// stdout 管道完全损坏时的最终吞噬防线，强保进程以 0 退出，不抛出 Uncaught Exception
 					}
 				}
 			} finally {

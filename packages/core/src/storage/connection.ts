@@ -1,10 +1,5 @@
-import DatabaseConstructor from "better-sqlite3";
 import * as fs from "node:fs";
 import * as path from "node:path";
-
-const Database =
-	(DatabaseConstructor && (DatabaseConstructor as any).default) ||
-	DatabaseConstructor;
 
 export function getDbPath(): string {
 	return (
@@ -16,6 +11,20 @@ export function getDbPath(): string {
 export function getConn(): any {
 	const dbPath = getDbPath();
 	fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+	let DatabaseConstructor: any;
+	try {
+		DatabaseConstructor = require("better-sqlite3");
+	} catch (err: any) {
+		throw new Error(
+			`[Remora DB Loader] Failed to load better-sqlite3 native bindings: ${err.message}`
+		);
+	}
+
+	const Database =
+		(DatabaseConstructor && (DatabaseConstructor as any).default) ||
+		DatabaseConstructor;
+
 	const conn = new Database(dbPath, { timeout: 15000 });
 	conn.exec(
 		"PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -2000;",

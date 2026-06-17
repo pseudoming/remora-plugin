@@ -134,6 +134,7 @@ if (process.env.REMORA_SEED_DEV_MODE !== "1") {
   - *子代理协同优化*：执行 Per-session token 追踪，在上下文紧绷时优先注入高价值 decisions。
 - **C4: 守护进程常驻模式 (Daemonized Hooks & IPC Stub Client)**：**`PENDING (待观察)`**（若后续观测到并发子特工调起时 SQLite 冲突或进程间读写竞态，则拉起 Unix Domain Socket 进行长驻内存求值）。
 - **C5: 自动化分支与沙箱修剪机制 (Automated Branch & Worktree Pruning)**：**`PENDING`**（由于子代理长期处于高频调起状态，其创建的隔离工作树(worktrees)和独立分支如果不加以定期清理，将导致极大的资源泄漏与仓库腐化。需在 Remora 核心链路中实现定期剪枝机制，替代人工阶段性大扫除）。
+- **C6: 功能模块化架构重组 (Feature-based Refactoring)**：**`PENDING`**（目前代码按接入点散落在 hooks、sidecars、sandbox、maintenance 目录，后续应按业务特性如子特工生命周期管理、文档种子灌入等聚合成独立功能模块 features/ 目录，接入层仅留轻量分发，以大幅提高可读性、限制爆炸半径并规避多特工上下文损耗）。
 
 ### 2. Route A: Multi-Platform Support (多平台适配路线)
 - **A3: Binpack core (核心包二进制独立打包)**：**`PENDING`**（无前置依赖，core 模块解耦已就绪）。

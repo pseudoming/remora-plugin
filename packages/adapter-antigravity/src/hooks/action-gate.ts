@@ -16,6 +16,7 @@ import {
   setHookState,
   insertFileChange,
   getProjectUuidByConv,
+  getConn,
 } from "@remora/core";
 import { extractConvId } from "../bridge/paths";
 import { readMode } from "../bridge/session";
@@ -188,6 +189,64 @@ export function _main(context: AntigravityHookContext): PreInvocationResponse {
   }
 
   const convId = extractConvId(transcriptPath) || "default";
+  const cdal = new ConversationDataAccessLayer(convId);
+  const initialNumSteps = context.initialNumSteps ?? 0;
+
+  try {
+    for (const step of cdal.streamStepsReverse(1000)) {
+      if (initialNumSteps > 0 && step["step_index"] != null && step["step_index"] <= initialNumSteps) {
+        break;
+      }
+      if (step["type"] === "USER_INPUT") {
+        break;
+      }
+      const toolCalls = step["tool_calls"] ?? [];
+      for (const call of toolCalls) {
+        const name = call["name"] ?? "";
+        let args = call["arguments"] || call["args"] || {};
+        if (typeof args === "string") {
+          try {
+            args = JSON.parse(args);
+          } catch {
+            // pass
+          }
+        }
+        if (name === "manage_subagents" && args && typeof args === "object") {
+          let action = args["Action"] || args["action"];
+          if (typeof action === "string") {
+            action = action.replace(/\\/g, "").replace(/['"]/g, "").trim();
+          }
+          const rawIds = args["ConversationIds"] || args["conversationIds"] || [];
+          const idsStr = typeof rawIds === "string" ? rawIds : JSON.stringify(rawIds);
+          const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+          const idsToKill = idsStr.match(uuidRegex) || [];
+
+          if ((action === "kill" && idsToKill.length > 0) || action === "kill_all") {
+            const conn = getConn();
+            try {
+              if (action === "kill") {
+                for (const subId of idsToKill) {
+                  if (typeof subId === "string") {
+                    conn.execute("DELETE FROM session_state WHERE session_id = ?", [subId]);
+                    conn.execute("DELETE FROM runtime_hook_state WHERE session_id = ?", [subId]);
+                    debug(`[Remora Action-Gate] PostToolUse forced SQLite deletion for killed subagent: ${subId}`);
+                  }
+                }
+              } else if (action === "kill_all") {
+                conn.execute("DELETE FROM session_state WHERE session_id != ?", [convId]);
+                conn.execute("DELETE FROM runtime_hook_state WHERE session_id != ?", [convId]);
+                debug(`[Remora Action-Gate] PostToolUse forced SQLite deletion for kill_all excluding main session: ${convId}`);
+              }
+            } finally {
+              conn.close();
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Remora Action-Gate] Subagent auto-cleanup failed:", err);
+  }
 
   // 规则 7: Bypass gating if write tool returns error
   const toolCallResult = (context.toolCallResult as Record<string, unknown>) ?? {};
@@ -195,13 +254,8 @@ export function _main(context: AntigravityHookContext): PreInvocationResponse {
     return { injectSteps: [], terminationBehavior: "" };
   }
 
-  const cdal = new ConversationDataAccessLayer(convId);
   const currentTurnIdx = cdal.getCurrentTurnIdx();
-
   trimStaleHookStates(convId, currentTurnIdx);
-
-
-  const initialNumSteps = context.initialNumSteps ?? 0;
 
   profilerStep("start_conv_state_read");
   const [plannerText, actualToolFiles, hasAnyToolCalls] = getLatestConversationStates(cdal, initialNumSteps);

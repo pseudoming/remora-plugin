@@ -19,7 +19,7 @@
 	"scripts": {
 		"build": "node build.js",
 		"test": "vitest run",
-		"postinstall": "node bin/install.js --force"
+		"postinstall": "node bin/install.js --postinstall"
 	},
 	"dependencies": {
 		"better-sqlite3": "^11.0.0"
