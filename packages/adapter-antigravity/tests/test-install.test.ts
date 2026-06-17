@@ -25,9 +25,13 @@ vi.mock("node:fs", async (importOriginal) => {
 
 let mockGeminiConfigDir = "";
 
-vi.mock("../src/bridge/paths", () => ({
-	getGeminiConfigDir: () => mockGeminiConfigDir,
-}));
+vi.mock("../src/bridge/paths", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../src/bridge/paths")>();
+	return {
+		...actual,
+		getGeminiConfigDir: () => mockGeminiConfigDir,
+	};
+});
 
 vi.mock("../src/schema/schema-init", () => ({
 	initDb: vi.fn(),

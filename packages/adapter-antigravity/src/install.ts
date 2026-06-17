@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import { initDb } from "./schema/schema-init";
-import { getGeminiConfigDir } from "./bridge/paths";
+import { getGeminiConfigDir, getDataDir } from "./bridge/paths";
 
 let _dryRun = false;
 
@@ -192,7 +192,7 @@ function unmergeMcpConfig(): void {
 }
 
 function resolvePaths(_pluginRoot: string): [string, string] {
-	const dataDir = path.join(os.homedir(), ".remora", "data");
+	const dataDir = getDataDir();
 	const runtimeDir = path.join(dataDir, ".runtime");
 	return [dataDir, runtimeDir];
 }
@@ -427,6 +427,14 @@ function mainReal(
 }
 
 export function main(): void {
+	// Bypass auto-deploy during npm postinstall in Dev Monorepo to avoid breaking global status
+	const isPostInstall = process.env.npm_lifecycle_event === "postinstall" || process.argv.includes("--postinstall");
+	const isDevMonorepo = fs.existsSync(path.join(process.cwd(), "packages", "core"));
+	if (isPostInstall && isDevMonorepo) {
+		log("ℹ️ [Remora Bypass] Dev Monorepo detected during postinstall. Skipping auto-deploy.");
+		return;
+	}
+
 	const argv = process.argv.slice(2);
 	let force = false;
 	let dryRunFlag = false;

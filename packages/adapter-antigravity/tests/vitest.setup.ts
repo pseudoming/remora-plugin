@@ -3,7 +3,7 @@ process.env.REMORA_DATA_DIR = path.resolve(__dirname, "temp_test_data");
 process.env.REMORA_DB_PATH = path.join(process.env.REMORA_DATA_DIR, "remora_memory_test.db");
 
 import { vi, beforeEach, afterEach } from "vitest";
-import * as fs from "node:fs";
+import fs from "node:fs";
 
 // Ensure the sandboxed runtime directories and installed.flag exist
 const tempRuntimeDir = path.join(process.env.REMORA_DATA_DIR, ".runtime");
@@ -11,6 +11,8 @@ if (!fs.existsSync(tempRuntimeDir)) {
 	fs.mkdirSync(tempRuntimeDir, { recursive: true });
 }
 fs.writeFileSync(path.join(tempRuntimeDir, "installed.flag"), "test-initialized");
+
+
 
 const KEYWORDS_PATH = path.resolve(
 	__dirname ?? process.cwd(),
